@@ -1,0 +1,27 @@
+{
+    "name": "AK.Services.Ads",
+    "rootNamespace": "AK.Services.Ads",
+    "references": [
+        "AK.Core",
+        "AK.GameplayCore",
+        "AK.Services.Core",
+        "UniTask"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "UGFW_ADMOB"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.google.ads.mobile",
+            "expression": "",
+            "define": "UGFW_ADMOB"
+        }
+    ],
+    "noEngineReferences": false
+}

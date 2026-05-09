@@ -1,0 +1,19 @@
+{
+    "name": "AK.Services.Core",
+    "rootNamespace": "AK.Services",
+    "references": [
+        "AK.Core",
+        "AK.GameplayCore",
+        "UniTask",
+        "Reflex"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

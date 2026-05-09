@@ -1,0 +1,24 @@
+{
+    "name": "AK.Core",
+    "rootNamespace": "AK.Core",
+    "references": [
+        "Unity.RenderPipelines.Universal.Runtime",
+        "Unity.Addressables",
+        "Unity.ResourceManager",
+        "UniTask",
+        "UniTask.Addressables",
+        "Reflex",
+        "Unity.Cinemachine",
+        "DOTween.Modules",
+        "UniTask.DOTween"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,22 @@
+{
+    "name": "AK.UISystem",
+    "rootNamespace": "AK.UISystem",
+    "references": [
+        "AK.Core",
+        "DOTween",
+        "DOTween.Modules",
+        "UniTask",
+        "UniTask.DOTween",
+        "Unity.TextMeshPro",
+        "Reflex"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

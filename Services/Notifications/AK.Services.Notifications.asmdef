@@ -1,0 +1,27 @@
+{
+    "name": "AK.Services.Notifications",
+    "rootNamespace": "AK.Services.Notifications",
+    "references": [
+        "AK.Core",
+        "AK.GameplayCore",
+        "AK.Services.Core",
+        "Reflex"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "UGFW_NOTIFICATIONS"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.notifications",
+            "expression": "",
+            "define": "UGFW_NOTIFICATIONS"
+        }
+    ],
+    "noEngineReferences": false
+}

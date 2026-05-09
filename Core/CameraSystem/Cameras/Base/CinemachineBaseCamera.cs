@@ -1,0 +1,38 @@
+﻿using AK.StateMachine;
+using Unity.Cinemachine;
+using UnityEngine;
+using AK.Core;
+
+namespace AK.CameraSystem
+{
+	[RequireComponent(typeof(CinemachineBrain))]
+	public abstract class CinemachineBaseCamera<TEntity, TState> : BaseCamera<TEntity, TState>, ICinemachineGameCamera 
+		where TEntity : GameEntity
+		where TState : BaseState<TEntity>, new()
+	{
+		protected CinemachineBrain _cinemachineBrain;
+		private CinemachineImpulseSource _impulseSource;
+
+		public virtual CinemachineCamera ActiveVirtualCam => _cinemachineBrain.ActiveVirtualCamera as CinemachineCamera;
+
+		protected override void Awake()
+		{
+			// Base Awake handles Binding
+			base.Awake();
+			_cinemachineBrain = GetComponent<CinemachineBrain>();
+			_impulseSource = GetComponent<CinemachineImpulseSource>();
+		}
+		
+		public override void Shake(float intensity, float duration)
+		{
+			if (_impulseSource != null)
+			{
+				_impulseSource.GenerateImpulseWithVelocity(Vector3.one * intensity);
+			}
+			else
+			{
+				base.Shake(intensity, duration);
+			}
+		}
+	}
+}
