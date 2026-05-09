@@ -1,11 +1,14 @@
 {
-    "name": "AK.Services.Core",
+    "name": "AK.Services",
     "rootNamespace": "AK.Services",
     "references": [
         "AK.Core",
         "AK.GameplayCore",
         "UniTask",
-        "Reflex"
+        "Unity.Notifications.Unified",
+        "Unity.Notifications.Android",
+        "Unity.Notifications.iOS",
+        "Unity.Purchasing"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
