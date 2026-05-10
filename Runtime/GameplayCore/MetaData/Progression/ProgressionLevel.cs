@@ -66,7 +66,7 @@ namespace GameplayCore.MetaData.Progression
 		[Tooltip("Custom analytics event name for tracking level up.")]
 		public string AnalyticsEventName;
 
-		public virtual UID UniqueID => UID;
+		public virtual UID UniqueID => this;
 		
 		/// <summary>
 		/// Gets the total XP required to reach this level.
@@ -108,7 +108,6 @@ namespace GameplayCore.MetaData.Progression
 			return Unlocks != null && Unlocks.Contains(featureID);
 		}
 
-		public UID UID => this;
 	}
 
 	/// <summary>

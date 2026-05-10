@@ -30,7 +30,7 @@ namespace GameplayCore.MetaData.Seasons
 		/// </summary>
 		public EventDefinition GetEventByUID(UID uid)
 		{
-			return Events.FirstOrDefault(e => e.UID == uid);
+			return Events.FirstOrDefault(e => e.UniqueID == uid);
 		}
 		
 		/// <summary>
@@ -150,7 +150,7 @@ namespace GameplayCore.MetaData.Seasons
 		{
 			if (Events.Count == 0) return 0f;
 			
-			int completedCount = Events.Count(e => completedEvents.Contains(e.UID));
+			int completedCount = Events.Count(e => completedEvents.Contains(e.UniqueID));
 			return (float)completedCount / Events.Count * 100f;
 		}
 		
@@ -162,7 +162,7 @@ namespace GameplayCore.MetaData.Seasons
 			var typeEvents = GetEventsByType(type);
 			if (typeEvents.Count == 0) return 0f;
 			
-			int completedCount = typeEvents.Count(e => completedEvents.Contains(e.UID));
+			int completedCount = typeEvents.Count(e => completedEvents.Contains(e.UniqueID));
 			return (float)completedCount / typeEvents.Count * 100f;
 		}
 	}

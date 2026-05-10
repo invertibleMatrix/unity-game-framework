@@ -98,7 +98,7 @@ namespace GameplayCore.MetaData.Tutorial
 		public TutorialDefinition GetNextTutorialForLevel(int level, HashSet<UID> completedTutorials)
 		{
 			var availableTutorials = _registry.GetTutorialsForLevel(level)
-				.Where(t => !completedTutorials.Contains(t.UID))
+				.Where(t => !completedTutorials.Contains(t.UniqueID))
 				.ToList();
 			
 			// Filter by prerequisites
@@ -116,7 +116,7 @@ namespace GameplayCore.MetaData.Tutorial
 		public List<TutorialDefinition> GetAvailableTutorialsForLevel(int level, HashSet<UID> completedTutorials)
 		{
 			return _registry.GetTutorialsForLevel(level)
-				.Where(t => !completedTutorials.Contains(t.UID))
+				.Where(t => !completedTutorials.Contains(t.UniqueID))
 				.Where(t => ArePrerequisitesMet(t, completedTutorials))
 				.OrderBy(t => t.Priority)
 				.ToList();

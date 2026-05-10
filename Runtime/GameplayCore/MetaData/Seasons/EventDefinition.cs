@@ -14,9 +14,6 @@ namespace GameplayCore.MetaData.Seasons
 	public class EventDefinition : MetaDataAsset
 	{
 		[Header("Identification")]
-		[Tooltip("Unique identifier for this event")]
-		public UID UID;
-		
 		[Tooltip("Unique string ID for this event")]
 		public string EventID;
 		
@@ -116,7 +113,7 @@ namespace GameplayCore.MetaData.Seasons
 		[Tooltip("Additional data for custom event types")]
 		public Dictionary<string, string> CustomData;
 		
-		public virtual UID UniqueID => UID;
+		public virtual UID UniqueID => this;
 		
 		/// <summary>
 		/// Check if the event is currently active

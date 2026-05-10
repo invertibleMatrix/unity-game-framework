@@ -14,9 +14,6 @@ namespace GameplayCore.MetaData.GameModes
 	public class GameModeDefinition : MetaDataAsset
 	{
 		[Header("Identification")]
-		[Tooltip("Unique identifier for this game mode")]
-		public UID UID;
-		
 		[Tooltip("Display name for the game mode")]
 		public string DisplayName;
 		
@@ -224,7 +221,7 @@ namespace GameplayCore.MetaData.GameModes
 		[Tooltip("Analytics event for mode fail")]
 		public UID FailEvent;
 		
-		public UID UniqueID => UID;
+		public UID UniqueID => this;
 		
 		/// <summary>
 		/// Gets all rewards from this game mode definition.

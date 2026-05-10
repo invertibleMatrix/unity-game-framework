@@ -30,7 +30,7 @@ namespace GameplayCore.MetaData.DailyChallenges
 		/// </summary>
 		public DailyChallengeDefinition GetChallengeByUID(UID uid)
 		{
-			return Challenges.FirstOrDefault(c => c.UID == uid);
+			return Challenges.FirstOrDefault(c => c.UniqueID == uid);
 		}
 		
 		/// <summary>
@@ -192,7 +192,7 @@ namespace GameplayCore.MetaData.DailyChallenges
 		{
 			if (Challenges.Count == 0) return 0f;
 			
-			int completedCount = Challenges.Count(c => completedChallenges.Contains(c.UID));
+			int completedCount = Challenges.Count(c => completedChallenges.Contains(c.UniqueID));
 			return (float)completedCount / Challenges.Count * 100f;
 		}
 		
@@ -204,7 +204,7 @@ namespace GameplayCore.MetaData.DailyChallenges
 			var typeChallenges = GetChallengesByType(type);
 			if (typeChallenges.Count == 0) return 0f;
 			
-			int completedCount = typeChallenges.Count(c => completedChallenges.Contains(c.UID));
+			int completedCount = typeChallenges.Count(c => completedChallenges.Contains(c.UniqueID));
 			return (float)completedCount / typeChallenges.Count * 100f;
 		}
 		

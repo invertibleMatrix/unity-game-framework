@@ -15,9 +15,6 @@ namespace GameplayCore.MetaData.Tutorial
 	public class TutorialDefinition : MetaDataAsset
 	{
 		[Header("Identification")]
-		[Tooltip("Unique identifier for this tutorial")]
-		public UID UID;
-		
 		[Tooltip("Display name for the tutorial")]
 		public string DisplayName;
 		
@@ -113,7 +110,7 @@ namespace GameplayCore.MetaData.Tutorial
 		[Tooltip("Analytics event to track when tutorial is skipped")]
 		public UID SkipEvent;
 		
-		public virtual UID UniqueID => UID;
+		public virtual UID UniqueID => this;
 		
 		/// <summary>
 		/// Gets all rewards from this tutorial definition.

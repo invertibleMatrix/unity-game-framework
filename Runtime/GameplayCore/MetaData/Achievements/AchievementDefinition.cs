@@ -13,9 +13,6 @@ namespace GameplayCore.MetaData.Achievements
 	[CreateAssetMenu(fileName = "AchievementDefinition", menuName = "Gameplay/MetaData/Achievements/AchievementDefinition")]
 	public class AchievementDefinition : MetaDataAsset
 	{
-		[Header("Identification")] [Tooltip("Unique identifier for this achievement")]
-		public UID UID;
-
 		[Tooltip("Unique string ID for this achievement")]
 		public string AchievementID;
 
@@ -86,7 +83,7 @@ namespace GameplayCore.MetaData.Achievements
 		/// </summary>
 		public float CompletionPercentage => TargetValue > 0 ? (float)CurrentProgress / TargetValue * 100f : 0f;
 
-		public UID UniqueID => UID;
+		public UID UniqueID => this;
 
 		/// <summary>
 		/// Check if this achievement is available to the player

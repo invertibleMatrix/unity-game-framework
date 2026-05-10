@@ -49,7 +49,7 @@ namespace GameplayCore.MetaData.Progression
 		[Header("Analytics")] [Tooltip("Custom analytics event name for tracking milestone completion.")]
 		public string AnalyticsEventName;
 
-		public UID UniqueID => UID;
+		public UID UniqueID => this;
 
 		/// <summary>
 		/// Gets all rewards from this milestone.
@@ -79,6 +79,5 @@ namespace GameplayCore.MetaData.Progression
 			return playerLevel >= RequiredLevel && playerXP >= RequiredXP;
 		}
 
-		public UID UID => this;
 	}
 }

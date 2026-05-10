@@ -29,7 +29,7 @@ namespace GameplayCore.MetaData.Achievements
 		/// </summary>
 		public AchievementDefinition GetAchievementByUID(UID uid)
 		{
-			return Achievements.FirstOrDefault(a => a.UID == uid);
+			return Achievements.FirstOrDefault(a => a.UniqueID == uid);
 		}
 		
 		/// <summary>
@@ -146,7 +146,7 @@ namespace GameplayCore.MetaData.Achievements
 		/// </summary>
 		public List<AchievementDefinition> GetDependentAchievements(AchievementDefinition achievement)
 		{
-			return Achievements.Where(a => a.PrerequisiteAchievements != null && a.PrerequisiteAchievements.Contains(achievement.UID)).ToList();
+			return Achievements.Where(a => a.PrerequisiteAchievements != null && a.PrerequisiteAchievements.Contains(achievement.UniqueID)).ToList();
 		}
 		
 		/// <summary>
@@ -212,7 +212,7 @@ namespace GameplayCore.MetaData.Achievements
 		{
 			if (Achievements.Count == 0) return 0f;
 			
-			int completedCount = Achievements.Count(a => completedAchievements.Contains(a.UID));
+			int completedCount = Achievements.Count(a => completedAchievements.Contains(a.UniqueID));
 			return (float)completedCount / Achievements.Count * 100f;
 		}
 		
@@ -224,7 +224,7 @@ namespace GameplayCore.MetaData.Achievements
 			var typeAchievements = GetAchievementsByType(type);
 			if (typeAchievements.Count == 0) return 0f;
 			
-			int completedCount = typeAchievements.Count(a => completedAchievements.Contains(a.UID));
+			int completedCount = typeAchievements.Count(a => completedAchievements.Contains(a.UniqueID));
 			return (float)completedCount / typeAchievements.Count * 100f;
 		}
 	}

@@ -14,9 +14,6 @@ namespace GameplayCore.MetaData.DailyChallenges
 	public class DailyChallengeDefinition : MetaDataAsset
 	{
 		[Header("Identification")]
-		[Tooltip("Unique identifier for this challenge")]
-		public UID UID;
-		
 		[Tooltip("Unique string ID for this challenge")]
 		public string ChallengeID;
 		
@@ -174,7 +171,7 @@ namespace GameplayCore.MetaData.DailyChallenges
 			return elapsedTime < EarlyCompletionTimeLimit * 3600f; // Convert hours to seconds
 		}
 
-		public UID UniqueID => UID;
+		public UID UniqueID => this;
 	}
 	
 	/// <summary>

@@ -13,9 +13,6 @@ namespace GameplayCore.MetaData.Difficulty
 	public class DifficultyDefinition : MetaDataAsset
 	{
 		[Header("Identification")]
-		[Tooltip("Unique identifier for this difficulty")]
-		public UID UID;
-		
 		[Tooltip("Display name for the difficulty")]
 		public string DisplayName;
 		
@@ -205,6 +202,6 @@ namespace GameplayCore.MetaData.Difficulty
 			return DifficultyLevel + (levelProgress * DifficultyIncreasePerLevel * 10f);
 		}
 
-		public UID UniqueID => UID;
+		public UID UniqueID => this;
 	}
 }
