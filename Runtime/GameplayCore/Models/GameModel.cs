@@ -42,19 +42,42 @@ namespace GameplayCore.Models
 
 		[SerializeField] private string _version;
 
-		[NonSerialized] private IMetaDataRepository _metaDataRepository;
+		[NonSerialized] private static readonly PrefsProperty<GameModel> _prefs = new("UGFW_GAME_MODEL");
 
-		[NonSerialized] private bool _isDirty;
+		[NonSerialized] private IMetaDataRepository _metaDataRepository;
 
 		[NonSerialized]
 		private Dictionary<TransactionType, List<Transaction>> _transactionCollection;
 
 		public IMetaDataRepository                            MetaDataRepository => _metaDataRepository;
 		public Dictionary<TransactionType, List<Transaction>> Transactions       => _transactionCollection;
-		public bool                                           IsDirty            => _isDirty;
 
 		/// <summary>
-		/// Initializes the GameModel. Loads from save if available, resolves UIDs, and credits pending transactions.
+		/// Loads the GameModel from prefs. Returns a fresh instance if no save exists.
+		/// </summary>
+		public static GameModel Load() => _prefs.Read() ?? new GameModel();
+
+		/// <summary>
+		/// Deletes all saved data.
+		/// </summary>
+		public static void DeleteSave() => _prefs.Reset();
+
+		/// <summary>
+		/// Checks if any save data exists.
+		/// </summary>
+		public static bool HasSave() => UniPrefs.HasKey("UGFW_GAME_MODEL");
+
+		/// <summary>
+		/// Persists the model to prefs.
+		/// </summary>
+		public void Commit()
+		{
+			SessionEndTime = GetFormattedTime(DateTime.UtcNow);
+			_prefs.Save(this);
+		}
+
+		/// <summary>
+		/// Initializes the GameModel. Resolves UIDs and credits pending transactions.
 		/// </summary>
 		/// <param name="metaDataRepository">The metadata repository for UID resolution.</param>
 		/// <param name="isFirstLaunch">True if this is the first time the game has been launched (no save data).</param>
@@ -122,14 +145,14 @@ namespace GameplayCore.Models
 		{
 			if (currency == null || _currencies.Contains(currency)) return;
 			_currencies.Add(currency);
-			MarkDirty();
+			Commit();
 		}
 
 		public bool RemoveCurrency(CurrencyModel currency)
 		{
 			if (_currencies.Remove(currency))
 			{
-				MarkDirty();
+				Commit();
 				return true;
 			}
 			return false;
@@ -141,7 +164,7 @@ namespace GameplayCore.Models
 			{
 				Debug.Log($"Migrating GameModel from version {SaveVersion} to {CURRENT_SAVE_VERSION}");
 				SaveVersion = CURRENT_SAVE_VERSION;
-				MarkDirty();
+				Commit();
 			}
 		}
 
@@ -151,46 +174,6 @@ namespace GameplayCore.Models
 			{
 				transaction.ResolveUID(_metaDataRepository);
 			}
-		}
-
-		/// <summary>
-		/// Marks the model as modified. Call Commit() to persist.
-		/// </summary>
-		public void MarkDirty()
-		{
-			_isDirty = true;
-		}
-
-		/// <summary>
-		/// Persists the model to disk if it has been modified since the last save.
-		/// </summary>
-		public void Commit()
-		{
-			if (!_isDirty) return;
-
-			DateTime now = DateTime.UtcNow;
-			SessionEndTime = now.ToString("O");
-			GameSaveService.Save(this);
-			_isDirty = false;
-		}
-
-		/// <summary>
-		/// Forces a save to disk regardless of dirty state.
-		/// </summary>
-		public void ForceCommit()
-		{
-			DateTime now = DateTime.UtcNow;
-			SessionEndTime = now.ToString("O");
-			GameSaveService.Save(this);
-			_isDirty = false;
-		}
-
-		public void CommitSessionEndTime()
-		{
-			DateTime now = DateTime.UtcNow;
-			SessionEndTime = now.ToString("O");
-			MarkDirty();
-			Commit();
 		}
 
 		public void AppendLevelCompleteRewards(List<UID> ids)
@@ -210,7 +193,7 @@ namespace GameplayCore.Models
 				});
 			}
 
-			if (ids.Count > 0) MarkDirty();
+			if (ids.Count > 0) Commit();
 		}
 
 		public void AppendPurchasedItemTransaction(List<UID> ids)
@@ -230,7 +213,7 @@ namespace GameplayCore.Models
 				});
 			}
 
-			if (ids.Count > 0) MarkDirty();
+			if (ids.Count > 0) Commit();
 		}
 
 		public void CreditPendingTransactions(TransactionType transactionType)
@@ -264,7 +247,7 @@ namespace GameplayCore.Models
 			if (idx != -1)
 			{
 				PendingLevelCompleteRewards.RemoveAt(idx);
-				MarkDirty();
+				Commit();
 			}
 		}
 
@@ -313,7 +296,7 @@ namespace GameplayCore.Models
 			{
 				transactions.RemoveAt(idx);
 				Debug.LogWarning($"Orphaned transaction removed from {transactionType} — UID was null or empty");
-				MarkDirty();
+				Commit();
 				return;
 			}
 
@@ -323,14 +306,14 @@ namespace GameplayCore.Models
 				transactions.RemoveAt(idx);
 				Debug.LogWarning($"Orphaned transaction removed from {transactionType}. " +
 				                 $"UID '{rewardUID.Id}' not found in Reward Registry.");
-				MarkDirty();
+				Commit();
 				return;
 			}
 
 			ApplyReward(rewardDefinition);
 
 			transactions.RemoveAt(idx);
-			MarkDirty();
+			Commit();
 		}
 
 		private void ApplyReward(RewardDefinition reward)
