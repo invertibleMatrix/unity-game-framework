@@ -1,7 +1,4 @@
-﻿using System.Collections.Generic;
-using UnityEngine.Events;
-
-namespace AK.Core
+﻿namespace AK.Core
 {
 	/// <summary>
 	/// <see cref="PrefsProperty{TProp}"/> is a wrapper around <see cref="UniPrefs"/>'s API
@@ -10,11 +7,11 @@ namespace AK.Core
 	/// <typeparam name="T">TypeOf property to wrap around, Make sure It's Serializable</typeparam>
 	public sealed class PrefsProperty<T>
 	{
-		private T m_Current = default;
-		private bool m_IsSyncWithPrefs = false;
+		private T _current = default;
+		private bool _isSyncWithPrefs = false;
 		
-		private readonly T m_Default = default;
-		private readonly string m_SaveKey = default;
+		private readonly T _default = default;
+		private readonly string _saveKey = default;
 
 		/// <summary>
 		/// Create & Returns the InstanceOf <see cref="PrefsProperty{TProp}"/> with the given SaveKey...
@@ -23,11 +20,11 @@ namespace AK.Core
 		/// <param name="default">Default Value To Save On Creation...</param>
 		public PrefsProperty(string saveKey, T @default = default)
 		{
-			m_SaveKey = saveKey;
-			m_Default = @default;
+			_saveKey = saveKey;
+			_default = @default;
 			
-			m_Current = @default;
-			m_IsSyncWithPrefs = false;
+			_current = @default;
+			_isSyncWithPrefs = false;
 
 			UniPrefs.OnReset += Reset;
 		}
@@ -36,17 +33,17 @@ namespace AK.Core
 
 		/// <summary>
 		/// <see cref="Save"/> is going to save the given data in <see cref="UniPrefs"/>
-		/// & also update <see cref="m_Current"/> runtime state...
+		/// & also update <see cref="_current"/> runtime state...
 		/// </summary>
 		public void Save(T toSave = default)
 		{
 			if (toSave is not null)
 			{
-				m_Current = toSave;
+				_current = toSave;
 			}
 
-			m_IsSyncWithPrefs = true;
-			UniPrefs.Set(m_SaveKey, m_Current);
+			_isSyncWithPrefs = true;
+			UniPrefs.Set(_saveKey, _current);
 		}
 
 		/// <summary>
@@ -55,10 +52,10 @@ namespace AK.Core
 		/// <returns>returns save data if exists...</returns>
 		public T Read()
 		{
-			if (m_IsSyncWithPrefs) return m_Current;
+			if (_isSyncWithPrefs) return _current;
 
-			m_IsSyncWithPrefs = true;
-			return m_Current = UniPrefs.Get(m_SaveKey, m_Current);
+			_isSyncWithPrefs = true;
+			return _current = UniPrefs.Get(_saveKey, _current);
 		}
 
 		/// <summary>
@@ -66,27 +63,27 @@ namespace AK.Core
 		/// </summary>
 		public void Reset()
 		{
-			if (UniPrefs.HasKey(m_SaveKey))
+			if (UniPrefs.HasKey(_saveKey))
 			{
-				UniPrefs.Delete(m_SaveKey);
+				UniPrefs.Delete(_saveKey);
 			}
 			
-			m_Current = m_Default;
-			m_IsSyncWithPrefs = false;
+			_current = _default;
+			_isSyncWithPrefs = false;
 		}
 
 		/// <summary>
-		/// <see cref="ToString"/> override for <see cref="PrefsProperty{TProp}"/> which converts <see cref="m_Current"/>'s
+		/// <see cref="ToString"/> override for <see cref="PrefsProperty{TProp}"/> which converts <see cref="_current"/>'s
 		/// <see cref="ToString"/> & Returns...
 		/// </summary>
 		/// <returns></returns>
 		public override string ToString()
 		{
-			return m_Current == null ? string.Empty : m_Current.ToString();
+			return _current == null ? string.Empty : _current.ToString();
 		}
 
 		/// <summary>
-		/// an implicit operator overload to get <see cref="m_Current"/> state of this property...
+		/// an implicit operator overload to get <see cref="_current"/> state of this property...
 		/// </summary>
 		public static implicit operator T(PrefsProperty<T> property) => property.Read();
 	}

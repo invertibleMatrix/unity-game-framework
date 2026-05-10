@@ -14,7 +14,7 @@ namespace GameplayCore.Models
 		[SerializeField] private string _uidID;
 		[SerializeField] private string _uidName; // Fallback: asset name for recovery if GUID changed
 
-		public DateTime TimeDT => GameModel.GetDataTimeFromString(Time);
+		public DateTime TimeDT => GameModel.GetDateTimeFromString(Time);
 
 		public void OnBeforeSerialize()
 		{

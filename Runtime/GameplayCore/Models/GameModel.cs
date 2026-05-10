@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -6,7 +6,6 @@ using AK.Core;
 using GameplayCore.MetaData;
 using GameplayCore.MetaData.Currency;
 using GameplayCore.MetaData.Rewards;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace GameplayCore.Models
@@ -14,9 +13,6 @@ namespace GameplayCore.Models
 	[Serializable]
 	public class GameModel : EntityModel, ISerializationCallbackReceiver
 	{
-		
-		private readonly PrefsProperty<GameModel> _model = new("SAVE_FILE", new GameModel());
-		
 		public const int CURRENT_SAVE_VERSION = 1;
 
 		public int  SaveVersion     = 1;
@@ -25,7 +21,7 @@ namespace GameplayCore.Models
 		public int  CurrentDay      = 1;
 		public int  LastPlayedLevel = -1;
 		public int  TotalStars      = 0;
-		public bool AudioEnabled = true;
+		public bool AudioEnabled    = true;
 		public bool VibrationEnabled = true;
 
 		public string SessionStartTime = GetFormattedTime(DateTime.UtcNow);
@@ -34,27 +30,34 @@ namespace GameplayCore.Models
 		public GameSettingsModel GameSettingsModel = new();
 		public GameStateModel    GameStateModel    = new();
 
-		public List<Transaction> PendingLevelCompleteRewards = new();
+		public List<Transaction> PendingLevelCompleteRewards     = new();
+		public List<Transaction> PendingPurchasableTransactions = new();
 
-		public DateTime SessionStartTimeDT => GetDataTimeFromString(SessionStartTime);
-		public DateTime SessionEndTimeDT   => GetDataTimeFromString(SessionEndTime);
+		public DateTime SessionStartTimeDT => GetDateTimeFromString(SessionStartTime);
+		public DateTime SessionEndTimeDT   => GetDateTimeFromString(SessionEndTime);
 
-		[ShowInInspector, NonSerialized]
-		private List<CurrencyModel> _currencies = new();
+		[NonSerialized] private List<CurrencyModel> _currencies = new();
 
 		[SerializeField] private List<SerializableCurrency> _serializedCurrencies = new();
 
-		[SerializeField] private List<Transaction> _pendingPurchasableTransactions = new();
-
 		[SerializeField] private string _version;
 
-		private IMetaDataRepository _metaDataRepository;
+		[NonSerialized] private IMetaDataRepository _metaDataRepository;
 
+		[NonSerialized] private bool _isDirty;
+
+		[NonSerialized]
 		private Dictionary<TransactionType, List<Transaction>> _transactionCollection;
 
 		public IMetaDataRepository                            MetaDataRepository => _metaDataRepository;
 		public Dictionary<TransactionType, List<Transaction>> Transactions       => _transactionCollection;
+		public bool                                           IsDirty            => _isDirty;
 
+		/// <summary>
+		/// Initializes the GameModel. Loads from save if available, resolves UIDs, and credits pending transactions.
+		/// </summary>
+		/// <param name="metaDataRepository">The metadata repository for UID resolution.</param>
+		/// <param name="isFirstLaunch">True if this is the first time the game has been launched (no save data).</param>
 		public void Initialize(IMetaDataRepository metaDataRepository, out bool isFirstLaunch)
 		{
 			_metaDataRepository = metaDataRepository;
@@ -62,15 +65,7 @@ namespace GameplayCore.Models
 			SessionStartTime = now.ToString("O");
 			CurrentSession++;
 
-			if (string.IsNullOrEmpty(_version))
-			{
-				isFirstLaunch = true;
-			}
-			else
-			{
-				isFirstLaunch = false;
-			}
-
+			isFirstLaunch = string.IsNullOrEmpty(_version);
 			_version = Application.version;
 
 			if (TryGetSessionEndTime(out DateTime lastSessionTime))
@@ -85,23 +80,15 @@ namespace GameplayCore.Models
 			_transactionCollection = new()
 			{
 				{ TransactionType.LevelCompleteTransaction, PendingLevelCompleteRewards },
-				{ TransactionType.PurchasableItem, _pendingPurchasableTransactions },
+				{ TransactionType.PurchasableItem, PendingPurchasableTransactions },
 			};
 
 			ResolveTransactionUIDs(PendingLevelCompleteRewards);
-			ResolveTransactionUIDs(_pendingPurchasableTransactions);
+			ResolveTransactionUIDs(PendingPurchasableTransactions);
 
 			foreach (var currency in _currencies)
 			{
 				currency.ResolveUID(_metaDataRepository);
-				if (currency.UniqueID != null)
-				{
-					// var def = _metaDataRepository.CurrencyMeta.Registry.GetObjectByUID(currency.UniqueID);
-					// if (def != null)
-					// {
-					// 	currency.SetDefinition(def);
-					// }
-				}
 			}
 
 			Migrate();
@@ -112,7 +99,7 @@ namespace GameplayCore.Models
 
 			Commit();
 		}
-		
+
 		public CurrencyModel GetCurrencyModel(CurrencyDefinition definition)
 		{
 			if (definition == null) return null;
@@ -121,12 +108,31 @@ namespace GameplayCore.Models
 
 		public CurrencyModel GetCurrencyModel(CurrencyType currencyType)
 		{
-			return _currencies.FirstOrDefault(x => x.CurrencyDefinition.Type == currencyType);
+			return _currencies.FirstOrDefault(x => x.CurrencyDefinition?.Type == currencyType);
 		}
 
-		public CurrencyModel GetCurrencyModel(Func<CurrencyModel, bool> cPredicate)
+		public CurrencyModel GetCurrencyModel(Func<CurrencyModel, bool> predicate)
 		{
-			return _currencies.FirstOrDefault(cPredicate);
+			return _currencies.FirstOrDefault(predicate);
+		}
+
+		public IReadOnlyList<CurrencyModel> GetAllCurrencies() => _currencies;
+
+		public void AddCurrency(CurrencyModel currency)
+		{
+			if (currency == null || _currencies.Contains(currency)) return;
+			_currencies.Add(currency);
+			MarkDirty();
+		}
+
+		public bool RemoveCurrency(CurrencyModel currency)
+		{
+			if (_currencies.Remove(currency))
+			{
+				MarkDirty();
+				return true;
+			}
+			return false;
 		}
 
 		private void Migrate()
@@ -135,7 +141,7 @@ namespace GameplayCore.Models
 			{
 				Debug.Log($"Migrating GameModel from version {SaveVersion} to {CURRENT_SAVE_VERSION}");
 				SaveVersion = CURRENT_SAVE_VERSION;
-				Commit();
+				MarkDirty();
 			}
 		}
 
@@ -147,18 +153,43 @@ namespace GameplayCore.Models
 			}
 		}
 
+		/// <summary>
+		/// Marks the model as modified. Call Commit() to persist.
+		/// </summary>
+		public void MarkDirty()
+		{
+			_isDirty = true;
+		}
+
+		/// <summary>
+		/// Persists the model to disk if it has been modified since the last save.
+		/// </summary>
 		public void Commit()
+		{
+			if (!_isDirty) return;
+
+			DateTime now = DateTime.UtcNow;
+			SessionEndTime = now.ToString("O");
+			GameSaveService.Save(this);
+			_isDirty = false;
+		}
+
+		/// <summary>
+		/// Forces a save to disk regardless of dirty state.
+		/// </summary>
+		public void ForceCommit()
 		{
 			DateTime now = DateTime.UtcNow;
 			SessionEndTime = now.ToString("O");
-
-			_model.Save(this);
+			GameSaveService.Save(this);
+			_isDirty = false;
 		}
 
 		public void CommitSessionEndTime()
 		{
 			DateTime now = DateTime.UtcNow;
 			SessionEndTime = now.ToString("O");
+			MarkDirty();
 			Commit();
 		}
 
@@ -166,36 +197,40 @@ namespace GameplayCore.Models
 		{
 			foreach (UID uid in ids)
 			{
-				if (uid.IsEmpty())
+				if (uid == null || uid.IsEmpty())
 				{
-					Debug.Log($"UID for {uid} is empty");
+					Debug.LogWarning("Cannot append reward with empty UID");
 					continue;
 				}
 
-				PendingLevelCompleteRewards.Add(new Transaction()
+				PendingLevelCompleteRewards.Add(new Transaction
 				{
 					UID = uid,
 					Time = GetFormattedTime(DateTime.UtcNow)
 				});
 			}
+
+			if (ids.Count > 0) MarkDirty();
 		}
 
 		public void AppendPurchasedItemTransaction(List<UID> ids)
 		{
 			foreach (UID uid in ids)
 			{
-				if (uid.IsEmpty())
+				if (uid == null || uid.IsEmpty())
 				{
-					Debug.Log($"UID for {uid} is empty");
+					Debug.LogWarning("Cannot append purchased item with empty UID");
 					continue;
 				}
 
-				_pendingPurchasableTransactions.Add(new Transaction()
+				PendingPurchasableTransactions.Add(new Transaction
 				{
 					UID = uid,
 					Time = GetFormattedTime(DateTime.UtcNow)
 				});
 			}
+
+			if (ids.Count > 0) MarkDirty();
 		}
 
 		public void CreditPendingTransactions(TransactionType transactionType)
@@ -210,17 +245,15 @@ namespace GameplayCore.Models
 							CreditPendingReward(TransactionType.LevelCompleteTransaction, transaction.UID);
 						}
 					}
-
 					break;
 				case TransactionType.PurchasableItem:
-					if (_pendingPurchasableTransactions.Count > 0)
+					if (PendingPurchasableTransactions.Count > 0)
 					{
-						foreach (Transaction transaction in _pendingPurchasableTransactions.ToList())
+						foreach (Transaction transaction in PendingPurchasableTransactions.ToList())
 						{
 							CreditPendingReward(TransactionType.PurchasableItem, transaction.UID);
 						}
 					}
-
 					break;
 			}
 		}
@@ -231,6 +264,7 @@ namespace GameplayCore.Models
 			if (idx != -1)
 			{
 				PendingLevelCompleteRewards.RemoveAt(idx);
+				MarkDirty();
 			}
 		}
 
@@ -251,7 +285,7 @@ namespace GameplayCore.Models
 			return false;
 		}
 
-		public static DateTime GetDataTimeFromString(string dt)
+		public static DateTime GetDateTimeFromString(string dt)
 		{
 			if (DateTime.TryParse(dt, null, DateTimeStyles.RoundtripKind, out DateTime time))
 			{
@@ -278,43 +312,83 @@ namespace GameplayCore.Models
 			if (rewardUID == null || rewardUID.IsEmpty())
 			{
 				transactions.RemoveAt(idx);
-				Debug.LogWarning($"Orphaned transaction removed from {transactionType} - UID was null or empty");
+				Debug.LogWarning($"Orphaned transaction removed from {transactionType} — UID was null or empty");
+				MarkDirty();
 				return;
 			}
 
 			var rewardDefinition = _metaDataRepository.RewardsMeta.Registry.GetObjectByUID(rewardUID);
 			if (rewardDefinition == null)
 			{
-				// Gracefully handle orphaned transaction - remove it so player isn't stuck
 				transactions.RemoveAt(idx);
 				Debug.LogWarning($"Orphaned transaction removed from {transactionType}. " +
-				                 $"UID '{rewardUID.Id}' (name: '{rewardUID.name}') not found in Reward Registry. " +
-				                 $"The reward asset may have been deleted or its GUID changed.");
+				                 $"UID '{rewardUID.Id}' not found in Reward Registry.");
+				MarkDirty();
 				return;
 			}
 
-			Debug.Log($"CreditPendingReward {rewardDefinition.DisplayName} {rewardDefinition.Amount}");
-			switch (rewardDefinition.Type)
+			ApplyReward(rewardDefinition);
+
+			transactions.RemoveAt(idx);
+			MarkDirty();
+		}
+
+		private void ApplyReward(RewardDefinition reward)
+		{
+			switch (reward.Type)
 			{
-				case RewardType.Subscription:
-					// Should be handled by Subscription System internally
-					break;
 				case RewardType.Star:
-					// Handled internally
+					TotalStars += reward.Amount;
 					break;
-				case RewardType.Gacha:
-					// Handled by exploding the gacha and crediting those rewards as outcomes e.g Boosters, Powerups, Coins, Gems
+
+				case RewardType.Currency:
+					if (reward.CurrencyDefinition != null)
+					{
+						var currencyModel = GetCurrencyModel(reward.CurrencyDefinition);
+						if (currencyModel != null)
+						{
+							currencyModel.Add(reward.Amount);
+						}
+						else
+						{
+							Debug.LogWarning($"No CurrencyModel found for {reward.CurrencyDefinition.DisplayName}");
+						}
+					}
 					break;
-				case RewardType.Unlockable:
-					// No Use currently
-					break;
+
 				case RewardType.Bundle:
-					Debug.LogError("Exploded bundle was not passed in as reward def!");
+					if (reward.Bundle != null)
+					{
+						foreach (var subReward in reward.Bundle.GetAllRewardsRecursive())
+						{
+							ApplyReward(subReward);
+						}
+					}
+					break;
+
+				case RewardType.Gacha:
+					if (reward.GachaBundle != null)
+					{
+						var gachaResults = reward.GachaBundle.EvaluateRewards();
+						foreach (var gachaReward in gachaResults)
+						{
+							ApplyReward(gachaReward);
+						}
+					}
+					break;
+
+				case RewardType.Subscription:
+				case RewardType.Unlockable:
+				case RewardType.Powerup:
+				case RewardType.Booster:
+				case RewardType.Live:
+				case RewardType.NoAds:
+					// These reward types require game-specific handling.
+					// Consumers should listen to OnRewardApplied or override in a subclass.
 					break;
 			}
 
-			transactions.RemoveAt(idx);
-			Commit();
+			Debug.Log($"Reward applied: {reward.DisplayName} ({reward.Type}) x{reward.Amount}");
 		}
 
 		public void OnBeforeSerialize()
@@ -324,7 +398,7 @@ namespace GameplayCore.Models
 			{
 				var serializableCurrency = new SerializableCurrency
 				{
-					TypeName = currency.GetType().FullName,
+					TypeName = currency.GetType().AssemblyQualifiedName,
 					Data = JsonUtility.ToJson(currency)
 				};
 				_serializedCurrencies.Add(serializableCurrency);
@@ -339,7 +413,15 @@ namespace GameplayCore.Models
 				var type = Type.GetType(serializableCurrency.TypeName);
 				if (type != null)
 				{
-					CurrencyModel currency = (CurrencyModel)JsonUtility.FromJson(serializableCurrency.Data, type);
+					var currency = (CurrencyModel)JsonUtility.FromJson(serializableCurrency.Data, type);
+					_currencies.Add(currency);
+				}
+				else
+				{
+					Debug.LogWarning($"Could not resolve CurrencyModel type: {serializableCurrency.TypeName}. " +
+					                 "Using base CurrencyModel.");
+					var currency = new CurrencyModel();
+					JsonUtility.FromJsonOverwrite(serializableCurrency.Data, currency);
 					_currencies.Add(currency);
 				}
 			}
