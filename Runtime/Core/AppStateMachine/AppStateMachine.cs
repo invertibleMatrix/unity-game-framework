@@ -1,37 +1,34 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Reflex.Attributes;
 using Reflex.Core;
-using Sirenix.OdinInspector;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using AK.Core.Extensions;
 
 namespace AK.Core
 {
 	public sealed class AppStateMachine : MonoBehaviour, IAppStateMachine
 	{
-		[ShowInInspector] private AppState _currentState;
-
 		[SerializeField] private AppState _bootState;
 
 		[Inject] private readonly Container _container;
 
+		private AppState _currentState;
+		private AppState _previousState;
 		private readonly List<AppState> _pausedStates = new();
+
+		public AppState PreviousState => _previousState;
 
 		private void Awake()
 		{
-			Debug.Log("Application Entry!");
 			if (_bootState == null)
 			{
 				Debug.LogError("No Boot State Provided, Halting!");
+				enabled = false;
 				return;
 			}
-
-			_currentState = _bootState;
-			Debug.Log($"App: {_currentState.GetType()} OnEnter State");
 		}
 
-		//Booting In Start so that all the objects in the scene have been loaded
+		// Booting in Start so that all objects in the scene have been loaded
 		private void Start()
 		{
 			Boot();
@@ -39,15 +36,16 @@ namespace AK.Core
 
 		private void Boot()
 		{
+			_currentState = _bootState;
 			_bootState.Inject(_container);
 			_bootState._appStateMachine = this;
-			_bootState.SetContext(null);
+			_bootState.SetContext(new TransitionContext());
 			_bootState.OnEnter();
 		}
 
 		private void Update()
 		{
-			if (_currentState)
+			if (_currentState != null)
 			{
 				_currentState.Tick();
 			}
@@ -60,56 +58,45 @@ namespace AK.Core
 #endif
 		}
 
-		[Button]
-		public void Restart()
-		{
-			_currentState.OnExit();
-			SceneManager.LoadScene(0);
-		}
-
 		public void ChangeState(AppState appState, bool pauseCurrent = false, TransitionContext context = null)
 		{
 			if (appState == null)
 			{
-				Debug.LogError("App: appState is null");
+				Debug.LogError("AppStateMachine: appState is null");
 				return;
 			}
-			
-			if (_currentState != null)
+
+			_previousState = _currentState;
+
+			if (pauseCurrent)
 			{
-				Debug.Log($"{_currentState.GetType()} OnExit State");
-				if (pauseCurrent)
-				{
-					_currentState.OnPause();
-					_pausedStates.Add(_currentState);
-				}
-				else
-				{
-					_currentState.OnExit();
-				}
+				_previousState.OnPause();
+				_pausedStates.Add(_previousState);
+			}
+			else
+			{
+				_previousState?.OnExit();
 			}
 
-			var previousState = _currentState;
 			_currentState = appState;
 			_currentState.Inject(_container);
-			Debug.Log($"App: {_currentState.GetType()} OnEnter State");
 			_currentState._appStateMachine = this;
+
+			context ??= new TransitionContext();
 
 			if (_pausedStates.Contains(_currentState))
 			{
+				_currentState.SetContext(context);
 				_currentState.OnResume();
 				_pausedStates.Remove(_currentState);
 			}
 			else
 			{
-				context ??= new TransitionContext();
-				context.PreviousState = previousState;
 				_currentState.SetContext(context);
 				_currentState.OnEnter();
 			}
 		}
 
-		[Button]
 		public void TryGoBack()
 		{
 			if (_pausedStates.Count > 0)

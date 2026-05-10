@@ -1,4 +1,4 @@
-﻿using Reflex.Attributes;
+using Reflex.Attributes;
 using Reflex.Core;
 using UnityEngine;
 
@@ -23,7 +23,7 @@ namespace AK.Core
 		public virtual void OnResume() { }
 
 		public virtual void Tick() { }
-		
+
 		public virtual void SetContext(TransitionContext context)
 		{
 			_context = context;
@@ -42,14 +42,7 @@ namespace AK.Core
 			}
 			else
 			{
-				// Context is null or a base TransitionContext — create the specialized type
-				// and carry over PreviousState so it's never lost.
-				var newContext = new TTransitionContext();
-				if (context != null)
-				{
-					newContext.PreviousState = context.PreviousState;
-				}
-				base._context = newContext;
+				base._context = new TTransitionContext();
 			}
 		}
 	}

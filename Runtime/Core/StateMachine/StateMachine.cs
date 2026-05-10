@@ -1,136 +1,55 @@
-﻿using System.Collections;
-using UnityEngine;
+using System;
 
 namespace AK.StateMachine
 {
     public sealed class StateMachine<TMediator, TBaseState> where TBaseState : BaseState<TMediator>, new()
     {
-        private TMediator  _mediator;
-        private TBaseState _mainState;
+        private readonly TMediator _mediator;
+        private readonly TBaseState _initialState;
+
         private TBaseState _currentState;
+        private bool _disposed;
 
-        private bool _isTransitioning;
-
-        // NOTE: Don't call this one inside this class
-        public TBaseState ActiveState
-        {
-            get
-            {
-                // If state hasn't Booted yet then assign it to the main state instance to avoid null ref
-                if (_currentState == null)
-                {
-                    _currentState = _mainState;
-                }
-
-                return _currentState;
-            }
-        }
+        public TBaseState CurrentState => _currentState;
 
         public StateMachine(TMediator mediator)
         {
             _mediator = mediator;
-            _mainState = new TBaseState
-            {
-                _mediator = _mediator
-            };
+            _initialState = new TBaseState { _mediator = _mediator };
+            _currentState = _initialState;
+            _currentState.OnEnter();
         }
 
         public void Tick()
         {
-            if (_currentState != null && !_isTransitioning)
+            if (_currentState != null && !_disposed)
             {
                 _currentState.Tick();
             }
         }
 
-        public void ChangeState(TBaseState newState, bool transition = false)
+        public void ChangeState(TBaseState newState)
         {
+            if (_disposed) return;
+
             if (newState == null)
-            {
-                Debug.LogError("newState is null");
-                return;
-            }
+                throw new ArgumentNullException(nameof(newState));
 
-            // if (_currentState != null && _currentState == newState)
-            // {
-            //     Debug.Log($"{_currentState.GetType()} is same, Needs attention");
-            // }
-
-            if (_currentState != null)
-            {
-                _currentState.OnExit();
-            }
+            _currentState?.OnExit();
 
             _currentState = newState;
             _currentState._mediator = _mediator;
-            _currentState.OnEnter(transition);
-        }
-
-        public IEnumerator Transition(TBaseState newState, StateTransition<TMediator> transitionPreEnter = null,
-                                      StateTransition<TMediator> transitionPreExit = null)
-        {
-            if (newState == null)
-            {
-                Debug.LogError("newState is null");
-                yield break;
-            }
-
-            if (_currentState != null && _currentState == newState)
-            {
-                Debug.Log($"{_currentState.GetType()} is same, skipping!");
-                yield break;
-            }
-
-            if (transitionPreEnter == null && transitionPreExit == null)
-            {
-                yield break;
-            }
-
-            _isTransitioning = true;
-
-            if (transitionPreExit != null)
-            {
-                transitionPreExit._mediator = _mediator;
-                yield return transitionPreExit.Execute();
-            }
-
-            if (_currentState != null && _currentState != newState)
-            {
-                Debug.Log($"{_currentState.GetType()} OnExit Via Transition");
-                _currentState.OnExit();
-            }
-
-            if (transitionPreEnter != null)
-            {
-                transitionPreEnter._mediator = _mediator;
-                yield return transitionPreEnter.Execute();
-            }
-
-            if (_currentState != null && _currentState != newState)
-            {
-                _currentState = newState;
-                Debug.Log($"{_currentState.GetType()} OnEnter Via Transition");
-                _currentState.OnEnter(false);
-            }
-            else
-            {
-                Debug.LogError("Alert! This should have never happened!");
-            }
-
-            _isTransitioning = false;
-        }
-
-        public StateTransition<TMediator> SkipOneFrame()
-        {
-            return new StateTransition<TMediator>();
+            _currentState.OnEnter();
         }
 
         public void Dispose()
         {
-            if (_currentState != null)
-            {
-                _currentState.OnExit();
-            }
+            if (_disposed) return;
+
+            _disposed = true;
+            _currentState?.OnExit();
+            _currentState?.Dispose();
+            _currentState = null;
         }
     }
 }

@@ -1,7 +1,4 @@
-﻿namespace AK.Core
+namespace AK.Core
 {
-	public class TransitionContext
-	{
-		public AppState PreviousState;
-	}
+	public class TransitionContext { }
 }
