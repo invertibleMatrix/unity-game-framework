@@ -1,5 +1,3 @@
-#define ADMOB_ENABLED
-
 using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;

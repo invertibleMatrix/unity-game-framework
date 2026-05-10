@@ -1,5 +1,3 @@
-// #define GAME_ANALYTICS
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
