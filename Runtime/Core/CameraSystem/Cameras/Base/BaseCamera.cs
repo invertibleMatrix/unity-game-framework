@@ -29,7 +29,7 @@ namespace AK.CameraSystem
 		public Camera     Camera     => _camera;
 		public GameObject GameObject => gameObject;
 
-		public virtual Type DefaultBaseCameraType => GetType();
+		public virtual Type DefaultBaseCameraType => typeof(BaseCamera);
 
 #if UNITY_EDITOR
 		protected virtual void OnValidate()
