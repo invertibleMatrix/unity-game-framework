@@ -6,6 +6,7 @@ using GameplayCore.MetaData;
 using GameplayCore.MetaData.Notifications;
 using UnityEngine;
 
+#if UNITY_NOTIFICATIONS
 #if UNITY_ANDROID
 using Unity.Notifications.Android;
 #endif
@@ -13,9 +14,11 @@ using Unity.Notifications.Android;
 #if UNITY_IOS
 using Unity.Notifications.iOS;
 #endif
+#endif
 
 namespace AK.Services
 {
+#if UNITY_NOTIFICATIONS
 	/// <summary>
 	/// Main Notification Service implementation using Unity's Mobile Notifications package.
 	/// Provides a unified API for scheduling and managing native notifications across Android and iOS.
@@ -799,4 +802,5 @@ namespace AK.Services
 #endif
 		}
 	}
+#endif
 }

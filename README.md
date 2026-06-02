@@ -20,6 +20,16 @@ Install these via Unity Package Manager or OpenUPM:
 - **Addressables** - `com.unity.addressables` 2.11+
 - **Cinemachine** - `com.unity.cinemachine` 3.1+
 
+### Required Scripting Define Symbol
+
+After installing all dependencies, add the following scripting define symbol in **Edit → Project Settings → Player → Scripting Define Symbols**:
+
+```
+UNITASK_DOTWEEN_SUPPORT
+```
+
+This is required for UniTask's DOTween extensions (`Tween.ToUniTask()`) which UGFW's animation system depends on.
+
 ## Optional Dependencies
 
 These enable additional service implementations. Toggle them via **Tools > UGFW > Define Symbols**:
@@ -30,7 +40,7 @@ These enable additional service implementations. Toggle them via **Tools > UGFW 
 - **Firebase Analytics** - Enables Firebase analytics provider (`FIREBASE_ANALYTICS`)
 - **Firebase Remote Config** - Enables remote config service (`FIREBASE_REMOTE_CONFIG`)
 - **GameAnalytics** - Enables GameAnalytics provider (`GAME_ANALYTICS`)
-- **Unity Notifications** - Enables notification service
+- **Unity Notifications** - Enables notification service (`UNITY_NOTIFICATIONS`)
 
 ---
 

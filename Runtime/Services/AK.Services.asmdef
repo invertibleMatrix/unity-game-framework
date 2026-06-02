@@ -4,11 +4,7 @@
     "references": [
         "AK.Core",
         "AK.GameplayCore",
-        "UniTask",
-        "Unity.Notifications.Unified",
-        "Unity.Notifications.Android",
-        "Unity.Notifications.iOS",
-        "Unity.Purchasing"
+        "UniTask"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
@@ -17,6 +13,17 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.notifications",
+            "expression": "",
+            "define": "UNITY_NOTIFICATIONS"
+        },
+        {
+            "name": "com.unity.purchasing",
+            "expression": "",
+            "define": "IAP"
+        }
+    ],
     "noEngineReferences": false
 }

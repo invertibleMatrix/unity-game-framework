@@ -32,6 +32,7 @@ namespace AK.Editor
             new("FIREBASE_REMOTE_CONFIG", "Firebase Remote Config", "Firebase Remote Config SDK (requires Firebase Remote Config package)", "Firebase"),
             new("GAME_ANALYTICS", "GameAnalytics", "GameAnalytics SDK (requires GameAnalytics package)", "Analytics"),
             new("IAP", "Unity IAP", "Unity In-App Purchasing (requires Unity Purchasing package)", "Monetization"),
+            new("UNITY_NOTIFICATIONS", "Unity Notifications", "Unity Mobile Notifications package (requires com.unity.notifications)", "Notifications"),
         };
 
         public static HashSet<string> GetActiveSymbols()
