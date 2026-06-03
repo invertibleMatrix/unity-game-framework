@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using AK.Core;
 using Sirenix.OdinInspector;
 using UnityEngine;
@@ -12,7 +11,7 @@ namespace AK.CoreDomain.RemoteConfig
 	/// This is the main entry point for remote config operations.
 	/// </summary>
 	[CreateAssetMenu(fileName = "RemoteConfigMeta", menuName = "Gameplay/MetaData/RemoteConfig/RemoteConfigMeta")]
-	public class RemoteConfigMeta : MetaDataAsset
+	public class RemoteConfigMeta : MetaDataAsset, IMeta
 	{
 		[SerializeField] private RemoteVariablesRegistry _registry;
 

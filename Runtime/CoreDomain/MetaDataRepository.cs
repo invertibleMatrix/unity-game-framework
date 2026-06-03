@@ -14,40 +14,69 @@ namespace AK.CoreDomain
 	[CreateAssetMenu(fileName = "MetaDataRepository", menuName = "Gameplay/MetaDataRepository")]
 	public class MetaDataRepository : ScriptableObject, IMetaDataRepository
 	{
-		[SerializeField] private UIDRegistry                    _uidRegistry;
+		[SerializeField] private UIDRegistry _uidRegistry;
 
 		[InlineEditor(), SerializeField]
 		private RewardsMeta _rewardsMeta;
-
 		public CurrencyMeta _currencyMeta;
-		
-			                    [InlineEditor(), SerializeField]
-		private AudioIds _audioIds;
 
-		[InlineEditor(), SerializeField]
-		private ParticleIds _particleIds;
-
+		// Type-keyed registry for extensible Meta lookup
+		private readonly Dictionary<System.Type, IMeta> _metaRegistry = new();
 
 		public UIDRegistry  UIDRegistry  => _uidRegistry;
 		public RewardsMeta  RewardsMeta  => _rewardsMeta;
 		public CurrencyMeta CurrencyMeta => _currencyMeta;
-		public AudioIds     AudioIds     => _audioIds;
-		public ParticleIds  ParticleIds  => _particleIds;
 
-		
-		
+		private void OnEnable()
+		{
+			AutoRegisterCoreMetas();
+		}
+
+		/// <summary>
+		/// Auto-registers the serialized core Meta assets into the type-keyed registry.
+		/// </summary>
+		private void AutoRegisterCoreMetas()
+		{
+			if (_rewardsMeta != null)  RegisterMeta(_rewardsMeta);
+			if (_currencyMeta != null) RegisterMeta(_currencyMeta);
+		}
+
+		public void RegisterMeta<T>(T meta) where T : class, IMeta
+		{
+			if (meta == null) return;
+			_metaRegistry[typeof(T)] = meta;
+		}
+
+		public T GetMeta<T>() where T : class, IMeta
+		{
+			return _metaRegistry.TryGetValue(typeof(T), out var meta) ? meta as T : null;
+		}
+
+		public bool TryGetMeta<T>(out T meta) where T : class, IMeta
+		{
+			if (_metaRegistry.TryGetValue(typeof(T), out var m))
+			{
+				meta = m as T;
+				return meta != null;
+			}
+
+			meta = null;
+			return false;
+		}
 
 		public void InitializeRegistries()
 		{
 			_uidRegistry.Initialize();
-			_rewardsMeta.InitializeMeta();
+
+			foreach (var kvp in _metaRegistry)
+			{
+				kvp.Value.InitializeMeta();
+			}
 		}
 
 		public T GetObjectByUID<T>(UID uid) where T : ScriptableObject
 		{
 			if (uid == null || uid.IsEmpty()) return null;
-
-			// Add other types as needed
 
 			return null;
 		}
@@ -57,8 +86,9 @@ namespace AK.CoreDomain
 		public void PerformDataRegistration()
 		{
 			_uidRegistry.RefreshAllUIDs();
-			_rewardsMeta.Registry.RefreshAllObjects();
-			// EditorUtility.SetDirty(_levelDefinitions);
+
+			if (_rewardsMeta != null && _rewardsMeta.Registry != null)
+				_rewardsMeta.Registry.RefreshAllObjects();
 		}
 #endif
 	}

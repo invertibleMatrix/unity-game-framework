@@ -11,7 +11,7 @@ namespace AK.CoreDomain
 	/// Similar to IAPMeta but for analytics events.
 	/// </summary>
 	[CreateAssetMenu(fileName = "AnalyticsMeta", menuName = "Gameplay/MetaData/Analytics/AnalyticsMeta")]
-	public class AnalyticsMeta : MetaDataAsset
+	public class AnalyticsMeta : MetaDataAsset, IMeta
 	{
 		[SerializeField] private AnalyticsRegistry _registry;
 

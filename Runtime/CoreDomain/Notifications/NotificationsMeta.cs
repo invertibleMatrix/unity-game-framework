@@ -11,7 +11,7 @@ namespace AK.CoreDomain.Notifications
 	/// Provides centralized access to notification definitions and filtering capabilities.
 	/// </summary>
 	[CreateAssetMenu(fileName = "NotificationsMeta", menuName = "Gameplay/MetaData/Notifications/NotificationsMeta")]
-	public class NotificationsMeta : ScriptableObject
+	public class NotificationsMeta : ScriptableObject, IMeta
 	{
 		[Header("Registry")]
 		[InlineEditor]
@@ -21,6 +21,11 @@ namespace AK.CoreDomain.Notifications
 		public NotificationsRegistry Registry => _registry;
 
 		public NotificationDefinition DailyRewardNotification;
+
+		public void InitializeMeta()
+		{
+			if (_registry != null) _registry.Initialize();
+		}
 		
 		/// <summary>
 		/// Gets a notification by its UID.

@@ -1,7 +1,7 @@
-﻿using UnityEngine;
+using UnityEngine;
 using AK.Core;
 
-namespace AK.CoreDomain
+namespace AK.Examples
 {
 	[CreateAssetMenu(fileName = "AudioIds", menuName = "Gameplay/MetaData/AudioIds")]
 	public class AudioIds : ScriptableObject

@@ -7,7 +7,7 @@ using UnityEngine;
 namespace AK.CoreDomain
 {
 	[CreateAssetMenu(fileName = "RewardsMeta", menuName = "Gameplay/MetaData/Rewards/RewardsMeta")]
-	public class RewardsMeta : MetaDataAsset
+	public class RewardsMeta : MetaDataAsset, IMeta
 	{
 		[SerializeField] private RewardsRegistry _registry;
 

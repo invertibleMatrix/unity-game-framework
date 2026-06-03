@@ -1172,32 +1172,57 @@ CurrencyMeta (ScriptableObject)
 
 ### The MetaDataRepository
 
-`MetaDataRepository` is a single ScriptableObject that holds references to ALL domain metas:
+`MetaDataRepository` is a single ScriptableObject that holds references to ALL domain metas. It provides both **typed convenience properties** for framework-core domains and a **type-keyed registry** for game-specific domains:
 
 ```csharp
-public class MetaDataRepository : MonoBehaviour, IMetaDataRepository
+public class MetaDataRepository : ScriptableObject, IMetaDataRepository
 {
-    public UIDRegistry        UIDRegistry;
-    public CurrencyMeta       CurrencyMeta;
-    public RewardsMeta        RewardsMeta;
-    public AdsMeta            AdsMeta;
-    public AnalyticsMeta      AnalyticsMeta;
-    public IAPMeta            IAPMeta;
-    public ShopMeta           ShopMeta;
-    public NotificationsMeta  NotificationsMeta;
-    public ProgressionMeta    ProgressionMeta;
-    public AchievementsMeta   AchievementsMeta;
-    public DailyChallengesMeta DailyChallengesMeta;
-    public DailyRewardsMeta   DailyRewardsMeta;
-    public DifficultyMeta     DifficultyMeta;
-    public GameModesMeta      GameModesMeta;
-    public SeasonsMeta        SeasonsMeta;
-    public SpinWheelMeta      SpinWheelMeta;
-    public TutorialsMeta      TutorialsMeta;
-    public RemoteConfigMeta   RemoteConfigMeta;
-    // ...
+    // Typed convenience properties for framework-core domains
+    public UIDRegistry  UIDRegistry;
+    public CurrencyMeta CurrencyMeta;
+    public RewardsMeta  RewardsMeta;
+
+    // Type-keyed registry — extensible without modifying framework code
+    public void RegisterMeta<T>(T meta) where T : class, IMeta;
+    public T    GetMeta<T>() where T : class, IMeta;
+    public bool TryGetMeta<T>(out T meta) where T : class, IMeta;
 }
 ```
+
+**Framework-core domains** (`RewardsMeta`, `CurrencyMeta`) are auto-registered from serialized fields on `MetaDataRepository`. **Game-specific domains** (`AdsMeta`, `ShopMeta`, `AchievementsMeta`, etc.) are registered during bootstrap in `GameBindings`:
+
+```csharp
+public void InstallBindings(ContainerBuilder builder)
+{
+    // Register game-specific Meta domains
+    if (_adsMeta != null) _metaDataRepository.RegisterMeta(_adsMeta);
+    if (_shopMeta != null) _metaDataRepository.RegisterMeta(_shopMeta);
+    if (_achievementsMeta != null) _metaDataRepository.RegisterMeta(_achievementsMeta);
+
+    // Then register the repository in DI
+    builder.RegisterValue(_metaDataRepository, new[] { typeof(MetaDataRepository), typeof(IMetaDataRepository) });
+}
+```
+
+**Accessing Meta containers at runtime:**
+
+```csharp
+// Framework-core domains — use typed convenience properties
+var rewardDef = repository.RewardsMeta.Registry.GetObjectByUID(uid);
+var currencyDef = repository.CurrencyMeta.GetCurrencyByID(currencyUID);
+
+// Game-specific domains — use type-keyed lookup
+var adsMeta = repository.GetMeta<AdsMeta>();
+var shopMeta = repository.GetMeta<ShopMeta>();
+
+// Safe access with TryGetMeta
+if (repository.TryGetMeta<AchievementsMeta>(out var achievements))
+{
+    var achievement = achievements.GetAchievement(uid);
+}
+```
+
+**The `IMeta` interface** — all Meta containers implement `IMeta` (defined in `AK.Core`). `MetaDataAsset` already implements `IMeta`, so any Meta class extending `MetaDataAsset` is automatically compatible. For Meta classes that extend `ScriptableObject` directly (like `NotificationsMeta`), implement `IMeta` explicitly with an `InitializeMeta()` method.
 
 Place ONE `MetaDataRepository` in your bootstrap scene. It's registered in DI and injected everywhere.
 

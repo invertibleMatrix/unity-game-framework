@@ -1,8 +1,11 @@
 using AK.Core;
 using AK.CoreDomain;
+using AK.CoreDomain.Ads;
 using AK.CoreDomain.Costs;
 using AK.CoreDomain.Currency;
+using AK.CoreDomain.Notifications;
 using AK.CoreDomain.Rewards;
+using AK.CoreDomain.Store;
 using AK.Examples.Costs;
 using AK.Examples.Models;
 using AK.Examples.Rewards;
@@ -17,12 +20,17 @@ namespace AK.Examples
 {
 	/// <summary>
 	/// Example DI installer showing the full bootstrap pattern:
-	/// game model loading, provider initialization, and optional IAP.
+	/// game model loading, provider initialization, meta registration, and optional IAP.
 	/// </summary>
 	public class ExampleGameBindings : MonoBehaviour, IInstaller
 	{
 		[Header("Meta Data")]
 		[SerializeField] private MetaDataRepository _metaDataRepository;
+
+		[Header("Custom Meta — register game-specific domains")]
+		[SerializeField] private AdsMeta _adsMeta;
+		[SerializeField] private ShopMeta _shopMeta;
+		[SerializeField] private NotificationsMeta _notificationsMeta;
 
 		[Header("IAP (optional — leave null for games without IAP)")]
 		[SerializeField] private IIAPService _iapService;
@@ -50,7 +58,11 @@ namespace AK.Examples
 
 		public void InstallBindings(ContainerBuilder builder)
 		{
-			// Meta Data
+			// Meta Data — register custom domains before initializing
+			if (_adsMeta != null) _metaDataRepository.RegisterMeta(_adsMeta);
+			if (_shopMeta != null) _metaDataRepository.RegisterMeta(_shopMeta);
+			if (_notificationsMeta != null) _metaDataRepository.RegisterMeta(_notificationsMeta);
+
 			builder.RegisterValue(_metaDataRepository, new[] { typeof(MetaDataRepository), typeof(IMetaDataRepository) });
 
 			// Game Model — load from save, initialize

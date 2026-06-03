@@ -14,7 +14,7 @@ namespace AK.CoreDomain
 	/// Supports remote config integration for dynamic ad behavior control.
 	/// </summary>
 	[CreateAssetMenu(fileName = "AdsMeta", menuName = "Gameplay/MetaData/Ads/AdsMeta")]
-	public class AdsMeta : MetaDataAsset
+	public class AdsMeta : MetaDataAsset, IMeta
 	{
 		[Serializable]
 		public struct AdIds
