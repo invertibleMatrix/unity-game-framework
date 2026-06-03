@@ -7,6 +7,6 @@ namespace AK.Examples.Models
     /// ScriptableObject asset representing a transaction category.
     /// Games create their own instances (e.g., LevelComplete, GachaBox, PurchasableItem).
     /// </summary>
-    [CreateAssetMenu(fileName = "TransactionType", menuName = "Examples/MetaData/Models/TransactionType")]
+    [CreateAssetMenu(fileName = "TransactionType", menuName = "AK/Examples/MetaData/Models/TransactionType")]
     public class TransactionType : MetaDataAsset { }
 }

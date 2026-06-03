@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace AK.CoreDomain
 {
-	[CreateAssetMenu(fileName = "IAPMeta", menuName = "Gameplay/MetaData/IAP/IAPMeta")]
+	[CreateAssetMenu(fileName = "IAPMeta", menuName = "AK/MetaData/IAP/IAPMeta")]
 	public class IAPMeta : MetaDataAsset, IMeta
 	{
 		[SerializeField] private IAPProductsRegistry _registry;

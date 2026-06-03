@@ -7,7 +7,7 @@ namespace AK.CoreDomain.RemoteConfig
 	/// Simple registry for remote variables. Primarily used for UID-based lookup.
 	/// All remote config operations are handled through RemoteConfigMeta.
 	/// </summary>
-	[CreateAssetMenu(fileName = "RemoteVariablesRegistry", menuName = "Gameplay/MetaData/RemoteConfig/RemoteVariablesRegistry")]
+	[CreateAssetMenu(fileName = "RemoteVariablesRegistry", menuName = "AK/MetaData/RemoteConfig/RemoteVariablesRegistry")]
 	public class RemoteVariablesRegistry : TypedUIDRegistryAsset<RemoteVariableBase>
 	{
 		// Inherits all functionality from TypedUIDRegistryAsset<RemoteVariableBase>

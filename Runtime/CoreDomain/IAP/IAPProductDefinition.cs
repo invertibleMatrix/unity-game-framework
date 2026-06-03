@@ -11,7 +11,7 @@ namespace AK.CoreDomain.IAP
 	/// Defines a single In-App Purchase product that can be purchased by players.
 	/// Similar to RewardDefinition but for purchasable items.
 	/// </summary>
-	[CreateAssetMenu(fileName = "IAPProductDefinition", menuName = "Gameplay/MetaData/IAP/IAPProductDefinition")]
+	[CreateAssetMenu(fileName = "IAPProductDefinition", menuName = "AK/MetaData/IAP/IAPProductDefinition")]
 	public class IAPProductDefinition : ShopItemDefinition
 	{
 		[Header("Product Type")] [Tooltip("The type of IAP product.")]

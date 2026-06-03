@@ -7,7 +7,7 @@ namespace AK.CoreDomain.Currency
 	/// <summary>
 	/// Defines a currency type in the game.
 	/// </summary>
-	[CreateAssetMenu(fileName = "CurrencyDefinition", menuName = "Gameplay/MetaData/Currency/CurrencyDefinition")]
+	[CreateAssetMenu(fileName = "CurrencyDefinition", menuName = "AK/MetaData/Currency/CurrencyDefinition")]
 	public class CurrencyDefinition : MetaDataAsset
 	{
 		[Header("Basic Information")] [Tooltip("Unique identifier for this currency.")]

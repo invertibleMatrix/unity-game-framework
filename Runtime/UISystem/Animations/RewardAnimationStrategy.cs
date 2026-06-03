@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "RewardAnimation", menuName = "Gameplay/UI/Animations/Reward Animation")]
+    [CreateAssetMenu(fileName = "RewardAnimation", menuName = "AK/UI/Animations/Reward Animation")]
     public class RewardAnimationStrategy : AnimationStrategy
     {
         [Title("Spawn Settings")]

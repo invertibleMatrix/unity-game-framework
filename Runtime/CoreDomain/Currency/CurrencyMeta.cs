@@ -9,7 +9,7 @@ namespace AK.CoreDomain
 	/// <summary>
 	/// Container for all currency definitions and exchange rates.
 	/// </summary>
-	[CreateAssetMenu(fileName = "CurrencyMeta", menuName = "Gameplay/MetaData/Currency/CurrencyMeta")]
+	[CreateAssetMenu(fileName = "CurrencyMeta", menuName = "AK/MetaData/Currency/CurrencyMeta")]
 	public class CurrencyMeta : MetaDataAsset, IMeta
 	{
 		[Header("Currencies")] [SerializeField]

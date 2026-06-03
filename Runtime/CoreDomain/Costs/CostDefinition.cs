@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.CoreDomain.Costs
 {
-    [CreateAssetMenu(fileName = "CostDefinition", menuName = "Gameplay/MetaData/CostDefinition")]
+    [CreateAssetMenu(fileName = "CostDefinition", menuName = "AK/MetaData/CostDefinition")]
     public class CostDefinition : MetaDataAsset
     {
         [Tooltip("The name to display for this cost.")]

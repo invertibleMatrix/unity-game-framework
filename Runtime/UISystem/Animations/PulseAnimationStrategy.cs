@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "PulseAnimation", menuName = "Gameplay/UI/Animations/Pulse Animation")]
+    [CreateAssetMenu(fileName = "PulseAnimation", menuName = "AK/UI/Animations/Pulse Animation")]
     public class PulseAnimationStrategy : AnimationStrategy
     {
         [Title("Pulse Settings")]

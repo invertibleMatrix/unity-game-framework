@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "CardFanAnimation", menuName = "Gameplay/UI/Animations/Card Fan Animation")]
+    [CreateAssetMenu(fileName = "CardFanAnimation", menuName = "AK/UI/Animations/Card Fan Animation")]
     public class CardFanAnimationStrategy : AnimationStrategy
     {
         [Title("Fan Settings")]

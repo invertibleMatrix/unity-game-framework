@@ -8,7 +8,7 @@ namespace AK.CoreDomain.Costs
 	/// Create asset instances for each cost type your game supports
 	/// (e.g., "Free", "SoftCurrency", "HardCurrency", "Ad", "IAP", "Stamina").
 	/// </summary>
-	[CreateAssetMenu(fileName = "CostType", menuName = "Gameplay/MetaData/Costs/CostType")]
+	[CreateAssetMenu(fileName = "CostType", menuName = "AK/MetaData/Costs/CostType")]
 	public class CostType : MetaDataAsset
 	{
 		// Empty — identity is the UID. "Free", "Coin", "Gem", "Ad", "IAP"

@@ -11,7 +11,7 @@ namespace AK.CoreDomain.Ads
 	/// Each placement can have multiple reward options (e.g., watch ad for coins OR powerup).
 	/// Supports remote config overrides for flexibility.
 	/// </summary>
-	[CreateAssetMenu(fileName = "AdPlacementDefinition", menuName = "Gameplay/MetaData/Ads/AdPlacementDefinition")]
+	[CreateAssetMenu(fileName = "AdPlacementDefinition", menuName = "AK/MetaData/Ads/AdPlacementDefinition")]
 	public class AdPlacementDefinition : MetaDataAsset
 	{
 		[Header("Placement Information")] [Tooltip("Unique identifier for this ad placement.")]

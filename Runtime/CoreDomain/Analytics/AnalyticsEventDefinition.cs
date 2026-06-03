@@ -10,7 +10,7 @@ namespace AK.CoreDomain.Analytics
 	/// <summary>
 	/// Defines an analytics event that can be tracked.
 	/// </summary>
-	[CreateAssetMenu(fileName = "AnalyticsEventDefinition", menuName = "Gameplay/MetaData/Analytics/AnalyticsEventDefinition")]
+	[CreateAssetMenu(fileName = "AnalyticsEventDefinition", menuName = "AK/MetaData/Analytics/AnalyticsEventDefinition")]
 	public class AnalyticsEventDefinition : MetaDataAsset
 	{
 		[Header("Basic Information")] [Tooltip("Unique identifier for this event.")]

@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-	[CreateAssetMenu(fileName = "BoingAnimation", menuName = "Gameplay/UI/Animations/Boing Animation")]
+	[CreateAssetMenu(fileName = "BoingAnimation", menuName = "AK/UI/Animations/Boing Animation")]
 	public class BoingAnimationStrategy : AnimationStrategy
 	{
 		[SerializeField] [Tooltip("Add this offset to axial direction to compensate in and out tween")]

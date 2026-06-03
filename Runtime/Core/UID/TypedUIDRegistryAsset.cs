@@ -6,8 +6,7 @@ using UnityEngine;
 
 namespace AK.Core
 {
-	[CreateAssetMenu(fileName = "TypedRegistry_", menuName = "AK/Registries/TypedUIDRegistry")]
-	public class TypedUIDRegistryAsset<T> : ScriptableObject where T : UID
+	public abstract class TypedUIDRegistryAsset<T> : ScriptableObject where T : UID
 	{
 		[SerializeField] protected TypedUIDRegistry<T> _registry = new();
 
@@ -31,6 +30,7 @@ namespace AK.Core
 		
 #if UNITY_EDITOR
 		[Button("Refresh All Objects")]
+		[ContextMenu("Refresh All Objects")]
 		public void RefreshAllObjects()
 		{
 			_registry.RefreshAllObjects();
@@ -38,12 +38,14 @@ namespace AK.Core
 		}
 
 		[Button("Validate Objects")]
+		[ContextMenu("Validate Objects")]
 		public void ValidateObjects()
 		{
 			_registry.ValidateObjects();
 		}
 
 		[Button("Regenerate UIDs")]
+		[ContextMenu("Regenerate UIDs")]
 		public void RefreshIds()
 		{
 			List<IGrouping<string, T>> duplicates = _registry.Objects

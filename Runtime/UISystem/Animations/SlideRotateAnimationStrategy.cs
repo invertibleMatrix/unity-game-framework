@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "SlideRotateAnimation", menuName = "Gameplay/UI/Animations/Slide Rotate Animation")]
+    [CreateAssetMenu(fileName = "SlideRotateAnimation", menuName = "AK/UI/Animations/Slide Rotate Animation")]
     public class SlideRotateAnimationStrategy : AnimationStrategy
     {
         [Title("Slide Settings")]

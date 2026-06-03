@@ -7,6 +7,6 @@ namespace AK.Examples.Achievements
     /// ScriptableObject asset for categorizing achievements.
     /// Create instances per game (e.g., "LevelBased", "Accumulation", "Streak", "Custom").
     /// </summary>
-    [CreateAssetMenu(fileName = "AchievementType", menuName = "Examples/MetaData/Achievements/AchievementType")]
+    [CreateAssetMenu(fileName = "AchievementType", menuName = "AK/Examples/MetaData/Achievements/AchievementType")]
     public class AchievementType : MetaDataAsset { }
 }

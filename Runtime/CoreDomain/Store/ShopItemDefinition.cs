@@ -7,7 +7,7 @@ namespace AK.CoreDomain.Store
 	/// <summary>
 	/// Definition for a shop item with pricing, availability, and rewards
 	/// </summary>
-	[CreateAssetMenu(fileName = "ShopItemDefinition", menuName = "Gameplay/MetaData/Store/ShopItemDefinition")]
+	[CreateAssetMenu(fileName = "ShopItemDefinition", menuName = "AK/MetaData/Store/ShopItemDefinition")]
 	public class ShopItemDefinition : PurchasableItemDefinition
 	{
 		/// <summary>

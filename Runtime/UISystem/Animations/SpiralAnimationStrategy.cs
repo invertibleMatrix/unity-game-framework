@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "SpiralAnimation", menuName = "Gameplay/UI/Animations/Spiral Animation")]
+    [CreateAssetMenu(fileName = "SpiralAnimation", menuName = "AK/UI/Animations/Spiral Animation")]
     public class SpiralAnimationStrategy : AnimationStrategy
     {
         [Title("Spiral Settings")]

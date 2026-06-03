@@ -10,7 +10,7 @@ namespace AK.CoreDomain
 	/// Container for all analytics event definitions with powerful query methods.
 	/// Similar to IAPMeta but for analytics events.
 	/// </summary>
-	[CreateAssetMenu(fileName = "AnalyticsMeta", menuName = "Gameplay/MetaData/Analytics/AnalyticsMeta")]
+	[CreateAssetMenu(fileName = "AnalyticsMeta", menuName = "AK/MetaData/Analytics/AnalyticsMeta")]
 	public class AnalyticsMeta : MetaDataAsset, IMeta
 	{
 		[SerializeField] private AnalyticsRegistry _registry;

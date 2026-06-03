@@ -10,7 +10,7 @@ namespace AK.Examples.Achievements
     /// <summary>
     /// Definition for an achievement with completion criteria and rewards.
     /// </summary>
-    [CreateAssetMenu(fileName = "AchievementDefinition", menuName = "Examples/MetaData/Achievements/AchievementDefinition")]
+    [CreateAssetMenu(fileName = "AchievementDefinition", menuName = "AK/Examples/MetaData/Achievements/AchievementDefinition")]
     public class AchievementDefinition : MetaDataAsset
     {
         [Tooltip("Unique string ID for this achievement")]

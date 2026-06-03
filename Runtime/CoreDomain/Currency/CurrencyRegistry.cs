@@ -8,6 +8,6 @@ namespace AK.CoreDomain
 	/// Registry for all currency definitions.
 	/// Similar to IAPRegistry but for currencies.
 	/// </summary>
-	[CreateAssetMenu(fileName = "CurrencyRegistry", menuName = "Gameplay/MetaData/Currency/CurrencyRegistry")]
+	[CreateAssetMenu(fileName = "CurrencyRegistry", menuName = "AK/MetaData/Currency/CurrencyRegistry")]
 	public class CurrencyRegistry : TypedUIDRegistryAsset<CurrencyDefinition> { }
 }

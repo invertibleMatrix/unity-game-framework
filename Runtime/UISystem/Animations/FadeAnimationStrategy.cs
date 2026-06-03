@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-	[CreateAssetMenu(fileName = "FadeAnimation", menuName = "Gameplay/UI/Animations/Fade Animation")]
+	[CreateAssetMenu(fileName = "FadeAnimation", menuName = "AK/UI/Animations/Fade Animation")]
 	public class FadeAnimationStrategy : AnimationStrategy
 	{
 		[Title("Optional Slide")] [SerializeField]

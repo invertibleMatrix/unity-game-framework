@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "CardSpreadAnimation", menuName = "Gameplay/UI/Animations/Card Spread Animation")]
+    [CreateAssetMenu(fileName = "CardSpreadAnimation", menuName = "AK/UI/Animations/Card Spread Animation")]
     public class CardSpreadAnimationStrategy : AnimationStrategy
     {
         [Title("Spread Settings")]

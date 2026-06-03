@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "CardStackAnimation", menuName = "Gameplay/UI/Animations/Card Stack Animation")]
+    [CreateAssetMenu(fileName = "CardStackAnimation", menuName = "AK/UI/Animations/Card Stack Animation")]
     public class CardStackAnimationStrategy : AnimationStrategy
     {
         [Title("Stack Settings")]

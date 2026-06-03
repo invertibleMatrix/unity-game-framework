@@ -3,10 +3,8 @@ using AK.Core;
 
 namespace AK.Examples
 {
-	[CreateAssetMenu(fileName = "ParticleIds", menuName = "Gameplay/MetaData/ParticleIds")]
+	[CreateAssetMenu(fileName = "ParticleIds", menuName = "AK/MetaData/ParticleIds")]
 	public class ParticleIds : ScriptableObject
 	{
-		public UID BoxMergeParticle;
-		public UID StarsPop;
 	}
 }

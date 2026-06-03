@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "CardArcAnimation", menuName = "Gameplay/UI/Animations/Card Arc Animation")]
+    [CreateAssetMenu(fileName = "CardArcAnimation", menuName = "AK/UI/Animations/Card Arc Animation")]
     public class CardArcAnimationStrategy : AnimationStrategy
     {
         [Title("Arc Settings")]

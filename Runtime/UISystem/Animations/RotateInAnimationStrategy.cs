@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "RotateInAnimation", menuName = "Gameplay/UI/Animations/Rotate In Animation")]
+    [CreateAssetMenu(fileName = "RotateInAnimation", menuName = "AK/UI/Animations/Rotate In Animation")]
     public class RotateInAnimationStrategy : AnimationStrategy
     {
         [Title("Rotation Settings")]

@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace AK.Core
 {
-	[CreateAssetMenu(fileName = "UIDRegistry_", menuName = "AK/Registries/UIDRegistry")]
+	[CreateAssetMenu(fileName = "UIDRegistry", menuName = "AK/Registries/UIDRegistry")]
 	public class UIDRegistry : ScriptableObject
 	{
 		[InlineEditor] [SerializeField]
@@ -67,6 +67,7 @@ namespace AK.Core
 		// Editor helpers (same as before)
 #if UNITY_EDITOR
 		[Button("Refresh All UIDs In Project")]
+		[ContextMenu("Refresh All UIDs In Project")]
 		public void RefreshAllUIDs()
 		{
 			var allUIDs = AssetDatabase.FindAssets("t:UID")
@@ -80,6 +81,7 @@ namespace AK.Core
 		}
 
 		[Button("Validate Registry")]
+		[ContextMenu("Validate Registry")]
 		private void ValidateRegistry()
 		{
 			var duplicates = _uids

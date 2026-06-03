@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "CardPopAnimation", menuName = "Gameplay/UI/Animations/Card Pop Animation")]
+    [CreateAssetMenu(fileName = "CardPopAnimation", menuName = "AK/UI/Animations/Card Pop Animation")]
     public class CardPopAnimationStrategy : AnimationStrategy
     {
         [Title("Pop Settings")]

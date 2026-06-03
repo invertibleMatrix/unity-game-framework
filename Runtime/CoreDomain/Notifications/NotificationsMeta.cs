@@ -10,7 +10,7 @@ namespace AK.CoreDomain.Notifications
 	/// Container for all notification metadata with query methods.
 	/// Provides centralized access to notification definitions and filtering capabilities.
 	/// </summary>
-	[CreateAssetMenu(fileName = "NotificationsMeta", menuName = "Gameplay/MetaData/Notifications/NotificationsMeta")]
+	[CreateAssetMenu(fileName = "NotificationsMeta", menuName = "AK/MetaData/Notifications/NotificationsMeta")]
 	public class NotificationsMeta : ScriptableObject, IMeta
 	{
 		[Header("Registry")]

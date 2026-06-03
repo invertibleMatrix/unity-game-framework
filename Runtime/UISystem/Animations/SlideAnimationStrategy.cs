@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-	[CreateAssetMenu(fileName = "SlideAnimation", menuName = "Gameplay/UI/Animations/Slide Animation")]
+	[CreateAssetMenu(fileName = "SlideAnimation", menuName = "AK/UI/Animations/Slide Animation")]
 	public class SlideAnimationStrategy : AnimationStrategy
 	{
 		[Title("Directions")] [SerializeField]

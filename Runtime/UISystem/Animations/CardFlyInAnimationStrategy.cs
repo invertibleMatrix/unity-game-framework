@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "CardFlyInAnimation", menuName = "Gameplay/UI/Animations/Card Fly In Animation")]
+    [CreateAssetMenu(fileName = "CardFlyInAnimation", menuName = "AK/UI/Animations/Card Fly In Animation")]
     public class CardFlyInAnimationStrategy : AnimationStrategy
     {
         [Title("Spawn Settings")]

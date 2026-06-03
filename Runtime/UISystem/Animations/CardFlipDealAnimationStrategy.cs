@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "CardFlipDealAnimation", menuName = "Gameplay/UI/Animations/Card Flip Deal Animation")]
+    [CreateAssetMenu(fileName = "CardFlipDealAnimation", menuName = "AK/UI/Animations/Card Flip Deal Animation")]
     public class CardFlipDealAnimationStrategy : AnimationStrategy
     {
         [Title("Spawn Settings")]

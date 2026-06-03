@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "CardDealAnimation", menuName = "Gameplay/UI/Animations/Card Deal Animation")]
+    [CreateAssetMenu(fileName = "CardDealAnimation", menuName = "AK/UI/Animations/Card Deal Animation")]
     public class CardDealAnimationStrategy : AnimationStrategy
     {
         [Title("Spawn Settings")]

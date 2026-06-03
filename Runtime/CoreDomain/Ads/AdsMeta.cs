@@ -13,7 +13,7 @@ namespace AK.CoreDomain
 	/// Container for all ad placement definitions with powerful query methods.
 	/// Supports remote config integration for dynamic ad behavior control.
 	/// </summary>
-	[CreateAssetMenu(fileName = "AdsMeta", menuName = "Gameplay/MetaData/Ads/AdsMeta")]
+	[CreateAssetMenu(fileName = "AdsMeta", menuName = "AK/MetaData/Ads/AdsMeta")]
 	public class AdsMeta : MetaDataAsset, IMeta
 	{
 		[Serializable]

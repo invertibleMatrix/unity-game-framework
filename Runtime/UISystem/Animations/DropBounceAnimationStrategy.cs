@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "DropBounceAnimation", menuName = "Gameplay/UI/Animations/Drop Bounce Animation")]
+    [CreateAssetMenu(fileName = "DropBounceAnimation", menuName = "AK/UI/Animations/Drop Bounce Animation")]
     public class DropBounceAnimationStrategy : AnimationStrategy
     {
         [Title("Drop Settings")]

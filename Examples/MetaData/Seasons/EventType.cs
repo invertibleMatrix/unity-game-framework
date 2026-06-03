@@ -7,6 +7,6 @@ namespace AK.Examples.Seasons
     /// ScriptableObject asset for categorizing seasonal events.
     /// Create instances per game (e.g., "Seasonal", "LimitedTime", "Community", "Custom").
     /// </summary>
-    [CreateAssetMenu(fileName = "EventType", menuName = "Examples/MetaData/Seasons/EventType")]
+    [CreateAssetMenu(fileName = "EventType", menuName = "AK/Examples/MetaData/Seasons/EventType")]
     public class EventType : MetaDataAsset { }
 }

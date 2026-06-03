@@ -10,7 +10,7 @@ namespace AK.CoreDomain.RemoteConfig
 	/// Container for all remote config variables with query methods and Firebase integration helpers.
 	/// This is the main entry point for remote config operations.
 	/// </summary>
-	[CreateAssetMenu(fileName = "RemoteConfigMeta", menuName = "Gameplay/MetaData/RemoteConfig/RemoteConfigMeta")]
+	[CreateAssetMenu(fileName = "RemoteConfigMeta", menuName = "AK/MetaData/RemoteConfig/RemoteConfigMeta")]
 	public class RemoteConfigMeta : MetaDataAsset, IMeta
 	{
 		[SerializeField] private RemoteVariablesRegistry _registry;

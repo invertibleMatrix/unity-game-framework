@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "OrganicGrowthAnimation", menuName = "Gameplay/UI/Animations/Organic Growth Animation")]
+    [CreateAssetMenu(fileName = "OrganicGrowthAnimation", menuName = "AK/UI/Animations/Organic Growth Animation")]
     public class OrganicGrowthAnimationStrategy : AnimationStrategy
     {
         [Title("Seed Stage")]

@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "CompositeAnimation", menuName = "Gameplay/UI/Animations/Composite Animation")]
+    [CreateAssetMenu(fileName = "CompositeAnimation", menuName = "AK/UI/Animations/Composite Animation")]
     public class CompositeAnimationStrategy : AnimationStrategy
     {
         [SerializeField] private List<AnimationStrategy> _strategies = new List<AnimationStrategy>();

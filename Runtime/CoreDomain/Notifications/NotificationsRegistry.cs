@@ -9,7 +9,7 @@ namespace AK.CoreDomain.Notifications
 	/// Registry for all notification definitions using UID-based lookup.
 	/// Provides centralized management of notification data.
 	/// </summary>
-	[CreateAssetMenu(fileName = "NotificationsRegistry", menuName = "Gameplay/MetaData/Notifications/NotificationsRegistry")]
+	[CreateAssetMenu(fileName = "NotificationsRegistry", menuName = "AK/MetaData/Notifications/NotificationsRegistry")]
 	public class NotificationsRegistry : TypedUIDRegistryAsset<NotificationDefinition>
 	{
 		/// <summary>

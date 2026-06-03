@@ -11,7 +11,7 @@ namespace AK.Examples.DailyChallenges
     /// Definition for a daily challenge with completion criteria and rewards.
     /// Contains universal parameters; game-specific settings go in CustomData.
     /// </summary>
-    [CreateAssetMenu(fileName = "DailyChallengeDefinition", menuName = "Examples/MetaData/DailyChallenges/DailyChallengeDefinition")]
+    [CreateAssetMenu(fileName = "DailyChallengeDefinition", menuName = "AK/Examples/MetaData/DailyChallenges/DailyChallengeDefinition")]
     public class DailyChallengeDefinition : MetaDataAsset
     {
         [Header("Identification")]

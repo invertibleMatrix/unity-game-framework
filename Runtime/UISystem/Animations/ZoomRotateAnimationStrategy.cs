@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "ZoomRotateAnimation", menuName = "Gameplay/UI/Animations/Zoom Rotate Animation")]
+    [CreateAssetMenu(fileName = "ZoomRotateAnimation", menuName = "AK/UI/Animations/Zoom Rotate Animation")]
     public class ZoomRotateAnimationStrategy : AnimationStrategy
     {
         [Title("Zoom Settings")]

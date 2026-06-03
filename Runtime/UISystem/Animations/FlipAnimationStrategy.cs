@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "FlipAnimation", menuName = "Gameplay/UI/Animations/Flip Animation")]
+    [CreateAssetMenu(fileName = "FlipAnimation", menuName = "AK/UI/Animations/Flip Animation")]
     public class FlipAnimationStrategy : AnimationStrategy
     {
         [Title("Flip Settings")]

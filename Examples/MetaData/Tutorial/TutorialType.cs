@@ -7,6 +7,6 @@ namespace AK.Examples.Tutorial
     /// ScriptableObject asset for categorizing tutorials.
     /// Create instances per game (e.g., "Onboarding", "GameplayBasics", "Custom").
     /// </summary>
-    [CreateAssetMenu(fileName = "TutorialType", menuName = "Examples/MetaData/Tutorial/TutorialType")]
+    [CreateAssetMenu(fileName = "TutorialType", menuName = "AK/Examples/MetaData/Tutorial/TutorialType")]
     public class TutorialType : MetaDataAsset { }
 }

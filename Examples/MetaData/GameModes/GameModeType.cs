@@ -7,6 +7,6 @@ namespace AK.Examples.GameModes
     /// ScriptableObject asset for categorizing game modes.
     /// Create instances per game (e.g., "Campaign", "Endless", "TimeAttack", "Custom").
     /// </summary>
-    [CreateAssetMenu(fileName = "GameModeType", menuName = "Examples/MetaData/GameModes/GameModeType")]
+    [CreateAssetMenu(fileName = "GameModeType", menuName = "AK/Examples/MetaData/GameModes/GameModeType")]
     public class GameModeType : MetaDataAsset { }
 }

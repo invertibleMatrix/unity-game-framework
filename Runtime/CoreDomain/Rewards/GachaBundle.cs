@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace AK.CoreDomain.Rewards
 {
-	[CreateAssetMenu(fileName = "GachaBundle", menuName = "Gameplay/MetaData/Rewards/GachaBundle")]
+	[CreateAssetMenu(fileName = "GachaBundle", menuName = "AK/MetaData/Rewards/GachaBundle")]
 	public class GachaBundle : MetaDataAsset
 	{
 		[Serializable]

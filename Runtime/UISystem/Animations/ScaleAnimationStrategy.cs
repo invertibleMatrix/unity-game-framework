@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-	[CreateAssetMenu(fileName = "ScaleAnimation", menuName = "Gameplay/UI/Animations/Scale Animation")]
+	[CreateAssetMenu(fileName = "ScaleAnimation", menuName = "AK/UI/Animations/Scale Animation")]
 	public class ScaleAnimationStrategy : AnimationStrategy
 	{
 		[Title("Scale Settings")] [SerializeField]

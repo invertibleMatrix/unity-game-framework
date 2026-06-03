@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "BounceAnimation", menuName = "Gameplay/UI/Animations/Bounce Animation")]
+    [CreateAssetMenu(fileName = "BounceAnimation", menuName = "AK/UI/Animations/Bounce Animation")]
     public class BounceAnimationStrategy : AnimationStrategy
     {
         [Title("Bounce Settings")]

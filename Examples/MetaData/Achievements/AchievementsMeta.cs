@@ -9,7 +9,7 @@ namespace AK.Examples.Achievements
     /// <summary>
     /// Container for achievement definitions with query methods
     /// </summary>
-    [CreateAssetMenu(fileName = "AchievementsMeta", menuName = "Examples/MetaData/Achievements/AchievementsMeta")]
+    [CreateAssetMenu(fileName = "AchievementsMeta", menuName = "AK/Examples/MetaData/Achievements/AchievementsMeta")]
     public class AchievementsMeta : MetaDataAsset
     {
         [Header("Achievements")]

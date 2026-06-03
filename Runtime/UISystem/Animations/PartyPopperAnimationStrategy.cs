@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "PartyPopperAnimation", menuName = "Gameplay/UI/Animations/Party Popper Animation")]
+    [CreateAssetMenu(fileName = "PartyPopperAnimation", menuName = "AK/UI/Animations/Party Popper Animation")]
     public class PartyPopperAnimationStrategy : AnimationStrategy
     {
         [Title("Explosion Settings")]

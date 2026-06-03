@@ -8,6 +8,6 @@ namespace AK.CoreDomain
 	/// Registry for all IAP product definitions.
 	/// Similar to RewardsRegistry but for IAP products.
 	/// </summary>
-	[CreateAssetMenu(fileName = "IAPProductsRegistry", menuName = "Gameplay/MetaData/IAP/IAPProductsRegistry")]
+	[CreateAssetMenu(fileName = "IAPProductsRegistry", menuName = "AK/MetaData/IAP/IAPProductsRegistry")]
 	public class IAPProductsRegistry : TypedUIDRegistryAsset<IAPProductDefinition> { }
 }

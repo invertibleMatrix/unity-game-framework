@@ -9,7 +9,7 @@ namespace AK.CoreDomain.Store
 	/// <summary>
 	/// Definition for a shop category to organize items
 	/// </summary>
-	[CreateAssetMenu(fileName = "ShopCategoryDefinition", menuName = "Gameplay/MetaData/Store/ShopCategoryDefinition")]
+	[CreateAssetMenu(fileName = "ShopCategoryDefinition", menuName = "AK/MetaData/Store/ShopCategoryDefinition")]
 	public class ShopCategoryDefinition : MetaDataAsset
 	{
 		[Header("Identification")]

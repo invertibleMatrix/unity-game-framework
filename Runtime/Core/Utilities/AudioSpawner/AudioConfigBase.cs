@@ -8,7 +8,7 @@ using UnityEngine.SceneManagement;
 
 namespace Utilities.AudioSpawner
 {
-	[CreateAssetMenu(fileName = "AudioConfig", menuName = "Gameplay/Configs/AudioConfig")]
+	[CreateAssetMenu(fileName = "AudioConfig", menuName = "AK/Configs/AudioConfig")]
 	public class AudioConfigBase : UID
 	{
 		[Tooltip("The prefab for this audio type. All variants of the same type share this prefab.")]

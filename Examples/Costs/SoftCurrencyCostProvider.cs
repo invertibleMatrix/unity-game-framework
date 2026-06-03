@@ -16,7 +16,7 @@ namespace AK.Examples.Costs
 	/// 3. Assign the "SoftCurrency" CostType to the provider's Type field
 	/// 4. Register this provider in your GameBindings (see ExampleGameBindings.cs)
 	/// </summary>
-	[CreateAssetMenu(fileName = "SoftCurrencyCostProvider", menuName = "Examples/Costs/SoftCurrencyCostProvider")]
+	[CreateAssetMenu(fileName = "SoftCurrencyCostProvider", menuName = "AK/Examples/Costs/SoftCurrencyCostProvider")]
 	public class SoftCurrencyCostProvider : CostProvider
 	{
 		/// <summary>

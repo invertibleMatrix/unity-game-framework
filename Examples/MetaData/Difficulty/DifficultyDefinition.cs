@@ -9,7 +9,7 @@ namespace AK.Examples.Difficulty
     /// Defines difficulty settings for the game.
     /// Contains universal parameters; game-specific settings go in CustomData.
     /// </summary>
-    [CreateAssetMenu(fileName = "DifficultyDefinition", menuName = "Examples/MetaData/Difficulty/DifficultyDefinition")]
+    [CreateAssetMenu(fileName = "DifficultyDefinition", menuName = "AK/Examples/MetaData/Difficulty/DifficultyDefinition")]
     public class DifficultyDefinition : MetaDataAsset
     {
         [Header("Identification")]

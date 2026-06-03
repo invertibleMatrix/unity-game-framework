@@ -13,7 +13,7 @@ namespace AK.CoreDomain.Store
 	/// <summary>
 	/// Container for shop item definitions with query methods
 	/// </summary>
-	[CreateAssetMenu(fileName = "ShopMeta", menuName = "Gameplay/MetaData/Store/ShopMeta")]
+	[CreateAssetMenu(fileName = "ShopMeta", menuName = "AK/MetaData/Store/ShopMeta")]
 	public class ShopMeta : MetaDataAsset, IMeta
 	{
 		[SerializeField] private ShopRegistry         _productsRegistry;

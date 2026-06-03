@@ -4,7 +4,7 @@ using UnityEngine;
 namespace AK.CoreDomain.Analytics
 {
 	
-	[CreateAssetMenu(fileName = "AnalyticsEventIds", menuName = "Gameplay/MetaData/Analytics/AnalyticsEventIds")]
+	[CreateAssetMenu(fileName = "AnalyticsEventIds", menuName = "AK/MetaData/Analytics/AnalyticsEventIds")]
 	public class AnalyticsEventIds : MetaDataAsset
 	{
 		public UID SessionStart;

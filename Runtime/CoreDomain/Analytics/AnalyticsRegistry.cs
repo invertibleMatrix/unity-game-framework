@@ -8,6 +8,6 @@ namespace AK.CoreDomain
 	/// Registry for all analytics event definitions.
 	/// Similar to IAPRegistry but for analytics events.
 	/// </summary>
-	[CreateAssetMenu(fileName = "AnalyticsRegistry", menuName = "Gameplay/MetaData/Analytics/AnalyticsRegistry")]
+	[CreateAssetMenu(fileName = "AnalyticsRegistry", menuName = "AK/MetaData/Analytics/AnalyticsRegistry")]
 	public class AnalyticsRegistry : TypedUIDRegistryAsset<AnalyticsEventDefinition> { }
 }

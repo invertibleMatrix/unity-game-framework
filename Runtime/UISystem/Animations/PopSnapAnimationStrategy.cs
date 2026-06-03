@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "PopSnapAnimation", menuName = "Gameplay/UI/Animations/Pop Snap Animation")]
+    [CreateAssetMenu(fileName = "PopSnapAnimation", menuName = "AK/UI/Animations/Pop Snap Animation")]
     public class PopSnapAnimationStrategy : AnimationStrategy
     {
         [Title("Pop Characteristics")]

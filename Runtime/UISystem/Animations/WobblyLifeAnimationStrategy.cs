@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "WobblyLifeAnimation", menuName = "Gameplay/UI/Animations/Wobbly Life Animation")]
+    [CreateAssetMenu(fileName = "WobblyLifeAnimation", menuName = "AK/UI/Animations/Wobbly Life Animation")]
     public class WobblyLifeAnimationStrategy : AnimationStrategy
     {
         [Title("Birth Wobble")]

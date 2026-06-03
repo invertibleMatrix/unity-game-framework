@@ -11,7 +11,7 @@ using UnityEditor;
 
 namespace AK.CoreDomain
 {
-	[CreateAssetMenu(fileName = "MetaDataRepository", menuName = "Gameplay/MetaDataRepository")]
+	[CreateAssetMenu(fileName = "MetaDataRepository", menuName = "AK/MetaData/MetaDataRepository")]
 	public class MetaDataRepository : ScriptableObject, IMetaDataRepository
 	{
 		[SerializeField] private UIDRegistry _uidRegistry;

@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "ShakeAnimation", menuName = "Gameplay/UI/Animations/Shake Animation")]
+    [CreateAssetMenu(fileName = "ShakeAnimation", menuName = "AK/UI/Animations/Shake Animation")]
     public class ShakeAnimationStrategy : AnimationStrategy
     {
         [Title("Shake Settings")]

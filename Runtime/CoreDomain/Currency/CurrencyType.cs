@@ -8,7 +8,7 @@ namespace AK.CoreDomain.Currency
 	/// Create asset instances for each currency type your game supports
 	/// (e.g., "Soft", "Hard", "Event", "Social", "Special", "Energy").
 	/// </summary>
-	[CreateAssetMenu(fileName = "CurrencyType", menuName = "Gameplay/MetaData/Currency/CurrencyType")]
+	[CreateAssetMenu(fileName = "CurrencyType", menuName = "AK/MetaData/Currency/CurrencyType")]
 	public class CurrencyType : MetaDataAsset
 	{
 	}

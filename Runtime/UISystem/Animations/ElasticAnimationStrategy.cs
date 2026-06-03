@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "ElasticAnimation", menuName = "Gameplay/UI/Animations/Elastic Animation")]
+    [CreateAssetMenu(fileName = "ElasticAnimation", menuName = "AK/UI/Animations/Elastic Animation")]
     public class ElasticAnimationStrategy : AnimationStrategy
     {
         [Title("Elastic Settings")]

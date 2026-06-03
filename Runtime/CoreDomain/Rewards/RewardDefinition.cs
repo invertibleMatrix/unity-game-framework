@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace AK.CoreDomain.Rewards
 {
-	[CreateAssetMenu(fileName = "RewardDefinition", menuName = "Gameplay/MetaData/Rewards/RewardDefinition")]
+	[CreateAssetMenu(fileName = "RewardDefinition", menuName = "AK/MetaData/Rewards/RewardDefinition")]
 	public class RewardDefinition : MetaDataAsset
 	{
 		[Tooltip("The type of this reward. This determines which fields below are used.")]

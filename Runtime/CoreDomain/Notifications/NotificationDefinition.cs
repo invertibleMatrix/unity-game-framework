@@ -10,7 +10,7 @@ namespace AK.CoreDomain.Notifications
 	/// Defines a notification with content, timing, and behavior.
 	/// Notifications are used to inform players about game events, rewards, and updates.
 	/// </summary>
-	[CreateAssetMenu(fileName = "NotificationDefinition", menuName = "Gameplay/MetaData/Notifications/NotificationDefinition")]
+	[CreateAssetMenu(fileName = "NotificationDefinition", menuName = "AK/MetaData/Notifications/NotificationDefinition")]
 	public class NotificationDefinition : MetaDataAsset
 	{
 		[Tooltip("Internal name for reference")]

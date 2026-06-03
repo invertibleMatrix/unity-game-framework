@@ -5,7 +5,7 @@ using System.Collections.Generic;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "CascadeAnimation", menuName = "Gameplay/UI/Animations/Cascade Animation")]
+    [CreateAssetMenu(fileName = "CascadeAnimation", menuName = "AK/UI/Animations/Cascade Animation")]
     public class CascadeAnimationStrategy : AnimationStrategy
     {
         [Title("Cascade Trigger")]

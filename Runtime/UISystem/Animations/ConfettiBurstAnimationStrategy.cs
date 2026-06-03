@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AK.UISystem.Animations
 {
-    [CreateAssetMenu(fileName = "ConfettiBurstAnimation", menuName = "Gameplay/UI/Animations/Confetti Burst Animation")]
+    [CreateAssetMenu(fileName = "ConfettiBurstAnimation", menuName = "AK/UI/Animations/Confetti Burst Animation")]
     public class ConfettiBurstAnimationStrategy : AnimationStrategy
     {
         [Title("Burst Configuration")]

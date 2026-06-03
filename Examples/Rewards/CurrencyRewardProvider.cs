@@ -9,7 +9,7 @@ namespace AK.Examples.Rewards
 	/// <summary>
 	/// Example RewardProvider that grants currency rewards via the game model.
 	/// </summary>
-	[CreateAssetMenu(fileName = "CurrencyRewardProvider", menuName = "Game/Rewards/CurrencyRewardProvider")]
+	[CreateAssetMenu(fileName = "CurrencyRewardProvider", menuName = "AK/Examples/Rewards/CurrencyRewardProvider")]
 	public class CurrencyRewardProvider : RewardProvider
 	{
 		private ExampleGameModel _gameModel;
