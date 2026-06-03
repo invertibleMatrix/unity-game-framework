@@ -1077,33 +1077,6 @@ bus.ConsumeCurrentEvent();
 - Recursive raise is safe (queued and dispatched after current event finishes)
 - Uses internal object pooling for enumerators and queued events
 
-### ResourceManagement
-
-Async resource loading facade over Unity Addressables.
-
-```csharp
-// Load single asset
-var texture = await UniResources.LoadAssetAsync<Texture2D>("my_texture");
-
-// Load multiple assets as a group
-var group = await UniResources.LoadAssetsAsync<Sprite>(new[] { "icon1", "icon2" });
-
-// Spawn prefab
-var instance = await UniResources.SpawnAsync("enemy_prefab", transform);
-
-// Sync (blocking) variants also available
-var tex = UniResources.LoadAsset<Texture2D>("my_texture");
-
-// Cleanup
-UniResources.DisposeAsset(texture);
-UniResources.DisposeInstance(instance.gameObject);
-```
-
-- `UniResources` -- static facade, delegates to `IResourceLoadingStrategy`
-- `AddressablesLoadingStrategy` -- default implementation using Unity's Addressables
-- `AssetsGroup<T>` -- tracks a batch of loaded assets for group release
-- Sprite loading components: `ImageSpriteLoader`, `SpriteRendererLoader` -- drop on UI Image or SpriteRenderer to auto-load from Addressables
-
 ### CameraSystem
 
 Registry-driven multi-camera management with URP camera stacking. Cameras can be **pre-placed** in the scene or **dynamically spawned** from the registry at runtime.
@@ -1207,24 +1180,6 @@ cameraSystem.ReorderCameraStack();
 5. For pre-placed cameras: add `BaseCamera` components to GameObjects in the scene, assign their `_cameraType` and `_baseCameraType` fields in Inspector
 6. For dynamic cameras: set `SpawnOnStart = true` on definitions that should auto-spawn, or call `SpawnCamera<T>()` at runtime
 
-### Core Utilities
-
-| Utility | Description |
-|---------|-------------|
-| **Timer** | UniTask-based countdown/stopwatch/interval with pause/resume and UI binding |
-| **TimeFormatter** | Format durations, arrival times, relative times ("5m ago"), smart dynamic formatting |
-| **NumberFormatter** | Abbreviate large numbers (1500 -> "1.5K"), parse back |
-| **AudioSpawner** | Pooled audio spawner with registry-based configs, fade in/out, pitch randomization |
-| **ParticleSpawner** | Pooled particle spawner with registry-based configs, sync/async instantiation |
-| **JobDispatcher** | Multi-threaded job dispatch with double-buffered lock-free main/worker thread communication |
-| **DataStructures** | `FreeList<T>` (generational handles), `PriorityQueue<T,P>` (quaternary min-heap port) |
-| **Extensions** | `Shuffle<T>` (Fisher-Yates), `SafeInvoke`, `TweenExt` (DOTween value tweening), enum caching |
-| **PropertyProxy\<T\>** | Reactive property wrapper with `UnityEvent<T> OnChange` |
-| **Haptics** | `IHapticsPlayer` interface (8 haptic methods), `HapticPlayerComponent` with DI resolution |
-| **Profiling** | `ScopedTimeProfiler` (IDisposable), `StopwatchTimeProfiler` |
-| **Visual** | `PingPongRotator`, `LineRendererScroller`, `DiscoEffect` |
-
----
 
 ## Module: CoreDomain
 
@@ -1649,13 +1604,4 @@ Or from project root:
 
 ```bash
 git submodule update --remote Assets/UGFW
-```
-
-## Making Changes
-
-```bash
-cd Assets/UGFW
-git add -A
-git commit -m "your change"
-git push
 ```
