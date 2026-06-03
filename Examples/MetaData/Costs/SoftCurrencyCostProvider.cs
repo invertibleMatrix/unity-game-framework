@@ -1,6 +1,7 @@
 using AK.Core;
-using AK.CoreDomain.Costs;
-using AK.CoreDomain.Currency;
+using AK.CoreDomain;
+using AK.Examples.Costs;
+using AK.Examples.Currency;
 using AK.Examples.Models;
 using UnityEngine;
 
@@ -8,7 +9,7 @@ namespace AK.Examples.Costs
 {
 	/// <summary>
 	/// Example CostProvider that handles soft currency (coins) costs.
-	/// Checks and deducts from a CurrencyModel at runtime.
+	/// Demonstrates downcasting ICostInfo to CostOption to access game-specific fields.
 	///
 	/// Setup:
 	/// 1. Create a CostType asset named "SoftCurrency" (Create → Gameplay/MetaData/Costs/CostType)
@@ -28,7 +29,6 @@ namespace AK.Examples.Costs
 
 		/// <summary>
 		/// Reference to the game's currency model. Set at runtime via Init().
-		/// In a real game, you'd inject this via DI or set it during bootstrap.
 		/// </summary>
 		private CurrencyModel _currencyModel;
 
@@ -41,7 +41,7 @@ namespace AK.Examples.Costs
 			_currencyModel = currencyModel;
 		}
 
-		public override bool CanAfford(CostOption costOption)
+		public override bool CanAfford(ICostInfo cost)
 		{
 			if (_currencyModel == null)
 			{
@@ -49,10 +49,10 @@ namespace AK.Examples.Costs
 				return false;
 			}
 
-			return _currencyModel.Amount >= costOption.Amount;
+			return _currencyModel.Amount >= cost.Amount;
 		}
 
-		public override bool Deduct(CostOption costOption)
+		public override bool Deduct(ICostInfo cost)
 		{
 			if (_currencyModel == null)
 			{
@@ -60,14 +60,14 @@ namespace AK.Examples.Costs
 				return false;
 			}
 
-			if (_currencyModel.Amount < costOption.Amount)
+			if (_currencyModel.Amount < cost.Amount)
 			{
-				Debug.LogWarning($"[SoftCurrencyCostProvider] Insufficient funds. Have: {_currencyModel.Amount}, Need: {costOption.Amount}");
+				Debug.LogWarning($"[SoftCurrencyCostProvider] Insufficient funds. Have: {_currencyModel.Amount}, Need: {cost.Amount}");
 				return false;
 			}
 
-			_currencyModel.Deduct(costOption.Amount);
-			Debug.Log($"[SoftCurrencyCostProvider] Deducted {costOption.Amount} coins. Remaining: {_currencyModel.Amount}");
+			_currencyModel.Deduct(cost.Amount);
+			Debug.Log($"[SoftCurrencyCostProvider] Deducted {cost.Amount} coins. Remaining: {_currencyModel.Amount}");
 			return true;
 		}
 	}

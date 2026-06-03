@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AK.Core;
-using AK.CoreDomain.Rewards;
+using AK.Examples.Rewards;
 using Sirenix.OdinInspector;
 using UnityEngine;
 

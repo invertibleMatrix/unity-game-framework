@@ -1,13 +1,11 @@
-using AK.CoreDomain;
-using AK.CoreDomain.Currency;
-using AK.CoreDomain.Rewards;
-using AK.Examples;
 using UnityEngine;
+using IReward = AK.CoreDomain.IReward;
 
 namespace AK.Examples.Rewards
 {
 	/// <summary>
 	/// Example RewardProvider that grants currency rewards via the game model.
+	/// Demonstrates downcasting IReward to RewardDefinition to access game-specific fields.
 	/// </summary>
 	[CreateAssetMenu(fileName = "CurrencyRewardProvider", menuName = "AK/Examples/Rewards/CurrencyRewardProvider")]
 	public class CurrencyRewardProvider : RewardProvider
@@ -22,7 +20,7 @@ namespace AK.Examples.Rewards
 			_gameModel = gameModel;
 		}
 
-		public override void GrantReward(RewardDefinition reward)
+		public override void GrantReward(IReward reward)
 		{
 			if (_gameModel == null)
 			{
@@ -30,21 +28,28 @@ namespace AK.Examples.Rewards
 				return;
 			}
 
-			if (reward.CurrencyDefinition == null)
+			// Downcast to access game-specific fields on RewardDefinition
+			if (reward is not RewardDefinition rd)
+			{
+				Debug.LogWarning("[CurrencyRewardProvider] Expected RewardDefinition, got " + reward.GetType().Name);
+				return;
+			}
+
+			if (rd.CurrencyDefinition == null)
 			{
 				Debug.LogWarning("[CurrencyRewardProvider] Reward has no CurrencyDefinition assigned.");
 				return;
 			}
 
-			var currencyModel = _gameModel.GetCurrencyModel(reward.CurrencyDefinition);
+			var currencyModel = _gameModel.GetCurrencyModel(rd.CurrencyDefinition);
 			if (currencyModel == null)
 			{
-				Debug.LogWarning($"[CurrencyRewardProvider] No CurrencyModel found for '{reward.CurrencyDefinition.DisplayName}'.");
+				Debug.LogWarning($"[CurrencyRewardProvider] No CurrencyModel found for '{rd.CurrencyDefinition.DisplayName}'.");
 				return;
 			}
 
-			currencyModel.Add(reward.Amount);
-			Debug.Log($"[CurrencyRewardProvider] Granted {reward.Amount} {reward.CurrencyDefinition.DisplayName}.");
+			currencyModel.Add(rd.Amount);
+			Debug.Log($"[CurrencyRewardProvider] Granted {rd.Amount} {rd.CurrencyDefinition.DisplayName}.");
 		}
 	}
 }

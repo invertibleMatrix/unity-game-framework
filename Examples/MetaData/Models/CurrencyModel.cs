@@ -1,7 +1,7 @@
 using System;
 using AK.Core;
 using AK.CoreDomain;
-using AK.CoreDomain.Currency;
+using AK.Examples.Currency;
 using UnityEngine;
 
 namespace AK.Examples.Models
@@ -150,9 +150,10 @@ namespace AK.Examples.Models
 
 		private void ResolveDefinition(IMetaDataRepository repository)
 		{
-			if (UniqueID != null && repository.CurrencyMeta != null)
+			var currencyMeta = repository.GetMeta<CurrencyMeta>();
+			if (UniqueID != null && currencyMeta != null)
 			{
-				var definition = repository.CurrencyMeta.Registry.GetObjectByUID(UniqueID) as CurrencyDefinition;
+				var definition = currencyMeta.Registry.GetObjectByUID(UniqueID) as CurrencyDefinition;
 				if (definition != null)
 				{
 					SetDefinition(definition);

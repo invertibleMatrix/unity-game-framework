@@ -61,14 +61,6 @@ namespace AK.CoreDomain.Notifications
 		}
 		
 		/// <summary>
-		/// Gets notifications with rewards.
-		/// </summary>
-		public List<NotificationDefinition> GetNotificationsWithRewards()
-		{
-			return Registry.Objects.Where(n => n.Rewards.Count > 0).ToList();
-		}
-		
-		/// <summary>
 		/// Gets notifications that show only once.
 		/// </summary>
 		public List<NotificationDefinition> GetOneTimeNotifications()

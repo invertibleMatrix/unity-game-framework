@@ -1,5 +1,6 @@
-﻿using Cysharp.Threading.Tasks;
+﻿using AK.Core;
 using AK.CoreDomain;
+using Cysharp.Threading.Tasks;
 
 namespace AK.Services
 {
@@ -10,6 +11,10 @@ namespace AK.Services
 		/// </summary>
 		public IIAPService IAPService { get; }
 
-		public UniTask<PurchaseStatus> Purchase(PurchasableItemDefinition purchasableItemDefinition, bool immediateCredit);
+		/// <summary>
+		/// Purchase an item. Handles affordability check, cost deduction, and reward granting.
+		/// IAP items are identified by having a non-empty ProductID and IAPService being available.
+		/// </summary>
+		public UniTask<PurchaseStatus> Purchase(IPurchasable item, bool immediateCredit);
 	}
 }

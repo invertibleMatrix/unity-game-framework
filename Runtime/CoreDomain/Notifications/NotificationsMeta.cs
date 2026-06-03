@@ -92,14 +92,6 @@ namespace AK.CoreDomain.Notifications
 		}
 		
 		/// <summary>
-		/// Gets notifications with rewards.
-		/// </summary>
-		public List<NotificationDefinition> GetNotificationsWithRewards()
-		{
-			return _registry.GetNotificationsWithRewards();
-		}
-		
-		/// <summary>
 		/// Gets notifications that show only once.
 		/// </summary>
 		public List<NotificationDefinition> GetOneTimeNotifications()

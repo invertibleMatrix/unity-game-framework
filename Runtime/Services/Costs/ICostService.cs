@@ -1,40 +1,41 @@
-using AK.CoreDomain.Costs;
+using AK.Core;
+using AK.CoreDomain;
 
 namespace AK.Services.Costs
 {
 	/// <summary>
-	/// Dispatches cost checking and deduction to the appropriate CostProvider based on CostType.
+	/// Dispatches cost checking and deduction to the appropriate ICostProvider based on CostTypeUID.
 	/// </summary>
 	public interface ICostService
 	{
 		/// <summary>
-		/// Register a cost provider. Replaces any existing provider for the same CostType.
+		/// Register a cost provider. Replaces any existing provider for the same CostTypeUID.
 		/// </summary>
-		void RegisterProvider(CostProvider provider);
+		void RegisterProvider(ICostProvider provider);
 
 		/// <summary>
 		/// Remove a registered provider.
 		/// </summary>
-		bool UnregisterProvider(CostProvider provider);
+		bool UnregisterProvider(ICostProvider provider);
 
 		/// <summary>
-		/// Check if the player can afford the given cost option.
-		/// Dispatches to the registered CostProvider for the cost's CostType.
+		/// Check if the player can afford the given cost.
+		/// Dispatches to the registered ICostProvider for the cost's CostTypeUID.
 		/// Returns true if no provider is registered (treat unknown cost types as free)
 		/// or if the provider confirms affordability.
 		/// </summary>
-		bool CanAfford(CostOption costOption);
+		bool CanAfford(ICostInfo cost);
 
 		/// <summary>
 		/// Deduct the cost from the player's resources.
-		/// Dispatches to the registered CostProvider for the cost's CostType.
+		/// Dispatches to the registered ICostProvider for the cost's CostTypeUID.
 		/// Returns true if deduction succeeded or no provider was registered.
 		/// </summary>
-		bool Deduct(CostOption costOption);
+		bool Deduct(ICostInfo cost);
 
 		/// <summary>
-		/// Get the provider for a given CostType, or null if none registered.
+		/// Get the provider for a given UID, or null if none registered.
 		/// </summary>
-		CostProvider GetProvider(CostType type);
+		ICostProvider GetProvider(UID costTypeUID);
 	}
 }

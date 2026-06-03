@@ -1,32 +1,32 @@
-﻿using AK.CoreDomain;
-using AK.CoreDomain.Rewards;
+﻿using AK.Core;
+using AK.CoreDomain;
 
 namespace AK.Services.Rewards
 {
 	/// <summary>
-	/// Dispatches reward granting to the appropriate RewardProvider based on RewardType.
+	/// Dispatches reward granting to the appropriate IRewardProvider based on RewardTypeUID.
 	/// </summary>
 	public interface IRewardService
 	{
 		/// <summary>
-		/// Register a reward provider. Replaces any existing provider for the same RewardType.
+		/// Register a reward provider. Replaces any existing provider for the same RewardTypeUID.
 		/// </summary>
-		void RegisterProvider(RewardProvider provider);
+		void RegisterProvider(IRewardProvider provider);
 
 		/// <summary>
 		/// Remove a registered provider.
 		/// </summary>
-		bool UnregisterProvider(RewardProvider provider);
+		bool UnregisterProvider(IRewardProvider provider);
 
 		/// <summary>
-		/// Attempt to grant a reward using the registered provider for its RewardType.
+		/// Attempt to grant a reward using the registered provider for its RewardTypeUID.
 		/// Returns true if a provider was found and the reward was granted.
 		/// </summary>
-		bool TryGrantReward(RewardDefinition reward);
+		bool TryGrantReward(IReward reward);
 
 		/// <summary>
-		/// Get the provider for a given RewardType, or null if none registered.
+		/// Get the provider for a given UID, or null if none registered.
 		/// </summary>
-		RewardProvider GetProvider(RewardType type);
+		IRewardProvider GetProvider(UID rewardTypeUID);
 	}
 }

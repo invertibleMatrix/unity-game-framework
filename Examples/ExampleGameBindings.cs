@@ -1,11 +1,11 @@
 using AK.Core;
 using AK.CoreDomain;
 using AK.CoreDomain.Ads;
-using AK.CoreDomain.Costs;
-using AK.CoreDomain.Currency;
+using AK.Examples.Costs;
+using AK.Examples.Currency;
 using AK.CoreDomain.Notifications;
-using AK.CoreDomain.Rewards;
-using AK.CoreDomain.Store;
+using AK.Examples.Rewards;
+using AK.Examples.Store;
 using AK.Examples.Costs;
 using AK.Examples.Models;
 using AK.Examples.Rewards;

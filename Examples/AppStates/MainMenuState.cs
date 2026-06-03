@@ -1,4 +1,4 @@
-﻿using AK.Core;
+using AK.Core;
 using UnityEngine;
 
 namespace AK.Examples

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using AK.Core;
-using AK.CoreDomain.Rewards;
 using UnityEngine;
 
 namespace AK.CoreDomain.Notifications
@@ -88,9 +87,6 @@ namespace AK.CoreDomain.Notifications
 		[Tooltip("Secondary action button target")]
 		public UID SecondaryActionTarget;
 
-		[Header("Rewards")] [Tooltip("Rewards granted when action is clicked")]
-		public List<RewardDefinition> Rewards = new();
-
 		[Tooltip("Reward multiplier")] [Range(0.5f, 3f)]
 		public float RewardMultiplier = 1f;
 
@@ -122,25 +118,7 @@ namespace AK.CoreDomain.Notifications
 		public UID SnoozeEvent;
 
 		public UID UniqueID => this;
-
-		/// <summary>
-		/// Gets all rewards from this notification definition.
-		/// </summary>
-		public List<RewardDefinition> GetAllRewards()
-		{
-			List<RewardDefinition> allRewards = new List<RewardDefinition>();
-
-			foreach (var reward in Rewards)
-			{
-				if (reward != null)
-				{
-					allRewards.Add(reward);
-				}
-			}
-
-			return allRewards;
-		}
-
+		
 		/// <summary>
 		/// Checks if this notification should be shown based on player level.
 		/// </summary>

@@ -3,8 +3,8 @@
     "rootNamespace": "AK.Services",
     "references": [
         "AK.Core",
-        "AK.CoreDomain",
-        "UniTask"
+        "UniTask",
+        "AK.CoreDomain"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

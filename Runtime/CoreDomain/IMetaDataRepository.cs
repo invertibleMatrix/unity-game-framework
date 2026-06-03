@@ -1,6 +1,5 @@
 ﻿using System.Collections.Generic;
 using AK.Core;
-using AK.CoreDomain.Rewards;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 
@@ -10,13 +9,9 @@ namespace AK.CoreDomain
 	{
 		public UIDRegistry  UIDRegistry  { get; }
 
-		// Typed convenience properties for framework-core domains
-		public RewardsMeta  RewardsMeta  { get; }
-		public CurrencyMeta CurrencyMeta { get; }
-
 		/// <summary>
 		/// Register a Meta container for type-keyed lookup via GetMeta<T>().
-		/// Call during bootstrap (GameBindings) for game-specific domains.
+		/// Call during bootstrap (GameBindings) for all domains.
 		/// </summary>
 		void RegisterMeta<T>(T meta) where T : class, IMeta;
 

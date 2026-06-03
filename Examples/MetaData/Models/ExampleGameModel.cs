@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using AK.Core;
 using AK.CoreDomain;
-using AK.CoreDomain.Currency;
-using AK.CoreDomain.Rewards;
+using AK.Examples.Currency;
+using AK.Examples.Rewards;
 using AK.Examples.Models;
 using AK.Services.Rewards;
 using UnityEngine;
@@ -125,7 +125,8 @@ namespace AK.Examples
 					continue;
 				}
 
-				var rewardDefinition = _metaDataRepository.RewardsMeta?.Registry.GetObjectByUID(transaction.UID) as RewardDefinition;
+				var rewardsMeta = _metaDataRepository.GetMeta<RewardsMeta>();
+				var rewardDefinition = rewardsMeta?.Registry.GetObjectByUID(transaction.UID) as RewardDefinition;
 				if (rewardDefinition == null)
 				{
 					transactions.Remove(transaction);

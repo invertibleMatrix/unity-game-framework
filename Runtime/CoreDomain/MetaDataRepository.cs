@@ -16,30 +16,10 @@ namespace AK.CoreDomain
 	{
 		[SerializeField] private UIDRegistry _uidRegistry;
 
-		[InlineEditor(), SerializeField]
-		private RewardsMeta _rewardsMeta;
-		public CurrencyMeta _currencyMeta;
-
 		// Type-keyed registry for extensible Meta lookup
 		private readonly Dictionary<System.Type, IMeta> _metaRegistry = new();
 
 		public UIDRegistry  UIDRegistry  => _uidRegistry;
-		public RewardsMeta  RewardsMeta  => _rewardsMeta;
-		public CurrencyMeta CurrencyMeta => _currencyMeta;
-
-		private void OnEnable()
-		{
-			AutoRegisterCoreMetas();
-		}
-
-		/// <summary>
-		/// Auto-registers the serialized core Meta assets into the type-keyed registry.
-		/// </summary>
-		private void AutoRegisterCoreMetas()
-		{
-			if (_rewardsMeta != null)  RegisterMeta(_rewardsMeta);
-			if (_currencyMeta != null) RegisterMeta(_currencyMeta);
-		}
 
 		public void RegisterMeta<T>(T meta) where T : class, IMeta
 		{
@@ -86,9 +66,6 @@ namespace AK.CoreDomain
 		public void PerformDataRegistration()
 		{
 			_uidRegistry.RefreshAllUIDs();
-
-			if (_rewardsMeta != null && _rewardsMeta.Registry != null)
-				_rewardsMeta.Registry.RefreshAllObjects();
 		}
 #endif
 	}

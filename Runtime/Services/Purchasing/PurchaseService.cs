@@ -1,8 +1,6 @@
 using System.Collections.Generic;
-using System.Linq;
+using AK.Core;
 using AK.CoreDomain;
-using AK.CoreDomain.Costs;
-using AK.CoreDomain.Rewards;
 using AK.Services.Costs;
 using AK.Services.Rewards;
 using Cysharp.Threading.Tasks;
@@ -39,7 +37,7 @@ namespace AK.Services
 			_iapService    = iapService;
 		}
 
-		public async UniTask<PurchaseStatus> Purchase(PurchasableItemDefinition item, bool immediateCredit)
+		public async UniTask<PurchaseStatus> Purchase(IPurchasable item, bool immediateCredit)
 		{
 			if (item == null)
 			{
@@ -47,9 +45,9 @@ namespace AK.Services
 				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InternalError };
 			}
 
-			if (item.Cost == null || item.Cost.Type == null)
+			if (item.Cost == null || item.Cost.CostTypeUID == null)
 			{
-				Debug.LogError($"[PurchaseService] Item '{item.DisplayName}' has no Cost or CostType assigned.");
+				Debug.LogError($"[PurchaseService] Item '{item.DisplayName}' has no Cost or CostTypeUID assigned.");
 				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InternalError };
 			}
 
@@ -59,7 +57,7 @@ namespace AK.Services
 				return await HandleInAppPurchase(item, immediateCredit);
 			}
 
-			// All other purchases delegate to CostService → CostProvider
+			// All other purchases delegate to CostService → ICostProvider
 			if (!_costService.CanAfford(item.Cost))
 			{
 				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InsufficientCurrency };
@@ -75,7 +73,7 @@ namespace AK.Services
 			return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.None };
 		}
 
-		private async UniTask<PurchaseStatus> HandleInAppPurchase(PurchasableItemDefinition item, bool immediateCredit)
+		private async UniTask<PurchaseStatus> HandleInAppPurchase(IPurchasable item, bool immediateCredit)
 		{
 			if (!_iapService.IsInitialized)
 			{
@@ -97,23 +95,16 @@ namespace AK.Services
 		}
 
 		/// <summary>
-		/// Grant rewards via the RewardService.
+		/// Grant rewards via the RewardService using the IPurchasable.CollectRewards interface method.
 		/// </summary>
-		private void GrantRewards(PurchasableItemDefinition item, bool immediateCredit)
+		private void GrantRewards(IPurchasable item, bool immediateCredit)
 		{
 			if (!immediateCredit) return;
 
-			List<RewardDefinition> rewards = new();
+			List<IReward> rewards = new();
+			item.CollectRewards(rewards);
 
-			if (item.Reward != null)
-				rewards.Add(item.Reward);
-
-			if (item.HasAnyBundle())
-			{
-				item.RewardBundle?.GetAllRewardsRecursive(rewards);
-			}
-
-			foreach (RewardDefinition reward in rewards)
+			foreach (IReward reward in rewards)
 			{
 				_rewardService.TryGrantReward(reward);
 			}
