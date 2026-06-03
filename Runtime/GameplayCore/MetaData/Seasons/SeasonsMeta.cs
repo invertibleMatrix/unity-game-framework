@@ -5,7 +5,7 @@ using AK.Core;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.Seasons
+namespace AK.CoreDomain.Seasons
 {
 	/// <summary>
 	/// Container for event definitions with query methods

@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using AK.Core;
-using GameplayCore.MetaData.Analytics;
+using AK.CoreDomain.Analytics;
 
 namespace AK.Services
 {

@@ -3,7 +3,7 @@ using System.Linq;
 using AK.Core;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.Tutorial
+namespace AK.CoreDomain.Tutorial
 {
 	/// <summary>
 	/// Registry for all tutorial definitions using UID-based lookup.

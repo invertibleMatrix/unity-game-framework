@@ -1,6 +1,6 @@
 using System;
 
-namespace GameplayCore.MetaData.Difficulty
+namespace AK.CoreDomain.Difficulty
 {
 	/// <summary>
 	/// Defines the type of difficulty for categorization and filtering.

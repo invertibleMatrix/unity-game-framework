@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AK.Core;
-using GameplayCore.MetaData.Notifications;
+using AK.CoreDomain.Notifications;
 
 namespace AK.Services
 {

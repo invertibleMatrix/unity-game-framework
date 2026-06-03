@@ -1,6 +1,6 @@
 using System;
 
-namespace GameplayCore.MetaData.Tutorial
+namespace AK.CoreDomain.Tutorial
 {
 	/// <summary>
 	/// Defines the type of tutorial for categorization and filtering.

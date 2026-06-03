@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using AK.Core;
-using GameplayCore.MetaData.Rewards;
+using AK.CoreDomain.Rewards;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.SpinWheel
+namespace AK.CoreDomain.SpinWheel
 {
     /// <summary>
     /// Container for spin wheel configuration with probability evaluation and spin calculation.

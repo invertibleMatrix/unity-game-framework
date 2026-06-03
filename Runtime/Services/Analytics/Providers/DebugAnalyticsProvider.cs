@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using GameplayCore.MetaData;
+using AK.CoreDomain;
 using UnityEngine;
 
 namespace AK.Services.Analytics.Providers

@@ -1,5 +1,5 @@
 using Cysharp.Threading.Tasks;
-using GameplayCore.MetaData.RemoteConfig;
+using AK.CoreDomain.RemoteConfig;
 
 namespace AK.Services
 {

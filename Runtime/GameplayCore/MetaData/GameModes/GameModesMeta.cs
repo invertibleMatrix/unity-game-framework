@@ -4,7 +4,7 @@ using AK.Core;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.GameModes
+namespace AK.CoreDomain.GameModes
 {
 	/// <summary>
 	/// Container for all game mode metadata with query methods.

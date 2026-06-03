@@ -1,9 +1,9 @@
 using System;
-using GameplayCore.MetaData.Rewards;
+using AK.CoreDomain.Rewards;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.DailyRewards
+namespace AK.CoreDomain.DailyRewards
 {
     /// <summary>
     /// Configuration for a single day in the daily rewards calendar.

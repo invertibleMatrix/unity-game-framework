@@ -1,10 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using AK.Core;
-using GameplayCore.MetaData.Progression;
+using AK.CoreDomain.Progression;
 using UnityEngine;
 
-namespace GameplayCore.MetaData
+namespace AK.CoreDomain
 {
 	/// <summary>
 	/// Container for all progression level and milestone definitions with powerful query methods.

@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using AK.Core;
-using GameplayCore.MetaData.Rewards;
+using AK.CoreDomain.Rewards;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.DailyRewards
+namespace AK.CoreDomain.DailyRewards
 {
     /// <summary>
     /// Container for all daily reward configurations with query methods.

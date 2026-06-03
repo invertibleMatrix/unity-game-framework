@@ -1,7 +1,7 @@
 using AK.Core;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.Seasons
+namespace AK.CoreDomain.Seasons
 {
 	/// <summary>
 	/// Registry for managing event definitions using UID-based lookup

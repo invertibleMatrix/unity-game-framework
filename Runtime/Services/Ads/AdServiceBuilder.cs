@@ -1,7 +1,7 @@
 using System;
 using AK.Services.Ads.Providers;
-using GameplayCore.MetaData;
-using GameplayCore.MetaData.RemoteConfig;
+using AK.CoreDomain;
+using AK.CoreDomain.RemoteConfig;
 using UnityEngine;
 
 namespace AK.Services

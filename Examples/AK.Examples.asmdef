@@ -1,0 +1,21 @@
+{
+    "name": "AK.Examples",
+    "rootNamespace": "",
+    "references": [
+        "AK.Core",
+        "AK.CoreDomain",
+        "AK.UISystem",
+        "Reflex",
+        "DOTween.Modules",
+        "AK.Services"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

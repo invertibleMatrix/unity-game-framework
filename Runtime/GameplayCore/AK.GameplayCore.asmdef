@@ -3,6 +3,7 @@
     "rootNamespace": "AK.GameplayCore",
     "references": [
         "AK.Core",
+        "AK.CoreDomain",
         "Unity.Addressables",
         "Unity.ResourceManager"
     ],

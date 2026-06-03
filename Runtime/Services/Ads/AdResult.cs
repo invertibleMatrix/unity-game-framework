@@ -1,4 +1,4 @@
-using GameplayCore.MetaData.Ads;
+using AK.CoreDomain.Ads;
 
 namespace AK.Services
 {

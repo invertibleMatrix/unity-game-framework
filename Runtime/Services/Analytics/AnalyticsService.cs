@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using AK.Core;
-using GameplayCore.MetaData;
-using GameplayCore.MetaData.Analytics;
+using AK.CoreDomain;
+using AK.CoreDomain.Analytics;
 using UnityEngine;
 
 namespace AK.Services

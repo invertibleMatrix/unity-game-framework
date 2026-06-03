@@ -1,4 +1,4 @@
-namespace GameplayCore.MetaData.DailyChallenges
+namespace AK.CoreDomain.DailyChallenges
 {
 	/// <summary>
 	/// Types of daily challenges based on completion criteria

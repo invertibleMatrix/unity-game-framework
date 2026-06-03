@@ -1,9 +1,9 @@
 using System;
-using GameplayCore.MetaData.Rewards;
+using AK.CoreDomain.Rewards;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.SpinWheel
+namespace AK.CoreDomain.SpinWheel
 {
     /// <summary>
     /// A single slot on the spin wheel with probability weight and reward.

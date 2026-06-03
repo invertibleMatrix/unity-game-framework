@@ -1,8 +1,8 @@
 using System;
-using GameplayCore.MetaData.Rewards;
+using AK.CoreDomain.Rewards;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.DailyRewards
+namespace AK.CoreDomain.DailyRewards
 {
     /// <summary>
     /// Bonus reward granted for maintaining a consecutive login streak.

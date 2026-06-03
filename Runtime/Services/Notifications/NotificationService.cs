@@ -2,8 +2,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using AK.Core;
-using GameplayCore.MetaData;
-using GameplayCore.MetaData.Notifications;
+using AK.CoreDomain;
+using AK.CoreDomain.Notifications;
 using UnityEngine;
 
 #if UNITY_NOTIFICATIONS

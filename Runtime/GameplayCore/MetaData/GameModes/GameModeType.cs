@@ -1,6 +1,6 @@
 using System;
 
-namespace GameplayCore.MetaData.GameModes
+namespace AK.CoreDomain.GameModes
 {
 	/// <summary>
 	/// Defines the type of game mode for categorization and filtering.

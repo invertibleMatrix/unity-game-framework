@@ -3,7 +3,7 @@
     "rootNamespace": "AK.Services",
     "references": [
         "AK.Core",
-        "AK.GameplayCore",
+        "AK.CoreDomain",
         "UniTask"
     ],
     "includePlatforms": [],

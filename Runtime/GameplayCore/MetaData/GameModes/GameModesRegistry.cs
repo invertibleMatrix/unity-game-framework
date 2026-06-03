@@ -3,7 +3,7 @@ using System.Linq;
 using AK.Core;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.GameModes
+namespace AK.CoreDomain.GameModes
 {
 	/// <summary>
 	/// Registry for all game mode definitions using UID-based lookup.

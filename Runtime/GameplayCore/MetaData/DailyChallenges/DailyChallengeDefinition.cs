@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using AK.Core;
-using GameplayCore.MetaData.Rewards;
+using AK.CoreDomain.Rewards;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.DailyChallenges
+namespace AK.CoreDomain.DailyChallenges
 {
 	/// <summary>
 	/// Definition for a daily challenge with completion criteria and rewards

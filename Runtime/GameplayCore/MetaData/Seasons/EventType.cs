@@ -1,4 +1,4 @@
-namespace GameplayCore.MetaData.Seasons
+namespace AK.CoreDomain.Seasons
 {
 	/// <summary>
 	/// Types of events

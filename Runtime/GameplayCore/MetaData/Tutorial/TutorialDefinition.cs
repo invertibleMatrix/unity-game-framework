@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using AK.Core;
-using GameplayCore.MetaData.Rewards;
+using AK.CoreDomain.Rewards;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.Tutorial
+namespace AK.CoreDomain.Tutorial
 {
 	/// <summary>
 	/// Defines a tutorial step or complete tutorial sequence.

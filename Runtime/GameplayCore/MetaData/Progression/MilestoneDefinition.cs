@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using AK.Core;
-using GameplayCore.MetaData.Rewards;
+using AK.CoreDomain.Rewards;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.Progression
+namespace AK.CoreDomain.Progression
 {
 	/// <summary>
 	/// Defines a milestone that players can reach during progression.

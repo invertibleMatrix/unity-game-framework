@@ -5,7 +5,7 @@ using AK.Core;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.DailyChallenges
+namespace AK.CoreDomain.DailyChallenges
 {
 	/// <summary>
 	/// Container for daily challenge definitions with query methods

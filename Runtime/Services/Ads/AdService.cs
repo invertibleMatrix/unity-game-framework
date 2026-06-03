@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using Cysharp.Threading.Tasks;
-using GameplayCore.MetaData;
-using GameplayCore.MetaData.Ads;
-using GameplayCore.MetaData.RemoteConfig;
+using AK.CoreDomain;
+using AK.CoreDomain.Ads;
+using AK.CoreDomain.RemoteConfig;
 using UnityEngine;
 
 namespace AK.Services

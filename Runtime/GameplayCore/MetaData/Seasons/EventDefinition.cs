@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using AK.Core;
-using GameplayCore.MetaData.Rewards;
+using AK.CoreDomain.Rewards;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.Seasons
+namespace AK.CoreDomain.Seasons
 {
 	/// <summary>
 	/// Definition for a seasonal or special event with time limits, rewards, and progression

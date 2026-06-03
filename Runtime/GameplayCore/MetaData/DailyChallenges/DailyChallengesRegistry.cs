@@ -1,7 +1,7 @@
 using AK.Core;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.DailyChallenges
+namespace AK.CoreDomain.DailyChallenges
 {
 	/// <summary>
 	/// Registry for managing daily challenge definitions using UID-based lookup

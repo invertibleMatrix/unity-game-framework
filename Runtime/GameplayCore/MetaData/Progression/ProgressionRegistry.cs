@@ -1,8 +1,8 @@
 using AK.Core;
-using GameplayCore.MetaData.Progression;
+using AK.CoreDomain.Progression;
 using UnityEngine;
 
-namespace GameplayCore.MetaData
+namespace AK.CoreDomain
 {
 	/// <summary>
 	/// Registry for all progression level definitions.

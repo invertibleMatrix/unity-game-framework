@@ -4,7 +4,7 @@ using AK.Core;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.Difficulty
+namespace AK.CoreDomain.Difficulty
 {
 	/// <summary>
 	/// Container for all difficulty metadata with query methods.

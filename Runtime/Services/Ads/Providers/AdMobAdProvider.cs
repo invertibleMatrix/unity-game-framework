@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
-using GameplayCore.MetaData.Ads;
+using AK.CoreDomain.Ads;
 using UnityEngine;
 
 namespace AK.Services.Ads.Providers

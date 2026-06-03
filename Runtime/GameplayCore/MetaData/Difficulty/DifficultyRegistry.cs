@@ -3,7 +3,7 @@ using System.Linq;
 using AK.Core;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.Difficulty
+namespace AK.CoreDomain.Difficulty
 {
 	/// <summary>
 	/// Registry for all difficulty definitions using UID-based lookup.

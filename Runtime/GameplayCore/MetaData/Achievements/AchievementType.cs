@@ -1,6 +1,6 @@
 using System;
 
-namespace GameplayCore.MetaData.Achievements
+namespace AK.CoreDomain.Achievements
 {
 	/// <summary>
 	/// Types of achievements based on completion criteria

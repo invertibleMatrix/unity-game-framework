@@ -4,7 +4,7 @@ using Sirenix.OdinInspector;
 using UnityEngine;
 using AK.Core;
 
-namespace GameplayCore.MetaData.Achievements
+namespace AK.CoreDomain.Achievements
 {
 	/// <summary>
 	/// Container for achievement definitions with query methods

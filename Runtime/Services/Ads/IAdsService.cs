@@ -1,7 +1,7 @@
 using System;
 using Cysharp.Threading.Tasks;
-using GameplayCore.MetaData;
-using GameplayCore.MetaData.Ads;
+using AK.CoreDomain;
+using AK.CoreDomain.Ads;
 
 namespace AK.Services
 {

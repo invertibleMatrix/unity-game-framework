@@ -2,7 +2,7 @@ using AK.Core;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.Achievements
+namespace AK.CoreDomain.Achievements
 {
 	/// <summary>
 	/// Registry for managing achievement definitions using UID-based lookup

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using AK.Core;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.Difficulty
+namespace AK.CoreDomain.Difficulty
 {
 	/// <summary>
 	/// Defines difficulty settings for the game.

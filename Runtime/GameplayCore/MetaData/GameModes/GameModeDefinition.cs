@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using AK.Core;
-using GameplayCore.MetaData.Rewards;
+using AK.CoreDomain.Rewards;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.GameModes
+namespace AK.CoreDomain.GameModes
 {
 	/// <summary>
 	/// Defines a game mode with specific rules, objectives, and settings.

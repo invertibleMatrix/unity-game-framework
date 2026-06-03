@@ -4,7 +4,7 @@ using AK.Core;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace GameplayCore.MetaData.Tutorial
+namespace AK.CoreDomain.Tutorial
 {
 	/// <summary>
 	/// Container for all tutorial metadata with query methods.
