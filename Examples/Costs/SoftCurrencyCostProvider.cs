@@ -1,7 +1,7 @@
 using AK.Core;
 using AK.CoreDomain.Costs;
 using AK.CoreDomain.Currency;
-using AK.Examples.Rewards;
+using AK.Examples.Models;
 using UnityEngine;
 
 namespace AK.Examples.Costs

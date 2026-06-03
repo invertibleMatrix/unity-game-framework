@@ -16,7 +16,7 @@ namespace AK.CoreDomain.Currency
 		[Tooltip("Short code for display (e.g., 'Coins', 'Gems').")]
 		public string ShortCode;
 
-		[Header("Currency Type")] [Tooltip("The type of currency.")]
+		[Header("Currency Type")] [Tooltip("The type of currency. References a CurrencyType SO asset.")]
 		public CurrencyType Type;
 
 		[Header("Limits")] [Tooltip("Maximum amount of this currency a player can have (0 = unlimited).")]

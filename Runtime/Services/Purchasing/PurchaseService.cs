@@ -12,35 +12,31 @@ namespace AK.Services
 {
 	/// <summary>
 	/// Orchestrates the purchase flow: affordability check → cost deduction → reward granting.
-	/// IAP is handled intrinsically (platform SDK). All other cost types delegate to CostService.
+	/// IAP is optional — pass null for iapService in games without IAP.
+	/// IAP items are identified by having a non-empty ProductID.
 	/// </summary>
 	public class PurchaseService : IPurchaseService
 	{
 		private readonly IIAPService    _iapService;
 		private readonly ICostService   _costService;
 		private readonly IRewardService _rewardService;
-		private readonly CostType       _iapCostType;
 
 		public IIAPService IAPService => _iapService;
 
 		/// <summary>
-		/// Create a new PurchaseService.
+		/// Create a PurchaseService.
 		/// </summary>
-		/// <param name="iapService">The IAP service for platform store operations.</param>
 		/// <param name="costService">The cost service for checking affordability and deducting costs.</param>
 		/// <param name="rewardService">The reward service for granting purchase rewards.</param>
-		/// <param name="iapCostType">The CostType SO asset that represents In-App Purchases.
-		/// When an item's Cost.Type matches this, the IAP flow is used instead of CostService.</param>
+		/// <param name="iapService">Optional IAP service for platform store operations. Pass null for games without IAP.</param>
 		public PurchaseService(
-			IIAPService iapService,
 			ICostService costService,
 			IRewardService rewardService,
-			CostType iapCostType)
+			IIAPService iapService = null)
 		{
-			_iapService    = iapService;
 			_costService   = costService;
 			_rewardService = rewardService;
-			_iapCostType   = iapCostType;
+			_iapService    = iapService;
 		}
 
 		public async UniTask<PurchaseStatus> Purchase(PurchasableItemDefinition item, bool immediateCredit)
@@ -57,13 +53,13 @@ namespace AK.Services
 				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InternalError };
 			}
 
-			// IAP flow — handled intrinsically because it involves the platform SDK
-			if (item.Cost.Type == _iapCostType)
+			// IAP flow — when the item has a ProductID and IAP is available
+			if (!string.IsNullOrEmpty(item.ProductID) && _iapService != null)
 			{
 				return await HandleInAppPurchase(item, immediateCredit);
 			}
 
-			// All other cost types — delegate to CostService → CostProvider
+			// All other purchases delegate to CostService → CostProvider
 			if (!_costService.CanAfford(item.Cost))
 			{
 				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InsufficientCurrency };
@@ -75,19 +71,12 @@ namespace AK.Services
 				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InternalError };
 			}
 
-			// Cost deducted — grant rewards
 			GrantRewards(item, immediateCredit);
 			return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.None };
 		}
 
 		private async UniTask<PurchaseStatus> HandleInAppPurchase(PurchasableItemDefinition item, bool immediateCredit)
 		{
-			if (string.IsNullOrEmpty(item.ProductID))
-			{
-				Debug.LogError($"[PurchaseService] IAP ProductID is empty for item '{item.DisplayName}'.");
-				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InternalError };
-			}
-
 			if (!_iapService.IsInitialized)
 			{
 				Debug.LogError("[PurchaseService] IIAPService is not initialized.");
@@ -102,15 +91,13 @@ namespace AK.Services
 				return new PurchaseStatus { Error = MapIAPFailure(iapResult.FailureType) };
 			}
 
-			// Purchase succeeded — grant rewards
 			Debug.Log($"[PurchaseService] IAP purchase succeeded for '{item.ProductID}' (tx: {iapResult.TransactionId})");
 			GrantRewards(item, immediateCredit);
 			return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.None };
 		}
 
 		/// <summary>
-		/// Grant rewards via the RewardService. Dispatches each reward to the
-		/// appropriate RewardProvider based on its RewardType UID asset.
+		/// Grant rewards via the RewardService.
 		/// </summary>
 		private void GrantRewards(PurchasableItemDefinition item, bool immediateCredit)
 		{

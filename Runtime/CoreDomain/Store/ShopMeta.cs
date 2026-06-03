@@ -65,10 +65,10 @@ namespace AK.CoreDomain.Store
 
 		/// <summary>
 		/// Get all items that use a specific currency type.
-		/// Matches items whose Cost.CostTypeUID references a CurrencyDefinition of the given CurrencyType.
 		/// </summary>
 		public List<ShopItemDefinition> GetItemsByCurrency(CurrencyType currencyType)
 		{
+			if (currencyType == null) return new List<ShopItemDefinition>();
 			return _productsRegistry.Registry.Objects.Where(i => i.Cost?.CostTypeUID != null).ToList();
 		}
 

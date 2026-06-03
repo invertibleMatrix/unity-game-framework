@@ -30,7 +30,6 @@ namespace AK.Services
 		// Cancellation support for background tasks
 		private CancellationTokenSource _cancellationTokenSource;
 
-		private IMetaDataRepository _metaDataRepository;
 		private AdsMeta             _adsMeta;
 		private int                 _playerLevel;
 		private bool                _isInitialized;

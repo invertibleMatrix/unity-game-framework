@@ -1,33 +1,23 @@
-using AK.CoreDomain.Rewards;
+using AK.CoreDomain;
 using AK.CoreDomain.Currency;
+using AK.CoreDomain.Rewards;
+using AK.Examples;
 using UnityEngine;
 
 namespace AK.Examples.Rewards
 {
 	/// <summary>
-	/// Example RewardProvider that grants currency rewards.
-	/// When a RewardDefinition with Type matching this provider's Type is granted,
-	/// this provider adds the specified amount to the matching CurrencyModel.
-	///
-	/// Setup:
-	/// 1. Create a RewardType asset named "CurrencyReward" (Create → Gameplay/MetaData/Rewards/RewardType)
-	/// 2. Create this provider asset (Create → Examples/Rewards/CurrencyRewardProvider)
-	/// 3. Assign the "CurrencyReward" RewardType to the provider's Type field
-	/// 4. Register this provider in your GameBindings (see ExampleGameBindings.cs)
+	/// Example RewardProvider that grants currency rewards via the game model.
 	/// </summary>
-	[CreateAssetMenu(fileName = "CurrencyRewardProvider", menuName = "Examples/Rewards/CurrencyRewardProvider")]
+	[CreateAssetMenu(fileName = "CurrencyRewardProvider", menuName = "Game/Rewards/CurrencyRewardProvider")]
 	public class CurrencyRewardProvider : RewardProvider
 	{
-		/// <summary>
-		/// The game's model reference. Set at runtime via Init().
-		/// In a real game, you'd inject this via DI.
-		/// </summary>
-		private GameModel _gameModel;
+		private ExampleGameModel _gameModel;
 
 		/// <summary>
-		/// Initialize with the runtime game model.
+		/// Initialize with the game model. Call during boot after the model is loaded.
 		/// </summary>
-		public void Init(GameModel gameModel)
+		public void Init(ExampleGameModel gameModel)
 		{
 			_gameModel = gameModel;
 		}
@@ -42,7 +32,7 @@ namespace AK.Examples.Rewards
 
 			if (reward.CurrencyDefinition == null)
 			{
-				Debug.LogWarning($"[CurrencyRewardProvider] Reward '{reward.DisplayName}' has no CurrencyDefinition assigned.");
+				Debug.LogWarning("[CurrencyRewardProvider] Reward has no CurrencyDefinition assigned.");
 				return;
 			}
 
@@ -54,16 +44,7 @@ namespace AK.Examples.Rewards
 			}
 
 			currencyModel.Add(reward.Amount);
-			Debug.Log($"[CurrencyRewardProvider] Granted {reward.Amount} {reward.CurrencyDefinition.DisplayName}. Total: {currencyModel.Amount}");
+			Debug.Log($"[CurrencyRewardProvider] Granted {reward.Amount} {reward.CurrencyDefinition.DisplayName}.");
 		}
-	}
-
-	/// <summary>
-	/// Stub GameModel class for the example. In a real game, this would be
-	/// your actual GameModel from GameplayCore.Models.
-	/// </summary>
-	public class GameModel
-	{
-		public CurrencyModel GetCurrencyModel(CurrencyDefinition definition) => null;
 	}
 }

@@ -48,14 +48,15 @@ These enable additional service implementations. Toggle them via **Tools > UGFW 
 
 ```
 Assets/UGFW/Runtime/
-    Core/           - Foundation: state machines, persistence, UID, events, camera, resource loading
-    GameplayCore/   - Game data: MetaData system, GameModel, currencies, rewards, IAP definitions
+    Core/           - Foundation: state machines, persistence (PersistableState), UID, events, camera, resource loading
+    CoreDomain/     - Domain definitions: costs, currencies, rewards, ads, analytics, store, models
     Services/       - SDK integrations: ads, analytics, IAP, remote config, notifications
     UISystem/       - Full UI framework: screens, fragments, animations, pooling
 Assets/UGFW/Editor/ - Editor tools: define symbols window, UI visualizer, UID editor, scene loader
+Assets/UGFW/Examples/ - Example implementations: game model, providers, MetaData domains (achievements, daily challenges, etc.)
 ```
 
-Each runtime module has its own assembly definition (`AK.Core`, `AK.GameplayCore`, `AK.Services`, `AK.UISystem`).
+Each runtime module has its own assembly definition (`AK.Core`, `AK.CoreDomain`, `AK.Services`, `AK.UISystem`).
 
 ### Use Assembly Definitions From the Start
 
@@ -83,7 +84,7 @@ This means you should **never use Managers or Singletons**. If you need a servic
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
-    public GameModel Model => _model;
+    public MyGameModel Model => _model;
     // ...
 }
 
@@ -93,18 +94,18 @@ var model = GameManager.Instance.Model;
 // ✅ Good — register in GameBindings, inject where needed
 public class GameBindings : MonoBehaviour, IInstaller
 {
-    public GameModel GameModel;
+    public MyGameModel GameModel;
 
     public void InstallBindings(ContainerBuilder builder)
     {
-        builder.AddSingleton(GameModel, typeof(GameModel));
+        builder.RegisterValue(GameModel, new[] { typeof(MyGameModel) });
     }
 }
 
 // ✅ Good — inject wherever you need it
 public class MyUIView : UIView
 {
-    [Inject] private readonly GameModel _gameModel;
+    [Inject] private readonly MyGameModel _gameModel;
 }
 ```
 
@@ -121,37 +122,53 @@ public sealed class GameBindings : MonoBehaviour, IInstaller
     [SerializeField] private BootState _bootState;
     [SerializeField] private MetaDataRepository _metaDataRepository;
 
-    public GameModel GameModel;
+    [Header("Providers — create as SO assets, assign here")]
+    [SerializeField] private SoftCurrencyCostProvider _softCurrencyCostProvider;
+    [SerializeField] private CurrencyRewardProvider _currencyRewardProvider;
+
+    [Header("IAP (optional — leave null for games without IAP)")]
+    [SerializeField] private IIAPService _iapService;
+
+    public MyGameModel GameModel;
 
     public void InstallBindings(ContainerBuilder builder)
     {
         // App states
-        builder.AddSingleton(_appStateMachine, typeof(AppStateMachine.AppStateMachine), typeof(IAppStateMachine));
-        builder.AddSingleton(_bootState, typeof(BootState));
+        builder.RegisterValue(_appStateMachine, new[] { typeof(AppStateMachine), typeof(IAppStateMachine) });
+        builder.RegisterValue(_bootState, new[] { typeof(BootState) });
 
         // MetaData
-        builder.AddSingleton(_metaDataRepository, typeof(MetaDataRepository), typeof(IMetaDataRepository));
+        builder.RegisterValue(_metaDataRepository, new[] { typeof(MetaDataRepository), typeof(IMetaDataRepository) });
 
-        // Game model — load from save
-        GameModel = GameModel.Load();
-        builder.AddSingleton(GameModel, typeof(GameModel));
+        // Game model — load from save, initialize
+        GameModel = MyGameModel.Load();
+        GameModel.SetMetaDataRepository(_metaDataRepository);
+        GameModel.Initialize(out bool isFirstLaunch);
+        builder.RegisterValue(GameModel, new[] { typeof(MyGameModel) });
 
-        // Services — register interfaces so consumers depend on abstractions, not implementations
-        builder.AddSingleton(_metaDataRepository.CreateAdService(), typeof(IAdsService));
-        builder.AddSingleton(container =>
-            new PurchaseService(_metaDataRepository, container.Resolve<GameModel>(), new UnityIAPService()),
-            typeof(IPurchaseService));
+        // Cost Service — init providers before registering
+        var costService = new CostService();
+        costService.RegisterProvider(_softCurrencyCostProvider);
+        builder.RegisterValue(costService, new[] { typeof(ICostService) });
 
-        // Firebase
-        builder.AddSingleton(new FirebaseInitializationService(), typeof(IFirebaseInitializationService));
-        builder.AddSingleton(container =>
-            new FirebaseRemoteConfigService(_metaDataRepository, container.Resolve<IFirebaseInitializationService>()),
-            typeof(IRemoteConfigService));
+        // Reward Service — init providers before registering
+        var rewardService = new RewardService();
+        rewardService.RegisterProvider(_currencyRewardProvider);
+        builder.RegisterValue(rewardService, new[] { typeof(IRewardService) });
+
+        // Purchase Service — IAP is optional (null = no IAP)
+        var purchaseService = new PurchaseService(costService, rewardService, _iapService);
+        builder.RegisterValue(purchaseService, new[] { typeof(IPurchaseService) });
     }
 
     private void OnApplicationPause(bool pauseStatus)
     {
-        GameModel.Commit();
+        if (pauseStatus) GameModel?.Commit();
+    }
+
+    private void OnApplicationQuit()
+    {
+        GameModel?.Commit();
     }
 }
 ```
@@ -1139,16 +1156,18 @@ Every game domain follows a consistent four-part pattern:
 [Domain]Meta          -- ScriptableObject container (e.g., CurrencyMeta, RewardsMeta)
   -> [Domain]Registry    -- TypedUIDRegistry<Definition> for UID-based lookup
   -> [Domain]Definition  -- The actual data asset (extends MetaDataAsset extends UID)
-  -> [Domain]Type        -- Enum categorizing the domain (e.g., CurrencyType, RewardType)
+  -> [Domain]Type        -- ScriptableObject categorizing the domain (e.g., CurrencyType, RewardType)
 ```
+
+**`[Domain]Type` assets are ScriptableObjects, not enums.** This is critical for making UGFW universal — each game creates its own type assets (e.g., "SoftCurrency", "HardCurrency") instead of being locked to hardcoded enum values. The framework provides the base `MetaDataAsset` class; games create instances via the Create Asset menu.
 
 **Example: The Currency domain**
 
 ```
 CurrencyMeta (ScriptableObject)
   -> CurrencyRegistry (TypedUIDRegistry<CurrencyDefinition>)
-  -> CurrencyDefinition : MetaDataAsset   // fields: Type, MaxAmount, StartingAmount, etc.
-  -> CurrencyType enum                    // SoftCurrency, HardCurrency, Energy, etc.
+  -> CurrencyDefinition : MetaDataAsset   // fields: Type (CurrencyType SO), MaxAmount, StartingAmount, etc.
+  -> CurrencyType : MetaDataAsset         // Create instances: "SoftCurrency", "HardCurrency", "Energy", etc.
 ```
 
 ### The MetaDataRepository
@@ -1186,19 +1205,27 @@ Place ONE `MetaDataRepository` in your bootstrap scene. It's registered in DI an
 
 #### Currency
 
-- `CurrencyDefinition` -- type, max amount, starting amount, exchange rates
-- `CurrencyType` -- SoftCurrency, HardCurrency, Energy, Premium, Token, etc.
+- `CurrencyDefinition` -- type (CurrencyType SO), max amount, starting amount, exchange rates
+- `CurrencyType` -- ScriptableObject asset. Create instances for each currency in your game (e.g., "SoftCurrency", "HardCurrency", "Energy")
 - `CurrencyModel` -- runtime model with `Add()`, `Deduct()`, `DeductPartial()`, respects MaxAmount cap
 - `CurrencyExchangeRate` -- conversion rates between currencies
 
 #### Rewards
 
-- `RewardDefinition` -- amount, type, linked currency/bundle/gacha data
-- `RewardType` -- Star, Currency, Bundle, Gacha, Subscription, Unlockable, Powerup, Booster, Live, NoAds
+- `RewardDefinition` -- amount, type (RewardType SO), linked currency/bundle/gacha data
+- `RewardType` -- ScriptableObject asset. Create instances for each reward type in your game (e.g., "Star", "Currency", "Bundle", "Gacha")
 - `RewardBundle` -- ordered/weighted list of sub-rewards (recursive), bundle types: Sequential, Random, Weighted, RandomWeighted, All
 - `GachaBundle` -- weighted random reward pool with `EvaluateRewards()` for gacha pulls
 - `CheckpointReward` -- rewards tied to progression milestones
 - `SubscriptionReward` -- time-based rewards for subscribers
+
+#### Costs & Purchasing
+
+- `CostType` -- ScriptableObject asset. Create instances for each cost type in your game (e.g., "SoftCurrency", "HardCurrency", "Ad")
+- `CostOption` -- links a CostType to an amount. Used by `PurchasableItemDefinition`
+- `CostProvider` -- abstract SO that handles `CanAfford`/`Deduct` for a specific CostType. Games create their own (e.g., `SoftCurrencyCostProvider`)
+- `ICostService` / `CostService` -- dispatches cost operations to the registered `CostProvider` for a given CostType
+- `PurchasableItemDefinition` -- bridge between shop items and the purchase system: cost (CostOption), product ID, reward/bundle references
 
 #### Ads
 
@@ -1213,8 +1240,6 @@ Place ONE `MetaDataRepository` in your bootstrap scene. It's registered in DI an
 - `IAPProductType` enum
 - `ShopCategoryDefinition` -- categories of shop items with cost type, product UIDs
 - `ShopItemDefinition` -- individual shop items with rarity, cost, rewards
-- `PurchasableItemDefinition` -- bridge between shop items and the purchase system: cost type, currency type, price, product ID, reward/bundle references
-- `CostType` -- None, Free, Currency, Gem, Ad, Resource, InAppPurchase
 
 #### Other Domains
 
@@ -1250,40 +1275,109 @@ int reward = DailyCoinReward.Value; // remote value if available, else cached, e
 // 3. Falls back to the DefaultValue set in the inspector
 ```
 
-### GameModel
+### PersistableState — Game Save System
 
-The central runtime game state model. Persisted via `PrefsProperty<GameModel>`.
+UGFW provides a generic base class `PersistableState<T>` for game state persistence. **There is no built-in `GameModel`** — each game creates its own model by extending this base class. This keeps the framework universal.
+
+#### Creating Your Game Model
+
+```csharp
+using AK.Core;
+using AK.CoreDomain.Models;
+
+[Serializable]
+public class MyGameModel : PersistableState<MyGameModel>
+{
+    // Override SaveKey for unique prefs key (defaults to "UGFW_GAME_MODEL")
+    protected override string SaveKey => "MY_GAME_SAVE";
+
+    // Override for save migration
+    protected override int CurrentSaveVersion => 2;
+    protected override void OnMigrate() { /* handle version upgrades */ }
+
+    // Add your game-specific fields
+    public int TotalStars;
+    public int LastPlayedLevel = -1;
+    public GameSettingsModel Settings = new();
+
+    // Currency management (common pattern)
+    [NonSerialized] private List<CurrencyModel> _currencies = new();
+    [SerializeField] private List<SerializableCurrency> _serializedCurrencies = new();
+
+    public CurrencyModel GetCurrencyModel(CurrencyDefinition def) { /* lookup by UID */ }
+    public override void OnInitialized(bool isFirstLaunch) { /* resolve UIDs */ }
+    public override void OnBeforeSerialize() { /* serialize currencies */ }
+    public override void OnAfterDeserialize() { /* deserialize currencies */ }
+}
+```
+
+#### Using Your Game Model
 
 ```csharp
 // Load saved game (or get fresh instance)
-var gameModel = GameModel.Load();
+var gameModel = MyGameModel.Load();
 
-// Initialize (resolves UIDs, credits pending transactions, detects first launch)
-gameModel.Initialize(metaDataRepository, out bool isFirstLaunch);
+// Initialize (session tracking, migration, first-launch detection)
+gameModel.Initialize(out bool isFirstLaunch);
 
 // Persist any time
-gameModel.Commit();   // writes to prefs via PrefsProperty
+gameModel.Commit();
 
 // Access currencies
-var coins = gameModel.GetCurrencyModel(CurrencyType.SoftCurrency);
+var coins = gameModel.GetCurrencyModel(softCurrencyDef);
 coins.Add(100);         // respects MaxAmount cap
 gameModel.Commit();     // persist
 
-// Queue and credit rewards
-gameModel.AppendLevelCompleteRewards(rewardUIDs);
-gameModel.CreditPendingTransactions(TransactionType.LevelCompleteTransaction);
-
 // Check for save
-bool hasSave = GameModel.HasSave();
-GameModel.DeleteSave(); // wipe all data
+bool hasSave = MyGameModel.HasSave();
+MyGameModel.DeleteSave(); // wipe all data
 ```
 
-**Key models:**
-- `GameModel` -- player level, session, currencies, pending transactions, settings, dirty tracking
-- `CurrencyModel` -- runtime currency with `Add()`, `Deduct()`, `DeductPartial()`, UID resolution for deserialization
-- `GameSettingsModel` -- audio/vibration preferences
-- `GameStateModel` -- gameplay state
-- `Transaction` -- UID + timestamp for pending rewards/purchases, with deserialization resolution
+#### Framework Building Blocks
+
+These are provided by the framework for use in your game model:
+
+| Model | Description |
+|-------|-------------|
+| `PersistableState<T>` | Generic base class with `Load()`, `Commit()`, `DeleteSave()`, `HasSave()`, `Initialize()`, session tracking, save migration |
+| `CurrencyModel` | Runtime currency with `Add()`, `Deduct()`, `DeductPartial()`, UID resolution for deserialization |
+| `GameSettingsModel` | Audio/vibration/notification preferences with `OnChanged` event |
+| `Transaction` | UID + timestamp record for pending rewards/purchases, with deserialization resolution |
+| `TransactionType` | ScriptableObject asset for categorizing transactions. Create instances per game (e.g., "LevelComplete", "GachaBox") |
+| `SerializableCurrency` | Polymorphic currency serialization helper for `OnBeforeSerialize`/`OnAfterDeserialize` |
+
+#### Extending Definitions for Your Game
+
+All `[Domain]Type` assets are ScriptableObjects. To add new types for your game:
+
+1. **Create the Type asset** via the Create Asset menu (e.g., Create → Gameplay/MetaData/Currency/CurrencyType)
+2. **Name it** for your game (e.g., "Gems", "Energy", "PremiumToken")
+3. **Reference it** from your Definition assets (e.g., set `CurrencyDefinition.Type` to your new CurrencyType)
+4. **Create a Provider** if the domain uses provider-based dispatch (Cost, Reward):
+
+```csharp
+// Example: Creating a cost provider for a new currency
+[CreateAssetMenu(fileName = "GemCostProvider", menuName = "Game/Costs/GemCostProvider")]
+public class GemCostProvider : CostProvider
+{
+    private CurrencyModel _gemModel;
+
+    public void Init(CurrencyModel gemModel) => _gemModel = gemModel;
+
+    public override bool CanAfford(CostOption costOption) => _gemModel.Amount >= costOption.Amount;
+    public override bool Deduct(CostOption costOption) => _gemModel.Deduct(costOption.Amount);
+}
+```
+
+5. **Register the provider** in your GameBindings:
+
+```csharp
+var gemProvider = Instantiate(_gemCostProviderPrefab); // or reference directly
+gemProvider.Init(gameModel.GetCurrencyModel(gemCurrencyDef));
+costService.RegisterProvider(gemProvider);
+```
+
+This pattern applies to all extensible domains: **CurrencyType**, **RewardType**, **CostType**, **TransactionType** — all are SO assets. Create as many instances as your game needs without modifying framework code.
 
 ---
 
@@ -1339,20 +1433,26 @@ analyticsService.TrackAdImpression("rewarded_level_end", "admob");
 
 ### IAP & Purchasing Service
 
-Two-layer system: `IIAPService` (raw store operations) and `IPurchaseService` (bridges IAP with MetaData and GameModel).
+Two-layer system: `IIAPService` (raw store operations) and `IPurchaseService` (bridges IAP with costs and rewards via provider dispatch). IAP is **optional** — pass `null` for `IIAPService` in games without IAP.
 
 ```csharp
-// High-level purchase (handles currency deduction and reward delivery)
+// Create with optional IAP
+var purchaseService = new PurchaseService(costService, rewardService, iapService: null);
+
+// High-level purchase (handles cost deduction and reward delivery)
 var status = await purchaseService.Purchase(purchasableItemDefinition, immediateCredit: true);
 
-// Check IAP ownership
-bool owned = purchaseService.IAPService.IsProductOwned("no_ads");
-bool subscribed = purchaseService.IAPService.IsSubscribed("vip_monthly");
+// Check IAP ownership (only when IAP is enabled)
+if (purchaseService.IAPService != null)
+{
+    bool owned = purchaseService.IAPService.IsProductOwned("no_ads");
+    bool subscribed = purchaseService.IAPService.IsSubscribed("vip_monthly");
+}
 ```
 
 **Purchase flow:**
-1. `CostType.InAppPurchase` -> delegates to `IIAPService.PurchaseAsync()`, then credits rewards
-2. `CostType.Currency` -> checks/deducts from `CurrencyModel`, queues rewards
+1. Item has a `ProductID` and IAP is available → delegates to `IIAPService.PurchaseAsync()`, then credits rewards
+2. Item has a `CostOption` → delegates to `ICostService` which dispatches to the registered `CostProvider`
 3. Currency-type rewards from IAP are always credited immediately
 
 ### Firebase Services

@@ -4,6 +4,7 @@ using System.Linq;
 using AK.Core;
 using AK.CoreDomain;
 using AK.CoreDomain.Analytics;
+using AK.Services.Analytics.Providers;
 using UnityEngine;
 
 namespace AK.Services
@@ -18,7 +19,7 @@ namespace AK.Services
 		private bool _isEnabled     = true;
 		private bool _isInitialized = false;
 
-		private readonly List<Analytics.Providers.IAnalyticsProvider> _providers = new();
+		private readonly List<IAnalyticsProvider> _providers = new();
 
 		private AnalyticsMeta _analyticsMeta;
 
@@ -27,7 +28,7 @@ namespace AK.Services
 		/// <summary>
 		/// Registers an analytics provider.
 		/// </summary>
-		public void RegisterProvider(Analytics.Providers.IAnalyticsProvider provider)
+		public void RegisterProvider(IAnalyticsProvider provider)
 		{
 			if (provider != null && !_providers.Contains(provider))
 			{

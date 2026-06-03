@@ -7,16 +7,11 @@ using UnityEngine;
 namespace AK.CoreDomain
 {
 	/// <summary>
-	/// Container for all currency definitions and exchange rates with powerful query methods.
-	/// Similar to IAPMeta but for currencies.
+	/// Container for all currency definitions and exchange rates.
 	/// </summary>
 	[CreateAssetMenu(fileName = "CurrencyMeta", menuName = "Gameplay/MetaData/Currency/CurrencyMeta")]
 	public class CurrencyMeta : MetaDataAsset
 	{
-		public UID CoinID;
-		public UID GemID;
-		public UID GachaBoxCoinID;
-
 		[Header("Currencies")] [SerializeField]
 		private CurrencyRegistry _currencyRegistry;
 
@@ -36,7 +31,7 @@ namespace AK.CoreDomain
 		}
 
 		/// <summary>
-		/// Gets a currency by its CurrencyID.
+		/// Gets a currency by its UID.
 		/// </summary>
 		public CurrencyDefinition GetCurrencyByID(UID currencyID)
 		{
@@ -48,31 +43,8 @@ namespace AK.CoreDomain
 		/// </summary>
 		public List<CurrencyDefinition> GetCurrenciesByType(CurrencyType type)
 		{
+			if (type == null) return new List<CurrencyDefinition>();
 			return _currencyRegistry.Registry.Objects.Where(c => c.Type == type).ToList();
-		}
-
-		/// <summary>
-		/// Gets all soft currencies.
-		/// </summary>
-		public List<CurrencyDefinition> GetSoftCurrencies()
-		{
-			return _currencyRegistry.Registry.Objects.Where(c => c.Type == CurrencyType.Soft).ToList();
-		}
-
-		/// <summary>
-		/// Gets all hard currencies.
-		/// </summary>
-		public List<CurrencyDefinition> GetHardCurrencies()
-		{
-			return _currencyRegistry.Registry.Objects.Where(c => c.Type == CurrencyType.Hard).ToList();
-		}
-
-		/// <summary>
-		/// Gets all event currencies.
-		/// </summary>
-		public List<CurrencyDefinition> GetEventCurrencies()
-		{
-			return _currencyRegistry.Registry.Objects.Where(c => c.Type == CurrencyType.Event).ToList();
 		}
 
 		/// <summary>
@@ -158,7 +130,7 @@ namespace AK.CoreDomain
 		}
 
 		/// <summary>
-		/// Checks if a currency exists by CurrencyID.
+		/// Checks if a currency exists by UID.
 		/// </summary>
 		public bool HasCurrency(UID currencyID)
 		{
