@@ -3,7 +3,7 @@ using Sirenix.OdinInspector;
 using UnityEditor;
 using UnityEngine;
 
-namespace AK.UISystem
+namespace AK.Systems
 {
 	/// <summary>
 	/// Central registry of all UIView prefabs. Replaces V1's separate Screen/Fragment lists.

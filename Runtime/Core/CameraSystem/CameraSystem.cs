@@ -4,9 +4,8 @@ using System.Collections.Generic;
 using AK.Core;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
-using Random = UnityEngine.Random;
 
-namespace AK.CameraSystem
+namespace AK.Systems
 {
     public class CameraSystem : GameEntity, ICameraSystem
     {

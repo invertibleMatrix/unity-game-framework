@@ -1,10 +1,10 @@
-﻿using AK.UISystem;
+﻿using AK.Systems;
 using DG.Tweening;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace AK.UISystem.UI._Source.UISystem.Common
+namespace AK.Systems.UI._Source.UISystem.Common
 {
 	public class UIViewToast : UIView
 	{

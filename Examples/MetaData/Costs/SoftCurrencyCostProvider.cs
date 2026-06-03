@@ -12,8 +12,8 @@ namespace AK.Examples.Costs
 	/// Demonstrates downcasting ICostInfo to CostOption to access game-specific fields.
 	///
 	/// Setup:
-	/// 1. Create a CostType asset named "SoftCurrency" (Create → Gameplay/MetaData/Costs/CostType)
-	/// 2. Create this provider asset (Create → Examples/Costs/SoftCurrencyCostProvider)
+	/// 1. Create a CostType asset named "SoftCurrency" (Create → AK/Gameplay/MetaData/Costs/CostType)
+	/// 2. Create this provider asset (Create → AK/Examples/Costs/SoftCurrencyCostProvider)
 	/// 3. Assign the "SoftCurrency" CostType to the provider's Type field
 	/// 4. Register this provider in your GameBindings (see ExampleGameBindings.cs)
 	/// </summary>

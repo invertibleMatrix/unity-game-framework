@@ -2,7 +2,7 @@ using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
     [CreateAssetMenu(fileName = "CardFlyInAnimation", menuName = "AK/UI/Animations/Card Fly In Animation")]
     public class CardFlyInAnimationStrategy : AnimationStrategy

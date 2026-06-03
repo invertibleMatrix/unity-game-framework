@@ -1,7 +1,7 @@
 ﻿using System;
 using UnityEngine;
 
-namespace AK.CameraSystem
+namespace AK.Systems
 {
 	public interface IGameCamera
 	{

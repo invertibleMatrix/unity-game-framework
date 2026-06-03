@@ -15,6 +15,7 @@ using AK.Services.Rewards;
 using Reflex.Core;
 using Reflex.Enums;
 using UnityEngine;
+using AK.Systems;
 
 namespace AK.Examples
 {
@@ -27,9 +28,12 @@ namespace AK.Examples
 		[Header("Meta Data")]
 		[SerializeField] private MetaDataRepository _metaDataRepository;
 
-		[SerializeField] private AppStateMachine _appStateMachine;
-		[SerializeField] private BootState       _bootState;
-		[SerializeField] private MainMenuState   _mainMenuState;
+		[SerializeField] private AppStateMachine   _appStateMachine;
+		[SerializeField] private BootState         _bootState;
+		[SerializeField] private MainMenuState     _mainMenuState;
+		[SerializeField] private CameraSystem      _cameraSystem;
+		[SerializeField] private UISystem _uiSystem;
+		
 		
 		[Header("Custom Meta — register game-specific domains")]
 		[SerializeField] private AdsMeta _adsMeta;
@@ -38,7 +42,6 @@ namespace AK.Examples
 		
 		[Header("Cost Type Assets")]
 		[SerializeField] private CostType _softCurrencyCostType;
-		[SerializeField] private CostType _hardCurrencyCostType;
 
 		[Header("Cost Providers")]
 		[SerializeField] private SoftCurrencyCostProvider _softCurrencyCostProvider;
@@ -88,6 +91,10 @@ namespace AK.Examples
 			// Purchase Service — iapService is optional (null = no IAP)
 			var purchaseService = new PurchaseService(costService, rewardService, null);
 			builder.RegisterValue(purchaseService, new[] { typeof(IPurchaseService) });
+
+
+			builder.RegisterValue(_cameraSystem, new[] { typeof(ICameraSystem) });
+			builder.RegisterValue(_uiSystem, new[] { typeof(IUISystem) });
 		}
 
 		private void OnApplicationPause(bool pauseStatus)

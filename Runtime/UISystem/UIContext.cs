@@ -1,4 +1,4 @@
-﻿namespace AK.UISystem
+﻿namespace AK.Systems
 {
     /// <summary>
     /// Base class for passing data to Menus and Fragments upon creation/showing.

@@ -1,4 +1,4 @@
-namespace AK.UISystem
+namespace AK.Systems
 {
     /*
     HUD Channel: For persistent UI that should always remain visible and interactive during gameplay.

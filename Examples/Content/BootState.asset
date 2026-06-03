@@ -12,3 +12,4 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a890195055404634bc5ad5ab36e3fc34, type: 3}
   m_Name: BootState
   m_EditorClassIdentifier: AK.Examples::AK.Examples.BootState
+  _mainMenuState: {fileID: 11400000, guid: 8871f748ff63b334baab231651c3472d, type: 2}

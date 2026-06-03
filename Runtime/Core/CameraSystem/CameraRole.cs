@@ -1,4 +1,4 @@
-﻿namespace AK.CameraSystem
+﻿namespace AK.Systems
 {
 	public enum CameraRole
 	{

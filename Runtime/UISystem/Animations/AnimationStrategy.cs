@@ -4,7 +4,7 @@ using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
 	public abstract class AnimationStrategy : ScriptableObject, IAnimationStrategy
 	{

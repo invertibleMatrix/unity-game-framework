@@ -11,7 +11,7 @@ using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace AK.UISystem
+namespace AK.Systems
 {
 	/// <summary>
 	/// Serializable entry for static fragments that are pre-placed in the hierarchy.
@@ -79,7 +79,7 @@ namespace AK.UISystem
 		internal ViewStackBehaviour? _overriddenStackBehaviour;
 		internal UIChannel?          _overriddenChannel;
 
-		private UIViewSystem            _viewSystem;
+		private UISystem            _uiSystem;
 		private CancellationTokenSource _animationCts;
 		private CancellationTokenSource _destroyCts;
 		private Vector2                 _entryPosition = Vector2.zero;
@@ -190,7 +190,7 @@ namespace AK.UISystem
 		                                         Action<TFragment> onInit = null)
 			where TFragment : UIView
 		{
-			return _viewSystem.Show<TFragment>(context, this, viewId, null, stackBehaviour, onInit);
+			return _uiSystem.Show<TFragment>(context, this, viewId, null, stackBehaviour, onInit);
 		}
 
 		/// <summary>
@@ -202,7 +202,7 @@ namespace AK.UISystem
 		                                                       CancellationToken ct = default)
 			where TFragment : UIView
 		{
-			return _viewSystem.ShowAsync<TFragment>(context, this, viewId, null, stackBehaviour, onInit, ct);
+			return _uiSystem.ShowAsync<TFragment>(context, this, viewId, null, stackBehaviour, onInit, ct);
 		}
 
 		/// <summary>
@@ -211,7 +211,7 @@ namespace AK.UISystem
 		[Button]
 		public void Close(CloseContext context = CloseContext.Normal, Action onClose = null)
 		{
-			_viewSystem?.Close(this, context, onClose);
+			_uiSystem?.Close(this, context, onClose);
 		}
 
 		/// <summary>
@@ -219,7 +219,7 @@ namespace AK.UISystem
 		/// </summary>
 		public UniTask CloseAsync(CloseContext context = CloseContext.Normal, CancellationToken ct = default)
 		{
-			return _viewSystem?.CloseAsync(this, context, ct) ?? UniTask.CompletedTask;
+			return _uiSystem?.CloseAsync(this, context, ct) ?? UniTask.CompletedTask;
 		}
 
 		/// <summary>
@@ -227,7 +227,7 @@ namespace AK.UISystem
 		/// </summary>
 		public void GoBack()
 		{
-			_viewSystem?.GoBack(this);
+			_uiSystem?.GoBack(this);
 		}
 
 		public void SetInteractable(bool value)
@@ -412,9 +412,9 @@ namespace AK.UISystem
 		// INTERNAL — Called by UIViewSystem
 		// =====================================================================
 
-		internal void InternalInitialize(UIViewSystem viewSystem, UIView parentView)
+		internal void InternalInitialize(UISystem uiSystem, UIView parentView)
 		{
-			_viewSystem = viewSystem;
+			_uiSystem = uiSystem;
 			_parentView = parentView;
 
 			CanvasGroup = GetComponent<CanvasGroup>();
@@ -457,7 +457,7 @@ namespace AK.UISystem
 
 				// Idempotent: if this static child is already registered (e.g., pool reuse),
 				// just reset its state so it can be shown again. Don't double-register.
-				if (_viewSystem.IsViewRegistered(entry.View))
+				if (_uiSystem.IsViewRegistered(entry.View))
 				{
 					entry.View._isCleanedUp = false;
 					entry.View._isResourcesRegistered = false;
@@ -470,9 +470,9 @@ namespace AK.UISystem
 				}
 
 				entry.View.Inject(diContainer);
-				entry.View.InternalInitialize(_viewSystem, this);
+				entry.View.InternalInitialize(_uiSystem, this);
 				entry.View.gameObject.SetActive(entry.SetActive);
-				_viewSystem.RegisterStaticView(entry.View, this);
+				_uiSystem.RegisterStaticView(entry.View, this);
 			}
 		}
 
@@ -719,7 +719,7 @@ namespace AK.UISystem
 			{
 				if (entry.ShowOnStart && entry.View != null)
 				{
-					_viewSystem.ShowExistingView(entry.View, entry.View.ViewId);
+					_uiSystem.ShowExistingView(entry.View, entry.View.ViewId);
 				}
 			}
 		}

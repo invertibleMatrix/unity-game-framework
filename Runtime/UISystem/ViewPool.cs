@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace AK.UISystem
+namespace AK.Systems
 {
 	/// <summary>
 	/// Object pool for UIViews. Generalised from V1's FragmentPool — works for any UIView.

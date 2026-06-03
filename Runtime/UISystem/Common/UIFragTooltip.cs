@@ -5,7 +5,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace AK.UISystem
+namespace AK.Systems
 {
 	/// <summary>
 	/// A tooltip fragment with automatic positioning and lifetime management.

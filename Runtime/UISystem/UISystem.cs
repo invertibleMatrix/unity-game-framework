@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using AK.UISystem.UI._Source.UISystem.Common;
+using AK.Systems.UI._Source.UISystem.Common;
 using Cysharp.Threading.Tasks;
 using Reflex.Attributes;
 using Reflex.Core;
@@ -10,7 +10,7 @@ using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-namespace AK.UISystem
+namespace AK.Systems
 {
 	/// <summary>
 	/// Unified UI system for V2. Replaces both UISystem and FragmentSystem from V1.
@@ -24,7 +24,7 @@ namespace AK.UISystem
 	/// - All animation is async via UniTask wrapping DOTween. Exceptions propagate through await.
 	/// - Show() is fire-and-forget (no compiler warnings). ShowAsync() awaits animation completion.
 	/// </summary>
-	public sealed class UIViewSystem : MonoBehaviour, IUIViewSystem, IDisposable
+	public sealed class UISystem : MonoBehaviour, IUISystem, IDisposable
 	{
 		// =================================================================
 		// SERIALIZED
@@ -35,6 +35,8 @@ namespace AK.UISystem
 
 		[SerializeField] private Transform _viewsContainer;
 		[SerializeField] private Camera    _uiCamera;
+		[SerializeField] private bool      _spawnDefaultOverlayView = true;
+		[SerializeField] private bool      _ensureEventSystem = true;
 
 		[Inject] internal Container _diContainer;
 
@@ -111,12 +113,17 @@ namespace AK.UISystem
 			// Ensure the default channel stack always exists
 			_channelStacks[UIChannel.HUD] = new Stack<UIView>();
 
-			if (FindFirstObjectByType<EventSystem>() == null)
+			if (_ensureEventSystem && FindFirstObjectByType<EventSystem>() == null)
 			{
 				var go = new GameObject("EventSystem");
 				go.transform.SetParent(_viewsContainer);
 				go.AddComponent<EventSystem>();
 				go.AddComponent<StandaloneInputModule>();
+			}
+
+			if (_spawnDefaultOverlayView)
+			{
+				Show<UIViewOverlay>();	
 			}
 		}
 

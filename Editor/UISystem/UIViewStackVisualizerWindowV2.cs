@@ -3,11 +3,11 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using AK.UISystem;
+using AK.Systems;
 using UnityEditor;
 using UnityEngine;
 
-namespace AK.UISystem.Editor
+namespace AK.Systems.Editor
 {
 	/// <summary>
 	/// Editor window to visualize the current state of the V2 UI system.
@@ -106,7 +106,7 @@ namespace AK.UISystem.Editor
 			// Content
 			_scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
 
-			var viewSystem = FindFirstObjectByType<UIViewSystem>();
+			var viewSystem = FindFirstObjectByType<UISystem>();
 			if (viewSystem == null)
 			{
 				EditorGUILayout.HelpBox(
@@ -141,7 +141,7 @@ namespace AK.UISystem.Editor
 		// DATA EXTRACTION VIA REFLECTION
 		// ================================================================
 
-		private void CacheReflectionData(UIViewSystem viewSystem)
+		private void CacheReflectionData(UISystem uiSystem)
 		{
 			_dataValid = false;
 			_channelStacks = null;
@@ -152,24 +152,24 @@ namespace AK.UISystem.Editor
 
 			try
 			{
-				var sysType = typeof(UIViewSystem);
+				var sysType = typeof(UISystem);
 
 				// _channelStacks
 				var channelStacksField = sysType.GetField("_channelStacks",
 					BindingFlags.NonPublic | BindingFlags.Instance);
-				_channelStacks = channelStacksField?.GetValue(viewSystem)
+				_channelStacks = channelStacksField?.GetValue(uiSystem)
 					as Dictionary<UIChannel, Stack<UIView>>;
 
 				// _historyStacks
 				var historyStacksField = sysType.GetField("_historyStacks",
 					BindingFlags.NonPublic | BindingFlags.Instance);
-				_historyStacks = historyStacksField?.GetValue(viewSystem)
+				_historyStacks = historyStacksField?.GetValue(uiSystem)
 					as Dictionary<UIView, Stack<UIView>>;
 
 				// _viewRegistry -> extract ViewRecord info
 				var viewRegistryField = sysType.GetField("_viewRegistry",
 					BindingFlags.NonPublic | BindingFlags.Instance);
-				var rawRegistry = viewRegistryField?.GetValue(viewSystem)
+				var rawRegistry = viewRegistryField?.GetValue(uiSystem)
 					as Dictionary<UIView, object>;
 				if (rawRegistry != null)
 				{
@@ -183,12 +183,12 @@ namespace AK.UISystem.Editor
 				// _closingViews
 				var closingViewsField = sysType.GetField("_closingViews",
 					BindingFlags.NonPublic | BindingFlags.Instance);
-				_closingViews = closingViewsField?.GetValue(viewSystem) as HashSet<UIView>;
+				_closingViews = closingViewsField?.GetValue(uiSystem) as HashSet<UIView>;
 
 				// _viewPool
 				var viewPoolField = sysType.GetField("_viewPool",
 					BindingFlags.NonPublic | BindingFlags.Instance);
-				_viewPool = viewPoolField?.GetValue(viewSystem);
+				_viewPool = viewPoolField?.GetValue(uiSystem);
 
 				_dataValid = true;
 			}
@@ -237,9 +237,9 @@ namespace AK.UISystem.Editor
 		// MAIN DRAW
 		// ================================================================
 
-		private void DrawV2Stack(UIViewSystem viewSystem)
+		private void DrawV2Stack(UISystem uiSystem)
 		{
-			CacheReflectionData(viewSystem);
+			CacheReflectionData(uiSystem);
 			if (!_dataValid) return;
 
 			// Summary

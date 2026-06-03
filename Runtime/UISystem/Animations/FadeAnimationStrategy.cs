@@ -2,7 +2,7 @@ using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
 	[CreateAssetMenu(fileName = "FadeAnimation", menuName = "AK/UI/Animations/Fade Animation")]
 	public class FadeAnimationStrategy : AnimationStrategy

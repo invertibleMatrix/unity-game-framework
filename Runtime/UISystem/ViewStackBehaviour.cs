@@ -1,4 +1,4 @@
-﻿namespace AK.UISystem
+﻿namespace AK.Systems
 {
 	/// <summary>
 	/// Unified stack behaviour for all UIViews.

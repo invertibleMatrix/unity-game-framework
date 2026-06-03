@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 
-namespace AK.CameraSystem
+namespace AK.Systems
 {
 	public class CameraLayerOrderComparer : IComparer<Camera>
 	{

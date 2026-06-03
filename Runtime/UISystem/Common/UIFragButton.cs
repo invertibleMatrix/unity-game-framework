@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
 
-namespace AK.UISystem
+namespace AK.Systems
 {
 	public class UIFragButton : UIView
 	{

@@ -2,7 +2,7 @@ using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
     [CreateAssetMenu(fileName = "DropBounceAnimation", menuName = "AK/UI/Animations/Drop Bounce Animation")]
     public class DropBounceAnimationStrategy : AnimationStrategy

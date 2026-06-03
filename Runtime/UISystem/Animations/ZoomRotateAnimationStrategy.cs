@@ -2,7 +2,7 @@ using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
     [CreateAssetMenu(fileName = "ZoomRotateAnimation", menuName = "AK/UI/Animations/Zoom Rotate Animation")]
     public class ZoomRotateAnimationStrategy : AnimationStrategy

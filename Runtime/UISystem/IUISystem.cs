@@ -2,7 +2,7 @@
 using System.Threading;
 using Cysharp.Threading.Tasks;
 
-namespace AK.UISystem
+namespace AK.Systems
 {
 	/// <summary>
 	/// Unified interface for the V2 UI system.
@@ -14,7 +14,7 @@ namespace AK.UISystem
 	/// - Views with UIChannel component act as "screens" (own Canvas, channel stacking).
 	/// - Views without UIChannel act as "fragments" (live inside a parent view).
 	/// </summary>
-	public interface IUIViewSystem
+	public interface IUISystem
 	{
 		// =====================================================================
 		// SHOW — Fire-and-forget (animation runs in background, no compiler warnings)

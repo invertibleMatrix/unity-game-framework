@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using DG.Tweening;
 using UnityEngine;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
     [CreateAssetMenu(fileName = "CompositeAnimation", menuName = "AK/UI/Animations/Composite Animation")]
     public class CompositeAnimationStrategy : AnimationStrategy

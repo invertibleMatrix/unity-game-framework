@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07b124eba62d88045861bd4b5514e032, type: 3}
+  m_Name: CostProvider_SoftCurrency
+  m_EditorClassIdentifier: AK.Examples::AK.Examples.Costs.SoftCurrencyCostProvider
+  _id: 8bd8c3e6-d1dd-465a-940e-cec44068ca9f
+  _description: UID_SoftCurrencyCostProvider
+  Name: 
+  DisplayName: 
+  Description: 
+  Icon: {fileID: 0}
+  Type: {fileID: 11400000, guid: 1f486116623964441bf97e022aa1aa8e, type: 2}
+  CurrencyDefinition: {fileID: 11400000, guid: 273ff8ab53308e44aa8cf03629023501, type: 2}

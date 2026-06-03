@@ -1,8 +1,8 @@
-using AK.UISystem.Animations;
+using AK.Systems.Animations;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace AK.UISystem
+namespace AK.Systems
 {
 	[CreateAssetMenu(fileName = "UIAnimationConfig", menuName = "AK/UI/UIAnimationConfig")]
 	public class UIAnimationConfig : ScriptableObject

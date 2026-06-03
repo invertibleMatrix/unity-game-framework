@@ -1,4 +1,4 @@
-namespace AK.UISystem
+namespace AK.Systems
 {
 	/// <summary>
 	/// Centralized constants for the UISystem to avoid magic numbers and improve maintainability.

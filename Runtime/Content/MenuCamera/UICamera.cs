@@ -1,5 +1,5 @@
 ﻿using System;
-using AK.CameraSystem;
+using AK.Systems;
 using Gameplay.Cameras;
 
 namespace UI.Camera

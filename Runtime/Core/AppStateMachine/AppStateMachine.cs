@@ -49,13 +49,6 @@ namespace AK.Core
 			{
 				_currentState.Tick();
 			}
-
-#if UNITY_EDITOR
-			if (Input.GetKeyDown(KeyCode.B))
-			{
-				TryGoBack();
-			}
-#endif
 		}
 
 		public void ChangeState(AppState appState, bool pauseCurrent = false, TransitionContext context = null)

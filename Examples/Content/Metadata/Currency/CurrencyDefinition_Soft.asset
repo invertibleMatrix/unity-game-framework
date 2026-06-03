@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 73ea0e52d26121e4f94d1d1537a0fbbc, type: 3}
+  m_Name: CurrencyDefinition_Soft
+  m_EditorClassIdentifier: AK.Examples::AK.Examples.Currency.CurrencyDefinition
+  _id: c0d454b4-6d66-40d5-b270-d19d61817d79
+  _description: UID_CurrencyDefinition_Soft
+  Name: 
+  DisplayName: 
+  Description: 
+  Icon: {fileID: 0}
+  CurrencyID: 
+  ShortCode: 
+  Type: {fileID: 11400000, guid: c236cb6416a6d9647ad2dd256ca08a03, type: 2}
+  MaxAmount: 0
+  StartingAmount: 0
+  DailyBonusAmount: 0
+  CanConvert: 0
+  CanPurchase: 0
+  CanEarn: 1
+  DisplayFormat: '{0}'
+  ShowDecimals: 0
+  DecimalPlaces: 0
+  AnalyticsEventName: 

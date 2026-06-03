@@ -2,7 +2,7 @@ using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
     [CreateAssetMenu(fileName = "CardFlipDealAnimation", menuName = "AK/UI/Animations/Card Flip Deal Animation")]
     public class CardFlipDealAnimationStrategy : AnimationStrategy

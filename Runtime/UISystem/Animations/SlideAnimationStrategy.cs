@@ -2,7 +2,7 @@ using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
 	[CreateAssetMenu(fileName = "SlideAnimation", menuName = "AK/UI/Animations/Slide Animation")]
 	public class SlideAnimationStrategy : AnimationStrategy

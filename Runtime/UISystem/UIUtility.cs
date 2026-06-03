@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 
-namespace AK.UISystem
+namespace AK.Systems
 {
 	public static class UIUtility
 	{

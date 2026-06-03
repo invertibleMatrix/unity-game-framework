@@ -3,7 +3,7 @@ using Sirenix.OdinInspector;
 using UnityEngine;
 using System.Collections.Generic;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
     [CreateAssetMenu(fileName = "CascadeAnimation", menuName = "AK/UI/Animations/Cascade Animation")]
     public class CascadeAnimationStrategy : AnimationStrategy

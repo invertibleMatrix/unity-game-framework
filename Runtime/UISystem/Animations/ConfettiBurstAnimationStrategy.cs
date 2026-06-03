@@ -2,7 +2,7 @@ using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
     [CreateAssetMenu(fileName = "ConfettiBurstAnimation", menuName = "AK/UI/Animations/Confetti Burst Animation")]
     public class ConfettiBurstAnimationStrategy : AnimationStrategy

@@ -1,10 +1,10 @@
-﻿using AK.UISystem;
+﻿using AK.Systems;
 using DG.Tweening;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
 
-namespace AK.UISystem
+namespace AK.Systems
 {
 	public class UIViewBanner : UIView
 	{

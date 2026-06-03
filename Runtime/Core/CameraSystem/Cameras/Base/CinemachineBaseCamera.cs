@@ -3,7 +3,7 @@ using Unity.Cinemachine;
 using UnityEngine;
 using AK.Core;
 
-namespace AK.CameraSystem
+namespace AK.Systems
 {
 	[RequireComponent(typeof(CinemachineBrain))]
 	public abstract class CinemachineBaseCamera<TEntity, TState> : BaseCamera<TEntity, TState>, ICinemachineGameCamera 

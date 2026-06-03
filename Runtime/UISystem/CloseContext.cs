@@ -1,4 +1,4 @@
-﻿namespace AK.UISystem
+﻿namespace AK.Systems
 {
 	/// <summary>
 	/// Defines the context in which a fragment is being closed.

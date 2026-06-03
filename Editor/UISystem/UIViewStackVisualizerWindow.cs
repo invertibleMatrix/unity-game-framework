@@ -2,11 +2,11 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using AK.UISystem;
+using AK.Systems;
 using UnityEditor;
 using UnityEngine;
 
-namespace AK.UISystem.Editor
+namespace AK.Systems.Editor
 {
 	/// <summary>
 	/// Editor window to visualize the current state of V2 UI views.
@@ -93,7 +93,7 @@ namespace AK.UISystem.Editor
 			// Content
 			_scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
 
-			var viewSystem = FindObjectOfType<UIViewSystem>();
+			var viewSystem = FindObjectOfType<UISystem>();
 			if (viewSystem == null)
 			{
 				EditorGUILayout.HelpBox(
@@ -116,14 +116,14 @@ namespace AK.UISystem.Editor
 			}
 		}
 
-		private void DrawViewHierarchy(UIViewSystem viewSystem)
+		private void DrawViewHierarchy(UISystem uiSystem)
 		{
 			// Use reflection to access private fields
-			var channelStacksField = typeof(UIViewSystem).GetField("_channelStacks",
+			var channelStacksField = typeof(UISystem).GetField("_channelStacks",
 				BindingFlags.NonPublic | BindingFlags.Instance);
-			var historyStacksField = typeof(UIViewSystem).GetField("_historyStacks",
+			var historyStacksField = typeof(UISystem).GetField("_historyStacks",
 				BindingFlags.NonPublic | BindingFlags.Instance);
-			var viewRegistryField = typeof(UIViewSystem).GetField("_viewRegistry",
+			var viewRegistryField = typeof(UISystem).GetField("_viewRegistry",
 				BindingFlags.NonPublic | BindingFlags.Instance);
 
 			if (channelStacksField == null || historyStacksField == null || viewRegistryField == null)
@@ -134,9 +134,9 @@ namespace AK.UISystem.Editor
 				return;
 			}
 
-			var channelStacks = channelStacksField.GetValue(viewSystem) as Dictionary<UIChannel, Stack<UIView>>;
-			var historyStacks = historyStacksField.GetValue(viewSystem) as Dictionary<UIView, Stack<UIView>>;
-			var viewRegistry = viewRegistryField.GetValue(viewSystem) as Dictionary<UIView, object>;
+			var channelStacks = channelStacksField.GetValue(uiSystem) as Dictionary<UIChannel, Stack<UIView>>;
+			var historyStacks = historyStacksField.GetValue(uiSystem) as Dictionary<UIView, Stack<UIView>>;
+			var viewRegistry = viewRegistryField.GetValue(uiSystem) as Dictionary<UIView, object>;
 
 			if (channelStacks == null)
 			{
@@ -147,7 +147,7 @@ namespace AK.UISystem.Editor
 			// Run validation first
 			if (_showValidation)
 			{
-				RunValidation(viewSystem, channelStacks, historyStacks, viewRegistry);
+				RunValidation(uiSystem, channelStacks, historyStacks, viewRegistry);
 				DrawValidationResults();
 			}
 
@@ -166,13 +166,13 @@ namespace AK.UISystem.Editor
 			// Draw view pool
 			if (_showViewPool)
 			{
-				DrawViewPool(viewSystem);
+				DrawViewPool(uiSystem);
 			}
 		}
 
 		#region Validation
 
-		private void RunValidation(UIViewSystem viewSystem, Dictionary<UIChannel, Stack<UIView>> channelStacks,
+		private void RunValidation(UISystem uiSystem, Dictionary<UIChannel, Stack<UIView>> channelStacks,
 			Dictionary<UIView, Stack<UIView>> historyStacks, Dictionary<UIView, object> viewRegistry)
 		{
 			// Only run validation once per frame
@@ -832,9 +832,9 @@ namespace AK.UISystem.Editor
 			return false;
 		}
 
-		private void DrawViewPool(UIViewSystem viewSystem)
+		private void DrawViewPool(UISystem uiSystem)
 		{
-			var viewPoolField = typeof(UIViewSystem).GetField("_viewPool",
+			var viewPoolField = typeof(UISystem).GetField("_viewPool",
 				BindingFlags.NonPublic | BindingFlags.Instance);
 
 			if (viewPoolField == null)
@@ -845,7 +845,7 @@ namespace AK.UISystem.Editor
 				return;
 			}
 
-			var viewPool = viewPoolField.GetValue(viewSystem);
+			var viewPool = viewPoolField.GetValue(uiSystem);
 			if (viewPool == null)
 			{
 				EditorGUILayout.HelpBox("View pool is null.", MessageType.Warning);

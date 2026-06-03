@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace AK.CameraSystem
+namespace AK.Systems
 {
 	public interface ICameraSystem
 	{

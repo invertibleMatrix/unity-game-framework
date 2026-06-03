@@ -1,7 +1,7 @@
 ﻿using DG.Tweening;
 using UnityEngine;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
 	[CreateAssetMenu(fileName = "BoingAnimation", menuName = "AK/UI/Animations/Boing Animation")]
 	public class BoingAnimationStrategy : AnimationStrategy

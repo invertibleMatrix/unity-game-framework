@@ -2,7 +2,7 @@
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
     [CreateAssetMenu(fileName = "RotateInAnimation", menuName = "AK/UI/Animations/Rotate In Animation")]
     public class RotateInAnimationStrategy : AnimationStrategy

@@ -3,7 +3,7 @@ using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace AK.UISystem
+namespace AK.Systems
 {
 	/// <summary>
 	/// Helper component for displaying a tutorial arrow that points to a target UI element.

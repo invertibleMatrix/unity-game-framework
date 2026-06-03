@@ -49,11 +49,11 @@ These enable additional service implementations. Toggle them via **Tools > UGFW 
 ```
 Assets/UGFW/Runtime/
     Core/           - Foundation: state machines, persistence (PersistableState), UID, events, camera, resource loading
-    CoreDomain/     - Domain definitions: costs, currencies, rewards, ads, analytics, store, models
-    Services/       - SDK integrations: ads, analytics, IAP, remote config, notifications
+    CoreDomain/     - Framework-core domain definitions: ads, analytics, notifications, remote config + service interfaces (IReward, ICostInfo, IPurchasable, IRewardProvider, ICostProvider)
+    Services/       - SDK integrations: ads, analytics, IAP, purchasing, costs, rewards, remote config, notifications
     UISystem/       - Full UI framework: screens, fragments, animations, pooling
 Assets/UGFW/Editor/ - Editor tools: define symbols window, UI visualizer, UID editor, scene loader
-Assets/UGFW/Examples/ - Example implementations: game model, providers, MetaData domains (achievements, daily challenges, etc.)
+Assets/UGFW/Examples/ - Example implementations: game model, providers, game-specific MetaData domains (currency, rewards, costs, store, IAP, achievements, etc.)
 ```
 
 Each runtime module has its own assembly definition (`AK.Core`, `AK.CoreDomain`, `AK.Services`, `AK.UISystem`).
@@ -1172,15 +1172,12 @@ CurrencyMeta (ScriptableObject)
 
 ### The MetaDataRepository
 
-`MetaDataRepository` is a single ScriptableObject that holds references to ALL domain metas. It provides both **typed convenience properties** for framework-core domains and a **type-keyed registry** for game-specific domains:
+`MetaDataRepository` is a single ScriptableObject that holds a `UIDRegistry` and provides a **type-keyed registry** for all domain metas. There are no hardcoded convenience properties — every domain is accessed uniformly through `GetMeta<T>()`:
 
 ```csharp
 public class MetaDataRepository : ScriptableObject, IMetaDataRepository
 {
-    // Typed convenience properties for framework-core domains
-    public UIDRegistry  UIDRegistry;
-    public CurrencyMeta CurrencyMeta;
-    public RewardsMeta  RewardsMeta;
+    public UIDRegistry UIDRegistry;
 
     // Type-keyed registry — extensible without modifying framework code
     public void RegisterMeta<T>(T meta) where T : class, IMeta;
@@ -1189,15 +1186,17 @@ public class MetaDataRepository : ScriptableObject, IMetaDataRepository
 }
 ```
 
-**Framework-core domains** (`RewardsMeta`, `CurrencyMeta`) are auto-registered from serialized fields on `MetaDataRepository`. **Game-specific domains** (`AdsMeta`, `ShopMeta`, `AchievementsMeta`, etc.) are registered during bootstrap in `GameBindings`:
+**All domains** — whether framework-core or game-specific — are registered during bootstrap in `GameBindings`:
 
 ```csharp
 public void InstallBindings(ContainerBuilder builder)
 {
-    // Register game-specific Meta domains
+    // Register all Meta domains (framework-core and game-specific)
     if (_adsMeta != null) _metaDataRepository.RegisterMeta(_adsMeta);
+    if (_analyticsMeta != null) _metaDataRepository.RegisterMeta(_analyticsMeta);
+    if (_currencyMeta != null) _metaDataRepository.RegisterMeta(_currencyMeta);
+    if (_rewardsMeta != null) _metaDataRepository.RegisterMeta(_rewardsMeta);
     if (_shopMeta != null) _metaDataRepository.RegisterMeta(_shopMeta);
-    if (_achievementsMeta != null) _metaDataRepository.RegisterMeta(_achievementsMeta);
 
     // Then register the repository in DI
     builder.RegisterValue(_metaDataRepository, new[] { typeof(MetaDataRepository), typeof(IMetaDataRepository) });
@@ -1207,18 +1206,16 @@ public void InstallBindings(ContainerBuilder builder)
 **Accessing Meta containers at runtime:**
 
 ```csharp
-// Framework-core domains — use typed convenience properties
-var rewardDef = repository.RewardsMeta.Registry.GetObjectByUID(uid);
-var currencyDef = repository.CurrencyMeta.GetCurrencyByID(currencyUID);
-
-// Game-specific domains — use type-keyed lookup
+// All domains use the same type-keyed lookup
+var rewardsMeta = repository.GetMeta<RewardsMeta>();
+var currencyMeta = repository.GetMeta<CurrencyMeta>();
 var adsMeta = repository.GetMeta<AdsMeta>();
 var shopMeta = repository.GetMeta<ShopMeta>();
 
 // Safe access with TryGetMeta
-if (repository.TryGetMeta<AchievementsMeta>(out var achievements))
+if (repository.TryGetMeta<RewardsMeta>(out var rewards))
 {
-    var achievement = achievements.GetAchievement(uid);
+    var rewardDef = rewards.Registry.GetObjectByUID(uid);
 }
 ```
 
@@ -1226,31 +1223,9 @@ if (repository.TryGetMeta<AchievementsMeta>(out var achievements))
 
 Place ONE `MetaDataRepository` in your bootstrap scene. It's registered in DI and injected everywhere.
 
-### Game Domains
+### Framework-Core Domains (in CoreDomain)
 
-#### Currency
-
-- `CurrencyDefinition` -- type (CurrencyType SO), max amount, starting amount, exchange rates
-- `CurrencyType` -- ScriptableObject asset. Create instances for each currency in your game (e.g., "SoftCurrency", "HardCurrency", "Energy")
-- `CurrencyModel` -- runtime model with `Add()`, `Deduct()`, `DeductPartial()`, respects MaxAmount cap
-- `CurrencyExchangeRate` -- conversion rates between currencies
-
-#### Rewards
-
-- `RewardDefinition` -- amount, type (RewardType SO), linked currency/bundle/gacha data
-- `RewardType` -- ScriptableObject asset. Create instances for each reward type in your game (e.g., "Star", "Currency", "Bundle", "Gacha")
-- `RewardBundle` -- ordered/weighted list of sub-rewards (recursive), bundle types: Sequential, Random, Weighted, RandomWeighted, All
-- `GachaBundle` -- weighted random reward pool with `EvaluateRewards()` for gacha pulls
-- `CheckpointReward` -- rewards tied to progression milestones
-- `SubscriptionReward` -- time-based rewards for subscribers
-
-#### Costs & Purchasing
-
-- `CostType` -- ScriptableObject asset. Create instances for each cost type in your game (e.g., "SoftCurrency", "HardCurrency", "Ad")
-- `CostOption` -- links a CostType to an amount. Used by `PurchasableItemDefinition`
-- `CostProvider` -- abstract SO that handles `CanAfford`/`Deduct` for a specific CostType. Games create their own (e.g., `SoftCurrencyCostProvider`)
-- `ICostService` / `CostService` -- dispatches cost operations to the registered `CostProvider` for a given CostType
-- `PurchasableItemDefinition` -- bridge between shop items and the purchase system: cost (CostOption), product ID, reward/bundle references
+These domains ship with the framework because their services directly depend on them:
 
 #### Ads
 
@@ -1259,29 +1234,70 @@ Place ONE `MetaDataRepository` in your bootstrap scene. It's registered in DI an
 - `AdLoadingStrategy` enum
 - `AdsMeta` / `AdsRegistry` -- container and registry
 
-#### IAP / Store
+#### Analytics
+
+- `AnalyticsEventDefinition` -- typed event definitions with category, provider name mappings, and parameter validation
+- `AnalyticsParameter` -- typed parameter definitions with name mapping for providers
+- `AnalyticsEventCategory` -- categorization of events (Core, Gameplay, Monetization, etc.)
+- `AnalyticsMeta` / `AnalyticsRegistry` -- container and registry
+
+#### Notifications
+
+- `NotificationDefinition` -- local notification template with title, body, delay, repeat interval
+- `NotificationType` -- ScriptableObject asset for categorizing notifications
+- `NotificationsMeta` / `NotificationsRegistry` -- container and registry
+
+#### Remote Config
+
+- `RemoteVariable<T>` -- three-tier value resolution: Remote > Cached > Default
+- `RemoteBool`, `RemoteInt`, `RemoteFloat`, `RemoteString`, `RemoteLong`, `RemoteDouble`, `RemoteJson` -- typed remote variables
+- `RemoteConfigMeta` / `RemoteVariablesRegistry` -- container and registry
+
+### Game-Specific Domains (in Examples/MetaData/)
+
+These domains are **not part of the framework core** — they are example implementations in `Assets/UGFW/Examples/MetaData/`. Each game creates its own domain definitions following the same MetaData pattern. Use these as reference implementations:
+
+#### Currency (Example)
+
+- `CurrencyDefinition` -- type (CurrencyType SO), max amount, starting amount, exchange rates
+- `CurrencyType` -- ScriptableObject asset. Create instances for each currency in your game (e.g., "SoftCurrency", "HardCurrency", "Energy")
+- `CurrencyMeta` / `CurrencyRegistry` -- container and registry
+
+#### Rewards (Example)
+
+- `RewardDefinition` -- amount, type (RewardType SO), linked currency/bundle/gacha data
+- `RewardType` -- ScriptableObject asset. Create instances for each reward type in your game (e.g., "Star", "Currency", "Bundle", "Gacha")
+- `RewardBundle` -- ordered/weighted list of sub-rewards (recursive), bundle types: Sequential, Random, Weighted, RandomWeighted, All
+- `GachaBundle` -- weighted random reward pool with `EvaluateRewards()` for gacha pulls
+- `CheckpointReward` -- rewards tied to progression milestones
+- `SubscriptionReward` -- time-based rewards for subscribers
+- `RewardsMeta` / `RewardsRegistry` -- container and registry
+
+#### Costs & Purchasing (Example)
+
+- `CostType` -- ScriptableObject asset. Create instances for each cost type in your game (e.g., "SoftCurrency", "HardCurrency", "Ad")
+- `CostOption` -- links a CostType to an amount. Used by `PurchasableItemDefinition`
+- `CostProvider` -- abstract SO that handles `CanAfford`/`Deduct` for a specific CostType. Games create their own (e.g., `SoftCurrencyCostProvider`)
+- `CostMeta` -- container for cost definitions
+
+#### Store / IAP (Example)
 
 - `IAPProductDefinition` -- store product ID, product type (Consumable/NonConsumable/Subscription)
 - `IAPProductType` enum
 - `ShopCategoryDefinition` -- categories of shop items with cost type, product UIDs
 - `ShopItemDefinition` -- individual shop items with rarity, cost, rewards
+- `ShopMeta` / `ShopRegistry` -- container and registry
 
-#### Other Domains
+#### Other Example Domains
 
 | Domain | Definitions | Description |
 |--------|------------|-------------|
-| **Analytics** | AnalyticsEventDefinition, ParameterName | Typed event and parameter definitions for analytics tracking |
-| **Progression** | ProgressionLevel, MilestoneDefinition | Level progression and milestone tracking |
 | **Achievements** | AchievementDefinition, AchievementType | Achievement definitions |
 | **DailyChallenges** | DailyChallengeDefinition, ChallengeType | Daily challenge definitions |
-| **DailyRewards** | DailyRewardSlot, StreakBonusDefinition | Daily reward calendar with streak bonuses |
 | **Difficulty** | DifficultyDefinition, DifficultyType | Difficulty settings |
 | **GameModes** | GameModeDefinition, GameModeType | Game mode definitions |
 | **Seasons** | EventDefinition, EventType | Seasonal/live event definitions |
-| **SpinWheel** | SpinWheelSlot | Spin wheel prize definitions |
 | **Tutorials** | TutorialDefinition, TutorialType | Tutorial step definitions |
-| **Notifications** | NotificationDefinition, NotificationType | Local notification templates |
-| **RemoteConfig** | RemoteVariable, RemoteBool/Int/Float/String | Remote variables with Remote > Cached > Default priority |
 
 ### Remote Variables
 
@@ -1365,11 +1381,8 @@ These are provided by the framework for use in your game model:
 | Model | Description |
 |-------|-------------|
 | `PersistableState<T>` | Generic base class with `Load()`, `Commit()`, `DeleteSave()`, `HasSave()`, `Initialize()`, session tracking, save migration |
-| `CurrencyModel` | Runtime currency with `Add()`, `Deduct()`, `DeductPartial()`, UID resolution for deserialization |
-| `GameSettingsModel` | Audio/vibration/notification preferences with `OnChanged` event |
-| `Transaction` | UID + timestamp record for pending rewards/purchases, with deserialization resolution |
-| `TransactionType` | ScriptableObject asset for categorizing transactions. Create instances per game (e.g., "LevelComplete", "GachaBox") |
-| `SerializableCurrency` | Polymorphic currency serialization helper for `OnBeforeSerialize`/`OnAfterDeserialize` |
+
+Game-specific building blocks (CurrencyModel, GameSettingsModel, Transaction, TransactionType, SerializableCurrency) are provided as examples in `Assets/UGFW/Examples/`.
 
 #### Extending Definitions for Your Game
 
@@ -1378,10 +1391,10 @@ All `[Domain]Type` assets are ScriptableObjects. To add new types for your game:
 1. **Create the Type asset** via the Create Asset menu (e.g., Create → Gameplay/MetaData/Currency/CurrencyType)
 2. **Name it** for your game (e.g., "Gems", "Energy", "PremiumToken")
 3. **Reference it** from your Definition assets (e.g., set `CurrencyDefinition.Type` to your new CurrencyType)
-4. **Create a Provider** if the domain uses provider-based dispatch (Cost, Reward):
+4. **Create a Provider** if the domain uses provider-based dispatch (Cost, Reward). See `Assets/UGFW/Examples/` for reference implementations:
 
 ```csharp
-// Example: Creating a cost provider for a new currency
+// Example: Creating a cost provider for a new currency (see SoftCurrencyCostProvider in Examples)
 [CreateAssetMenu(fileName = "GemCostProvider", menuName = "Game/Costs/GemCostProvider")]
 public class GemCostProvider : CostProvider
 {
@@ -1416,7 +1429,8 @@ Priority-based waterfall mediation with frequency capping and auto-reload.
 
 ```csharp
 // Initialize with metadata
-await adsService.InitializeAsync(metaDataRepository.AdsMeta, playerLevel: 5);
+var adsMeta = metaDataRepository.GetMeta<AdsMeta>();
+await adsService.InitializeAsync(adsMeta, playerLevel: 5);
 
 // Show a rewarded ad
 bool rewardGranted = await adsService.ShowRewardedAdAsync(placementDefinition);
@@ -1436,7 +1450,7 @@ adsService.SetUserUnderAge(isUnderAge: false);
 - Loading: `PreloadOnInitialize`, `AutoReloadAfterShow`, `MaxRetryAttempts`
 
 **Providers:** AdMob (`ADMOB_ENABLED`), NullProvider (testing)
-**Builder:** `AdServiceBuilder` for fluent construction, or `IMetaDataRepository.CreateAdService()`
+**Builder:** `AdServiceBuilder` for fluent construction
 
 ### Analytics Service
 
@@ -1489,7 +1503,8 @@ Must be initialized first. Other Firebase services depend on `IFirebaseInitializ
 bool available = await firebaseInit.InitializeAsync();
 
 // Remote Config
-await remoteConfigService.InitializeAsync(metaDataRepository.RemoteConfigMeta);
+var remoteConfigMeta = metaDataRepository.GetMeta<RemoteConfigMeta>();
+await remoteConfigService.InitializeAsync(remoteConfigMeta);
 await remoteConfigService.FetchAndActivateAsync();
 // RemoteVariables on the meta now reflect server values
 ```

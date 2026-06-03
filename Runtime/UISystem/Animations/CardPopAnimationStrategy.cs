@@ -2,7 +2,7 @@ using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
     [CreateAssetMenu(fileName = "CardPopAnimation", menuName = "AK/UI/Animations/Card Pop Animation")]
     public class CardPopAnimationStrategy : AnimationStrategy

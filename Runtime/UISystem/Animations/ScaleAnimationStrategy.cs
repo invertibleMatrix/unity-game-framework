@@ -2,7 +2,7 @@ using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
 	[CreateAssetMenu(fileName = "ScaleAnimation", menuName = "AK/UI/Animations/Scale Animation")]
 	public class ScaleAnimationStrategy : AnimationStrategy

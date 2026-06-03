@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b151e8097db2d044f9627dbbd81b8fe2, type: 3}
+  m_Name: RewardProvider_SoftCurrency
+  m_EditorClassIdentifier: AK.Examples::AK.Examples.Rewards.CurrencyRewardProvider
+  _id: 92b4bd30-d4b7-4ca8-8596-0ed10688a4d8
+  _description: UID_RewardProvider_SoftCurrency
+  Name: 
+  DisplayName: 
+  Description: 
+  Icon: {fileID: 0}
+  Type: {fileID: 11400000, guid: 8ac13b923d647484c9cde10c0ad2e020, type: 2}

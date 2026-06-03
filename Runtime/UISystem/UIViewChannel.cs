@@ -1,7 +1,7 @@
 ﻿using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace AK.UISystem
+namespace AK.Systems
 {
 	/// <summary>
 	/// Attach this component to any UIView that should manage its own Canvas and sorting order.

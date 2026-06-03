@@ -2,7 +2,7 @@ using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-namespace AK.UISystem.Animations
+namespace AK.Systems.Animations
 {
     [CreateAssetMenu(fileName = "PartyPopperAnimation", menuName = "AK/UI/Animations/Party Popper Animation")]
     public class PartyPopperAnimationStrategy : AnimationStrategy

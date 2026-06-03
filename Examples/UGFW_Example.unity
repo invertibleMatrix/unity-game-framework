@@ -396,6 +396,8 @@ MonoBehaviour:
   _repository: {fileID: 11400000, guid: 6ce83fc2ee7108b47972250137bfea1a, type: 2}
   _viewsContainer: {fileID: 239575494}
   _uiCamera: {fileID: 136519181}
+  _spawnDefaultOverlayView: 1
+  _ensureEventSystem: 1
 --- !u!4 &239575494
 Transform:
   m_ObjectHideFlags: 0
@@ -566,7 +568,6 @@ MonoBehaviour:
   _role: 0
   _layerOrder: 0
   _camera: {fileID: 330585545}
-  _physicsRaycaster: {fileID: 0}
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
@@ -887,6 +888,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1640186949}
   - component: {fileID: 1640186950}
+  - component: {fileID: 1640186951}
   m_Layer: 0
   m_Name: Bootstrap
   m_TagString: Untagged
@@ -925,15 +927,28 @@ MonoBehaviour:
   _appStateMachine: {fileID: 1565514366}
   _bootState: {fileID: 11400000, guid: 35ac953da06f75d46b4b881ff3d030cc, type: 2}
   _mainMenuState: {fileID: 11400000, guid: 8871f748ff63b334baab231651c3472d, type: 2}
+  _cameraSystem: {fileID: 890448200}
+  _uiSystem: {fileID: 239575493}
   _adsMeta: {fileID: 0}
   _shopMeta: {fileID: 0}
   _notificationsMeta: {fileID: 0}
-  _softCurrencyCostType: {fileID: 0}
-  _hardCurrencyCostType: {fileID: 0}
-  _softCurrencyCostProvider: {fileID: 0}
-  _currencyRewardType: {fileID: 0}
-  _currencyRewardProvider: {fileID: 0}
+  _softCurrencyCostType: {fileID: 11400000, guid: 1f486116623964441bf97e022aa1aa8e, type: 2}
+  _softCurrencyCostProvider: {fileID: 11400000, guid: 7922a5d009c620d42868b2574a2b13a5, type: 2}
+  _currencyRewardType: {fileID: 11400000, guid: 8ac13b923d647484c9cde10c0ad2e020, type: 2}
+  _currencyRewardProvider: {fileID: 11400000, guid: 7d1ee485539fb244a9c5af697ba14189, type: 2}
   _levelCompleteTransactionType: {fileID: 0}
+--- !u!114 &1640186951
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1640186948}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5312032623c34414a54ea00e35a7eb8e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Reflex::Reflex.Core.ContainerScope
 --- !u!1 &1701672353
 GameObject:
   m_ObjectHideFlags: 0
