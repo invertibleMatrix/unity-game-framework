@@ -27,14 +27,15 @@ namespace AK.Examples
 		[Header("Meta Data")]
 		[SerializeField] private MetaDataRepository _metaDataRepository;
 
+		[SerializeField] private AppStateMachine _appStateMachine;
+		[SerializeField] private BootState       _bootState;
+		[SerializeField] private MainMenuState   _mainMenuState;
+		
 		[Header("Custom Meta — register game-specific domains")]
 		[SerializeField] private AdsMeta _adsMeta;
 		[SerializeField] private ShopMeta _shopMeta;
 		[SerializeField] private NotificationsMeta _notificationsMeta;
-
-		[Header("IAP (optional — leave null for games without IAP)")]
-		[SerializeField] private IIAPService _iapService;
-
+		
 		[Header("Cost Type Assets")]
 		[SerializeField] private CostType _softCurrencyCostType;
 		[SerializeField] private CostType _hardCurrencyCostType;
@@ -85,13 +86,8 @@ namespace AK.Examples
 			builder.RegisterValue(rewardService, new[] { typeof(IRewardService) });
 
 			// Purchase Service — iapService is optional (null = no IAP)
-			var purchaseService = new PurchaseService(costService, rewardService, _iapService);
+			var purchaseService = new PurchaseService(costService, rewardService, null);
 			builder.RegisterValue(purchaseService, new[] { typeof(IPurchaseService) });
-
-			if (_iapService != null)
-			{
-				builder.RegisterValue(_iapService, new[] { typeof(IIAPService) });
-			}
 		}
 
 		private void OnApplicationPause(bool pauseStatus)

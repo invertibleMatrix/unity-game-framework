@@ -9,7 +9,7 @@ using UnityEngine.SceneManagement;
 namespace Utilities.AudioSpawner
 {
 	[CreateAssetMenu(fileName = "AudioConfig", menuName = "AK/Configs/AudioConfig")]
-	public class AudioConfigBase : UID
+	public class AudioConfig : UID
 	{
 		[Tooltip("The prefab for this audio type. All variants of the same type share this prefab.")]
 		public AudioComponent Prefab;

@@ -14,7 +14,7 @@ namespace Utilities.AudioSpawner
 		[SerializeField] protected AudioSource _audioSource;
 
 		private Action          _onStop;
-		private AudioConfigBase _config;
+		private AudioConfig _config;
 		private Coroutine       _fadeCoroutine;
 		private Coroutine       _playCoroutine;
 
@@ -28,7 +28,7 @@ namespace Utilities.AudioSpawner
 			}
 		}
 
-		public virtual void Init(AudioConfigBase config, Action onStop)
+		public virtual void Init(AudioConfig config, Action onStop)
 		{
 			ConfigVariantId = config.UniqueID;
 			_config = config;

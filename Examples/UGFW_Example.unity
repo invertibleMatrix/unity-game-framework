@@ -703,6 +703,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 424368039}
+  - component: {fileID: 424368040}
   m_Layer: 0
   m_Name: AudioSpawner
   m_TagString: Untagged
@@ -725,6 +726,19 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &424368040
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 424368038}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f854fc2fd562780499ee7057e15b98f0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: AK.Core::Utilities.AudioSpawner.AudioSpawner
+  _audioRegistry: {fileID: 11400000, guid: 2187e541e31c1d340a7b474191d94fa2, type: 2}
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
@@ -847,7 +861,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 96ee05fbbaec43cc886e48f5527b57a3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: AK.Core::AK.Core.AppStateMachine
-  _bootState: {fileID: 0}
+  _bootState: {fileID: 11400000, guid: 35ac953da06f75d46b4b881ff3d030cc, type: 2}
 --- !u!4 &1565514367
 Transform:
   m_ObjectHideFlags: 0
@@ -907,7 +921,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 198cb4e8524a8c9409b9e479d9eb7837, type: 3}
   m_Name: 
   m_EditorClassIdentifier: AK.Examples::AK.Examples.ExampleGameBindings
-  _metaDataRepository: {fileID: 0}
+  _metaDataRepository: {fileID: 11400000, guid: d302b7d8a355e2442ae5acfa78b7dd4a, type: 2}
+  _appStateMachine: {fileID: 1565514366}
+  _bootState: {fileID: 11400000, guid: 35ac953da06f75d46b4b881ff3d030cc, type: 2}
+  _mainMenuState: {fileID: 11400000, guid: 8871f748ff63b334baab231651c3472d, type: 2}
   _adsMeta: {fileID: 0}
   _shopMeta: {fileID: 0}
   _notificationsMeta: {fileID: 0}
@@ -926,6 +943,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1701672354}
+  - component: {fileID: 1701672355}
   m_Layer: 0
   m_Name: ParticleSpawner
   m_TagString: Untagged
@@ -948,6 +966,19 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1701672355
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1701672353}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 62c3f6fd32184184ac527cb18b4b87b6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: AK.Core::Utilities.ParticleSpawner.ParticleSpawner
+  _particlesRegistry: {fileID: 11400000, guid: a2f33db2cce14b84ca1e4099b61f06eb, type: 2}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

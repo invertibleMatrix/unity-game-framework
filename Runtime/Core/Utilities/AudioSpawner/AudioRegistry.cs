@@ -14,22 +14,22 @@ namespace Utilities.AudioSpawner
 	[CreateAssetMenu(fileName = "AudioRegistry", menuName = "AK/Registries/Audio Registry")]
 	public class AudioRegistry : ScriptableObject
 	{
-		[SerializeField] private TypedUIDRegistry<AudioConfigBase> _registry;
+		[SerializeField] private TypedUIDRegistry<AudioConfig> _registry;
 
 		// Cache for fast lookups
-		private Dictionary<Type, Dictionary<string, AudioConfigBase>> _typeToConfigs;
-		private Dictionary<string, AudioConfigBase>                   _uidToConfig;
+		private Dictionary<Type, Dictionary<string, AudioConfig>> _typeToConfigs;
+		private Dictionary<string, AudioConfig>                   _uidToConfig;
 
-		public IReadOnlyList<AudioConfigBase> AudioConfigs => _registry.Objects;
+		public IReadOnlyList<AudioConfig> AudioConfigs => _registry.Objects;
 
 		public void BuildCache()
 		{
 			_registry.Initialize();
 
-			_typeToConfigs = new Dictionary<Type, Dictionary<string, AudioConfigBase>>();
-			_uidToConfig = new Dictionary<string, AudioConfigBase>();
+			_typeToConfigs = new Dictionary<Type, Dictionary<string, AudioConfig>>();
+			_uidToConfig = new Dictionary<string, AudioConfig>();
 
-			foreach (AudioConfigBase audioConfig in _registry.Objects)
+			foreach (AudioConfig audioConfig in _registry.Objects)
 			{
 				if (audioConfig == null || audioConfig.Prefab == null)
 				{
@@ -60,7 +60,7 @@ namespace Utilities.AudioSpawner
 
 				if (!_typeToConfigs.ContainsKey(prefabType))
 				{
-					_typeToConfigs.Add(prefabType, new Dictionary<string, AudioConfigBase>());
+					_typeToConfigs.Add(prefabType, new Dictionary<string, AudioConfig>());
 				}
 
 				if (_typeToConfigs[prefabType].ContainsKey(uid))
@@ -81,7 +81,7 @@ namespace Utilities.AudioSpawner
 		/// Returns null if no config found for the exact type (no fallback).
 		/// Used by Spawn<T>() for type-safe spawning.
 		/// </summary>
-		public AudioConfigBase GetConfigStrict(Type type, UID variantId)
+		public AudioConfig GetConfigStrict(Type type, UID variantId)
 		{
 			if (type == null)
 			{
@@ -103,7 +103,7 @@ namespace Utilities.AudioSpawner
 			}
 
 			// Try to find exact match for variant ID
-			if (configs.TryGetValue(uid, out AudioConfigBase config))
+			if (configs.TryGetValue(uid, out AudioConfig config))
 			{
 				return config;
 			}
@@ -122,7 +122,7 @@ namespace Utilities.AudioSpawner
 		/// UID-based lookup: Returns config by UID regardless of type.
 		/// Used by PlayAudio() for simple audio playback.
 		/// </summary>
-		public AudioConfigBase GetConfigByUID(UID variantId)
+		public AudioConfig GetConfigByUID(UID variantId)
 		{
 			if (variantId == null || variantId.IsEmpty())
 			{
@@ -132,7 +132,7 @@ namespace Utilities.AudioSpawner
 
 			string uid = variantId.Id;
 
-			if (_uidToConfig.TryGetValue(uid, out AudioConfigBase config))
+			if (_uidToConfig.TryGetValue(uid, out AudioConfig config))
 			{
 				return config;
 			}
@@ -145,7 +145,7 @@ namespace Utilities.AudioSpawner
 		/// OBSOLETE: Use GetConfigStrict() for type-safe lookup or GetConfigByUID() for UID-based lookup.
 		/// </summary>
 		[Obsolete("Use GetConfigStrict() for type-safe lookup or GetConfigByUID() for UID-based lookup.")]
-		public AudioConfigBase GetConfig(Type type, UID variantId)
+		public AudioConfig GetConfig(Type type, UID variantId)
 		{
 			// For backward compatibility, try strict lookup first
 			var config = GetConfigStrict(type, variantId);
@@ -175,7 +175,7 @@ namespace Utilities.AudioSpawner
 		/// OBSOLETE: Use GetConfigStrict() for type-safe lookup.
 		/// </summary>
 		[Obsolete("Use GetConfigStrict() for type-safe lookup.")]
-		public AudioConfigBase GetConfig<T>(UID variantId) where T : AudioComponent
+		public AudioConfig GetConfig<T>(UID variantId) where T : AudioComponent
 		{
 			return GetConfigStrict(typeof(T), variantId);
 		}
@@ -220,7 +220,7 @@ namespace Utilities.AudioSpawner
 				foreach (var configKvp in configs)
 				{
 					string uid = configKvp.Key;
-					AudioConfigBase config = configKvp.Value;
+					AudioConfig config = configKvp.Value;
 					Debug.Log($"  - UID: {uid}, Config: {config.name}");
 				}
 			}

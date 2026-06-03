@@ -74,7 +74,8 @@ namespace AK.CoreDomain
 		[Header("Analytics")] [Tooltip("Custom analytics event name for tracking purchases.")]
 		public string AnalyticsEventName;
 
-		[Header("Rewards")] [Tooltip("The rewards granted upon purchase.")] [InlineEditor]
+		[Header("Rewards")] [Tooltip("The rewards granted upon purchase.")] 
+		[InlineEditor]
 		public RewardDefinition Reward;
 
 		[Tooltip("List of rewards in this bundle.")]
@@ -83,13 +84,12 @@ namespace AK.CoreDomain
 		[Tooltip("Optional bonus rewards that are guaranteed (e.g., 'Buy this and get 100 extra coins').")]
 		public RewardBundle BonusRewards;
 
-		[Tooltip("Optional gacha rewards that are probabilistic (e.g., 'Chance to get rare item').")] [InlineEditor]
+		[Tooltip("Optional gacha rewards that are probabilistic (e.g., 'Chance to get rare item').")] 
+		[InlineEditor]
 		public GachaBundle GachaRewards;
 
 		public UID AnalyticsEventDefId;
-
-		public UID UniqueID => this;
-
+		
 		/// <summary>
 		/// Convenience accessor: the CostType SO from the Cost option.
 		/// Null if Cost is not set.

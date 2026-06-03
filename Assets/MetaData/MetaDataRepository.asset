@@ -12,6 +12,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c7c7e5a58c0d43589231da0779239080, type: 3}
   m_Name: MetaDataRepository
   m_EditorClassIdentifier: AK.CoreDomain::AK.CoreDomain.MetaDataRepository
-  _uidRegistry: {fileID: 0}
+  _uidRegistry: {fileID: 11400000, guid: acc3513ac9455dc409f2d1988a9072f0, type: 2}
   _rewardsMeta: {fileID: 0}
   _currencyMeta: {fileID: 0}

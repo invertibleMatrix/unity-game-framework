@@ -39,7 +39,7 @@ namespace Utilities.AudioSpawner
 			}
 
 			// Get config with strict type checking
-			AudioConfigBase config = _audioRegistry.GetConfigStrict(requestedType, variantId);
+			AudioConfig config = _audioRegistry.GetConfigStrict(requestedType, variantId);
 			if (config == null)
 			{
 				Debug.LogError($"Spawn<{requestedType.Name}>() failed: No config found for type '{requestedType.Name}' with variant ID '{variantId.Id}'. " +
@@ -82,7 +82,7 @@ namespace Utilities.AudioSpawner
 			}
 
 			// Get config by UID (forgiving - doesn't care about type)
-			AudioConfigBase config = _audioRegistry.GetConfigByUID(variantId);
+			AudioConfig config = _audioRegistry.GetConfigByUID(variantId);
 			
 			if (config == null)
 			{
@@ -153,7 +153,7 @@ namespace Utilities.AudioSpawner
 			}
 
 			// Get config with strict type checking
-			AudioConfigBase config = _audioRegistry.GetConfigStrict(type, variantId);
+			AudioConfig config = _audioRegistry.GetConfigStrict(type, variantId);
 			
 			if (config == null)
 			{
@@ -183,7 +183,7 @@ namespace Utilities.AudioSpawner
 			return audioComponent;
 		}
 
-		private AudioComponent GetFromPool(Type type, AudioConfigBase config)
+		private AudioComponent GetFromPool(Type type, AudioConfig config)
 		{
 			if (!_pools.TryGetValue(type, out var pool))
 			{
@@ -205,7 +205,7 @@ namespace Utilities.AudioSpawner
 
 			// Calculate max pool size per concrete type
 			var poolSizes = new Dictionary<Type, int>();
-			foreach (AudioConfigBase audioConfig in _audioRegistry.AudioConfigs)
+			foreach (AudioConfig audioConfig in _audioRegistry.AudioConfigs)
 			{
 				if (audioConfig == null || audioConfig.Prefab == null)
 				{
@@ -234,7 +234,7 @@ namespace Utilities.AudioSpawner
 				var pool = new Queue<AudioComponent>(poolSize);
 
 				// Find any config with this prefab type to use for instantiation
-				AudioConfigBase sampleConfig = null;
+				AudioConfig sampleConfig = null;
 				foreach (var cfg in _audioRegistry.AudioConfigs)
 				{
 					if (cfg != null && cfg.Prefab != null && cfg.Prefab.GetType() == poolType)

@@ -10,7 +10,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a43cacbd697c79e4d9a804faf52a416f, type: 3}
-  m_Name: _UIViewRepository
+  m_Name: UIViewRepository
   m_EditorClassIdentifier: AK.UISystem::AK.Systems.UI.V2.UIViewRepository
   _views:
   - {fileID: 8831360766382092123, guid: de62f4fc50d9c0348927171dfdac6e02, type: 3}
