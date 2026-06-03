@@ -1144,7 +1144,7 @@ mainCam.Shake(intensity: 0.5f, duration: 0.3f);
 
 ---
 
-## Module: GameplayCore
+## Module: CoreDomain
 
 Game data layer built around the **MetaData system** -- a ScriptableObject-driven architecture for defining all game content as data assets.
 
@@ -1283,7 +1283,7 @@ UGFW provides a generic base class `PersistableState<T>` for game state persiste
 
 ```csharp
 using AK.Core;
-using AK.CoreDomain.Models;
+using MyGame.Models; // your game's model namespace
 
 [Serializable]
 public class MyGameModel : PersistableState<MyGameModel>
@@ -1483,91 +1483,6 @@ notificationService.ScheduleNotification(welcomeUID, delaySeconds: 86400);
 // Schedule custom
 notificationService.ScheduleNotification("Title", "Message", fireTime, "id", data, repeatInterval);
 ```
-
----
-
-## Module: UISystem
-
-A unified UI framework where one class (`UIView`) serves as both screens and fragments. The distinction is determined by a `UIViewChannel` component on the prefab -- no separate class hierarchies.
-
-### Core Concepts
-
-**Screen** (has `UIViewChannel`) -- gets its own Canvas, pushed onto a channel-based stack, sorted by `UIChannel` (HUD=0, Menu=100, Overlay=200).
-
-**Fragment** (no `UIViewChannel`) -- lives inside a parent view's `FragmentContainer`, tracked in per-parent history stacks.
-
-### Show / Close / Navigate
-
-```csharp
-// Show a screen (fire-and-forget or async)
-uiSystem.Show<UIMainMenuScreen>();
-var screen = await uiSystem.ShowAsync<UIMainMenuScreen>(context: myData);
-
-// Show a fragment inside a specific parent
-uiSystem.Show<UISettingsFragment>(parent: screen);
-
-// Close
-uiSystem.Close(view);
-await uiSystem.CloseAsync(view);
-
-// Navigate back (fragment history)
-uiSystem.GoBack(parentView);
-
-// Convenience
-uiSystem.DisplayToast("Saved!");
-uiSystem.DisplayBanner("Special Offer!", variantId: "sale");
-```
-
-### UIView Lifecycle
-
-```csharp
-public class UIMyScreen : UIView<MyContext>
-{
-    public override void SetContext(MyContext ctx) { /* receive data */ }
-    public override void RegisterResources() { /* subscribe to events */ }
-    public override void UnRegisterResources() { /* unsubscribe */ }
-    public override void OnPrepareShow() { /* before animation */ }
-    public override void OnShow() { /* after animation */ }
-    public override void OnPrepareHide() { /* before hide animation */ }
-    public override void OnHide() { /* after hide animation */ }
-    public override void OnPause() { /* covered by another view */ }
-    public override void OnResume() { /* uncovered */ }
-    public override void OnReset() { /* returned to pool */ }
-}
-```
-
-### Stack Behavior
-
-Control what happens to the view below when a new view is pushed:
-
-| Behavior | Effect |
-|----------|--------|
-| `DoNothing` | Below view unaffected (toasts, overlays) |
-| `HideBelow` | Below view hidden (full-screen takeover) |
-| `PauseOnlyBelow` | Below view input-blocked but visible (popups, dialogs) |
-| `PauseAndHideBelow` | Below view fully paused + hidden (replacement screens) |
-| `CloseBelow` | Below view closed/destroyed (no-return navigation) |
-
-### Animations
-
-30+ animation strategy ScriptableObjects for show/hide transitions:
-
-- **Core:** Fade, Slide, Scale, Composite
-- **Bouncy/Elastic:** Bounce, Boing, Elastic, PopSnap
-- **Card-themed:** CardArc, CardDeal, CardFan, CardFlipDeal, CardFlyIn, CardPop, CardSpread, CardStack
-- **Rotation:** Flip, RotateIn, SlideRotate, ZoomRotate, Spiral
-- **Special:** Cascade, ConfettiBurst, DropBounce, OrganicGrowth, PartyPopper, Pulse, Reward, Shake, WobblyLife
-
-Assign via `UIAnimationConfig` ScriptableObject on each `UIView`.
-
-### Common UI Components
-
-Ready-made views: `UIViewToast`, `UIViewBanner`, `UIFragButton`, `UIFragTooltip`, `UIFragLoadSpinner`, `UITutorialArrow`
-
-### Static vs Dynamic Views
-
-- **Static** -- pre-placed as child GameObjects. Survive `Close()` with `Normal` context (just hidden).
-- **Dynamic** -- instantiated at runtime. Always destroyed (or pooled) on close.
 
 ---
 

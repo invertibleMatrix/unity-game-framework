@@ -13,7 +13,6 @@ namespace AK.Services
 	public class AdServiceBuilder
 	{
 		private readonly AdService _adService;
-		private IMetaDataRepository _metaDataRepository;
 		private bool _useAdMob = true;
 		private bool _useNullProviderAsFallback = false;
 		private bool _simulateAdsInEditor = true;
@@ -26,15 +25,6 @@ namespace AK.Services
 		public AdServiceBuilder()
 		{
 			_adService = new AdService();
-		}
-
-		/// <summary>
-		/// Sets the meta data repository for the ad service.
-		/// </summary>
-		public AdServiceBuilder WithMetaDataRepository(IMetaDataRepository metaDataRepository)
-		{
-			_metaDataRepository = metaDataRepository;
-			return this;
 		}
 
 		/// <summary>
@@ -121,12 +111,10 @@ namespace AK.Services
 		/// <summary>
 		/// Creates a default AdService with AdMob (on devices) and NullProvider (in editor/fallback).
 		/// </summary>
-		/// <param name="metaDataRepository">The meta data repository.</param>
 		/// <returns>A configured AdService instance.</returns>
-		public static AdService CreateDefault(IMetaDataRepository metaDataRepository = null)
+		public static AdService CreateDefault()
 		{
 			return new AdServiceBuilder()
-				.WithMetaDataRepository(metaDataRepository)
 				.Build();
 		}
 
@@ -157,12 +145,10 @@ namespace AK.Services
 		/// <param name="isUnderAge">Whether the user is under age.</param>
 		/// <returns>A configured AdService instance.</returns>
 		public static AdService CreateAdService(
-			this IMetaDataRepository metaDataRepository,
 			bool canTrack = true,
 			bool isUnderAge = false)
 		{
 			return new AdServiceBuilder()
-				.WithMetaDataRepository(metaDataRepository)
 				.WithUserConsent(canTrack)
 				.WithUserUnderAge(isUnderAge)
 				.Build();
