@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b78053b013d22994fa0ee9b811829eb9, type: 3}
+  m_Name: SFX_PanelClose_AudioConfig
+  m_EditorClassIdentifier: AK.Utilities::Utilities.AudioSpawner.AudioConfigBase
+  _id: fde062b0-6af3-40f0-8fd0-e814cc1c99de
+  _description: UID_SFX_PanelClose_AudioConfig
+  Prefab: {fileID: 1137808633446911445, guid: 009489e1ce3d3ad46b40854777463930, type: 3}
+  OutputGroup: {fileID: -7933399665858642236, guid: 01252c8adceea61448fbfa3abc2d02b8, type: 2}
+  Clips:
+  - {fileID: 8300000, guid: 241a594f1b4954e36a02d0d81d0b34fa, type: 3}
+  InitialPoolSize: 1
+  StartAfterSeconds: 0
+  StopAfterSeconds: 0
+  Volume: 1
+  PitchRange: {x: 0.95, y: 1.05}
+  LoopInterval: 0
+  FadeInDuration: 0
+  FadeOutDuration: 0
+  PlayAllSequentially: 0
+  Loop: 0
+  IsSpatial: 0

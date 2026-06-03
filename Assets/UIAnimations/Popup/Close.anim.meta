@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 36435e2c758354705b61a9a34df0dbaa
+timeCreated: 1436793387
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Popup/Close.anim
+  uploadId: 769476

@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 43fe1aa4b8ab24ff1892798d485d0e94
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Effects/Enter - Pop - Idle (Scale)/Enter
+    - Pop - Idle (Scale) 3.overrideController
+  uploadId: 769476

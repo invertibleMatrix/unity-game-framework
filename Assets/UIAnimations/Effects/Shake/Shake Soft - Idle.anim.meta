@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 447be778de3f04fbea860d547efb6052
+timeCreated: 1441822681
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Effects/Shake/Shake Soft - Idle.anim
+  uploadId: 769476

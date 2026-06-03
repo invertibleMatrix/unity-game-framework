@@ -45,15 +45,8 @@ namespace AK.UISystem
 		/// </summary>
 		public const string DEFAULT_FRAGMENT_ID = "";
 
-		/// <summary>
-		/// Default banner variant ID.
-		/// </summary>
-		public const string DEFAULT_BANNER_ID = "default";
-
-		/// <summary>
-		/// Default top banner variant ID.
-		/// </summary>
-		public const string DEFAULT_TOP_BANNER_ID = "default_top";
+		public const string BANNER1 = "banner1";
+		public const string BANNER2 = "banner2";
 
 		/// <summary>
 		/// Affirmation banner variant ID.

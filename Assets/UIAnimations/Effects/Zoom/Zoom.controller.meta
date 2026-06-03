@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 4d8b221ef2da54bb0b14d0d13f5957f3
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Effects/Zoom/Zoom.controller
+  uploadId: 769476

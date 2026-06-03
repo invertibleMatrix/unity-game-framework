@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 9e9c31c72d7544bc1977ca937fc948fe
+timeCreated: 1436794583
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Buttons/Idle (Pulse Big)/Normal.anim
+  uploadId: 769476

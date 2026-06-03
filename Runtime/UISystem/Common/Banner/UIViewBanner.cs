@@ -17,8 +17,8 @@ namespace AK.UISystem
 		private float _duration;
 		private Tween _hideTween;
 
-		public const string DEFAULT_ID     = UIConstants.DEFAULT_BANNER_ID;
-		public const string DEFAULT_TOP_ID = UIConstants.DEFAULT_TOP_BANNER_ID;
+		public const string DEFAULT_ID     = UIConstants.BANNER1;
+		public const string DEFAULT_TOP_ID = UIConstants.BANNER2;
 		public const string AFFIRMATION_ID = UIConstants.AFFIRMATION_BANNER_ID;
 
 		public void Init(string text, float duration = UIConstants.DEFAULT_BANNER_DURATION)

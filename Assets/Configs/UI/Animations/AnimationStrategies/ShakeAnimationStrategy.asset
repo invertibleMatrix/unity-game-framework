@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2ffdbac185af9fe44af78bf49b1f662b, type: 3}
+  m_Name: ShakeAnimationStrategy
+  m_EditorClassIdentifier: AK.UISystem::AK.Systems.UI.Animations.ShakeAnimationStrategy
+  EntryDuration: 0.3
+  EntryEase: 9
+  ExitDuration: 0.3
+  ExitEase: 8
+  _positionStrength: {x: 10, y: 10, z: 0}
+  _rotationStrength: {x: 0, y: 0, z: 5}
+  _scaleStrength: {x: 0.1, y: 0.1, z: 0}
+  _vibrato: 10
+  _randomness: 0.5
+  _fadeOut: 1
+  _initialScale: {x: 0, y: 0, z: 0}
+  _popInDuration: 0.2
+  _exitShakeIntensity: 2
+  _finalShakeDuration: 0.5
+  _addGlowEffect: 0
+  _glowIntensity: 1.2
+  _addScreenShake: 0
+  _screenShakeStrength: 5

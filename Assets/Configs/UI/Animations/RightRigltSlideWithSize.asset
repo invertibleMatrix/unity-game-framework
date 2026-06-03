@@ -1,0 +1,16 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 74fb1dd8480b4c0478ba3393af04d97e, type: 3}
+  m_Name: RightRigltSlideWithSize
+  m_EditorClassIdentifier: GeminiMenuSystem::GeminiMenuSystem.Configuration.MenuAnimConfig
+  _animationStrategy: {fileID: 11400000, guid: 7847d4586545807428a8cc79496d5b1c, type: 2}
+  _playInParallelWithPrevious: 0

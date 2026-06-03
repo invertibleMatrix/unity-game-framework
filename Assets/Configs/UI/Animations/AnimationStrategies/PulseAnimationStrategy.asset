@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a4363fb5842367e4884d37cf76af7bb1, type: 3}
+  m_Name: PulseAnimationStrategy
+  m_EditorClassIdentifier: AK.UISystem::AK.Systems.UI.Animations.PulseAnimationStrategy
+  EntryDuration: 0.3
+  EntryEase: 9
+  ExitDuration: 0.3
+  ExitEase: 8
+  _pulseScale: {x: 1.2, y: 1.2, z: 1.2}
+  _pulseFrequency: 2
+  _showPulses: 3
+  _hidePulses: 2
+  _pulseFadeAmount: 0.3
+  _fadeWithScale: 1
+  _initialScale: {x: 0, y: 0, z: 0}
+  _entryDuration: 0.5
+  _exitDuration: 0.5
+  _addRotationPulse: 0
+  _rotationAmount: {x: 0, y: 0, z: 5}
+  _addPositionPulse: 0
+  _positionAmount: {x: 10, y: 10}
+  _addColorPulse: 0
+  _pulseColor: {r: 1, g: 1, b: 1, a: 1}
+  _continuousPulse: 0
+  _continuousSpeed: 1
+  _continuousIntensity: 0.1

@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: a6780ed47fa2a4ac6ab873dcfd9a3466
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Progress Bar/Radial/Progress Bar
+    - Radial.controller
+  uploadId: 769476

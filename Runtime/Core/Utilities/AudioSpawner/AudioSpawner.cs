@@ -40,7 +40,6 @@ namespace Utilities.AudioSpawner
 
 			// Get config with strict type checking
 			AudioConfigBase config = _audioRegistry.GetConfigStrict(requestedType, variantId);
-			
 			if (config == null)
 			{
 				Debug.LogError($"Spawn<{requestedType.Name}>() failed: No config found for type '{requestedType.Name}' with variant ID '{variantId.Id}'. " +

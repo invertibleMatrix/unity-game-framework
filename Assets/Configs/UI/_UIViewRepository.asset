@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a43cacbd697c79e4d9a804faf52a416f, type: 3}
+  m_Name: _UIViewRepository
+  m_EditorClassIdentifier: AK.UISystem::AK.Systems.UI.V2.UIViewRepository
+  _views:
+  - {fileID: 8831360766382092123, guid: de62f4fc50d9c0348927171dfdac6e02, type: 3}
+  - {fileID: 1206485832435062108, guid: 3137656b9236e85488d3a5958c77f186, type: 3}
+  - {fileID: 6641753814833098594, guid: 8e067e784b859a646a8b63025b6a5168, type: 3}
+  - {fileID: 8486124242467826112, guid: 651416cab65a7584087a85065fdcea26, type: 3}

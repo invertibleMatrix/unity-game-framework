@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 69e04ec02294e4c7690a31a3c9fa097a
+timeCreated: 1445546415
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Bunny/EarLeft.controller
+  uploadId: 769476

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: eda279a6356874a0d97dbd4d5ed64396
+timeCreated: 1445545660
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Bunny/NoseIdle.anim
+  uploadId: 769476

@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: cb6ae0eb3459940d7bca3796e7965658
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Buttons/Idle (Pulse Big)/Button
+    - Idle Pulse (Big).overrideController
+  uploadId: 769476

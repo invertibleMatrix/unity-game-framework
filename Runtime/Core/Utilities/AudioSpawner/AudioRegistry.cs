@@ -18,7 +18,7 @@ namespace Utilities.AudioSpawner
 
 		// Cache for fast lookups
 		private Dictionary<Type, Dictionary<string, AudioConfigBase>> _typeToConfigs;
-		private Dictionary<string, AudioConfigBase> _uidToConfig;
+		private Dictionary<string, AudioConfigBase>                   _uidToConfig;
 
 		public IReadOnlyList<AudioConfigBase> AudioConfigs => _registry.Objects;
 
@@ -38,7 +38,7 @@ namespace Utilities.AudioSpawner
 				}
 
 				string uid = audioConfig.UniqueID.Id;
-				
+
 				if (string.IsNullOrEmpty(uid) || uid == Guid.Empty.ToString())
 				{
 					Debug.LogWarning($"Audio config '{audioConfig.name}' has invalid UID. Skipping cache build.");
@@ -57,7 +57,7 @@ namespace Utilities.AudioSpawner
 
 				// Build type lookup
 				Type prefabType = audioConfig.Prefab.GetType();
-				
+
 				if (!_typeToConfigs.ContainsKey(prefabType))
 				{
 					_typeToConfigs.Add(prefabType, new Dictionary<string, AudioConfigBase>());
@@ -161,8 +161,8 @@ namespace Utilities.AudioSpawner
 				if (config != null)
 				{
 					Debug.LogWarning($"GetConfig() fallback: Using UID-based lookup for type '{type.Name}'. " +
-					                $"Config '{config.name}' has prefab type '{config.Prefab.GetType().Name}'. " +
-					                $"Consider using PlayAudio(uid) instead.");
+					                 $"Config '{config.name}' has prefab type '{config.Prefab.GetType().Name}'. " +
+					                 $"Consider using PlayAudio(uid) instead.");
 					return config;
 				}
 			}
@@ -183,6 +183,7 @@ namespace Utilities.AudioSpawner
 		// Editor helpers
 #if UNITY_EDITOR
 		[Button("Refresh All Objects")]
+		[ContextMenu("Refresh All Objects")]
 		public void RefreshAllObjects()
 		{
 			_registry.RefreshAllObjects();
@@ -190,12 +191,14 @@ namespace Utilities.AudioSpawner
 		}
 
 		[Button("Validate Objects")]
+		[ContextMenu("Validate Objects")]
 		public void ValidateObjects()
 		{
 			_registry.ValidateObjects();
 		}
 
 		[Button("Log Registry Statistics")]
+		[ContextMenu("Log Registry Statistics")]
 		public void LogRegistryStatistics()
 		{
 			if (_typeToConfigs == null || _uidToConfig == null)
@@ -207,13 +210,13 @@ namespace Utilities.AudioSpawner
 			Debug.Log($"=== Audio Registry Statistics ===");
 			Debug.Log($"Total Configs: {_uidToConfig.Count}");
 			Debug.Log($"Total Types: {_typeToConfigs.Count}");
-			
+
 			foreach (var kvp in _typeToConfigs)
 			{
 				Type type = kvp.Key;
 				var configs = kvp.Value;
 				Debug.Log($"Type '{type.Name}': {configs.Count} config(s)");
-				
+
 				foreach (var configKvp in configs)
 				{
 					string uid = configKvp.Key;

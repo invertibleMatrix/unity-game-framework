@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 7ed478a6904f04ea3a51d331c8b6e6df
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Buttons/Idle (Pulse)/Button -
+    Idle (Pulse).overrideController
+  uploadId: 769476

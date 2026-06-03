@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: e773d70335b1044959a5e0a0154e7e83
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Buttons/Idle (Rotate)/Button -
+    Idle (Rotate).overrideController
+  uploadId: 769476

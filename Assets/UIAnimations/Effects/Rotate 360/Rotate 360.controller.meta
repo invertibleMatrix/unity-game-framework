@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: ed3e1274ea6ca44cca12cc87edc25eae
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Effects/Rotate 360/Rotate 360.controller
+  uploadId: 769476

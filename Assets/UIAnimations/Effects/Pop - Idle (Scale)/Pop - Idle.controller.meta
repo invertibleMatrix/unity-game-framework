@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: dc8dae8e6455b4b33b12405f272ff80b
+timeCreated: 1436794561
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Effects/Pop - Idle (Scale)/Pop
+    - Idle.controller
+  uploadId: 769476

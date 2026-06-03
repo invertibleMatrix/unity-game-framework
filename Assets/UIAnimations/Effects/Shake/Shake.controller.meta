@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 51538223410474775940c3c5f3271004
+timeCreated: 1438439931
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Effects/Shake/Shake.controller
+  uploadId: 769476

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: da1d2300b64ec4619bdf18e682ea348e
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Level/Level.controller
+  uploadId: 769476

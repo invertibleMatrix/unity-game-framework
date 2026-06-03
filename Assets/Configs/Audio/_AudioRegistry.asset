@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 065aec20665f80d4bb25a5c4672411d1, type: 3}
+  m_Name: _AudioRegistry
+  m_EditorClassIdentifier: Utilities::Utilities.AudioSpawner.AudioRegistry
+  _registry:
+    _objects:
+    - {fileID: 11400000, guid: 3fffe1af514e7544299b198b6d2789c3, type: 2}
+    - {fileID: 11400000, guid: 2f7ecd121841c5f4ebc792ed094fcefa, type: 2}
+    - {fileID: 11400000, guid: c6f58217eb9a5f74e8cebfb45d2470e6, type: 2}

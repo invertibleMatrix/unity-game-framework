@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: b5633e617485c4f8cb9ad9f34e2a81a7
+timeCreated: 1445428551
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Effects/Alpha Fade (Image)/Alpha.controller
+  uploadId: 769476

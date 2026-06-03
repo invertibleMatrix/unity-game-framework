@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3674d7d18ad5186499283cc30c00f84f, type: 3}
+  m_Name: CardPopAnimation
+  m_EditorClassIdentifier: AK.UISystem::AK.Systems.UI.Animations.CardPopAnimationStrategy
+  EntryDuration: 0.3
+  EntryEase: 9
+  ExitDuration: 0.3
+  ExitEase: 8
+  _popScaleMultiplier: 1.3
+  _popSpeed: 0.5
+  _popEase: 27
+  _addMovement: 1
+  _movementDistance: 30
+  _popDirection: 0
+  _addRotation: 1
+  _rotationAmount: 10
+  _randomizeRotation: 1
+  _popCount: 1
+  _popDelay: 0.1
+  _addSettleWobble: 1
+  _wobbleIntensity: 3
+  _wobbleDuration: 0.3

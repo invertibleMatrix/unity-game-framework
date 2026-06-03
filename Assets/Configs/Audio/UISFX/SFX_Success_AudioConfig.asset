@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b78053b013d22994fa0ee9b811829eb9, type: 3}
+  m_Name: SFX_Success_AudioConfig
+  m_EditorClassIdentifier: AK.Utilities::Utilities.AudioSpawner.AudioConfigBase
+  Prefab: {fileID: 6845403440602122784, guid: 3533af4e5f38246428ec514dd327a0d9, type: 3}
+  VariantId: {fileID: 11400000, guid: 2d17dbf2db78278489d6ee871a694109, type: 2}
+  OutputGroup: {fileID: -7933399665858642236, guid: 01252c8adceea61448fbfa3abc2d02b8, type: 2}
+  Clips:
+  - {fileID: 8300000, guid: beb569e9c3069b248849bab43a4421c2, type: 3}
+  - {fileID: 8300000, guid: 0d566934a974e214cbbfa304365a227f, type: 3}
+  - {fileID: 8300000, guid: 6c961258bdeae7943a5f88d358a43454, type: 3}
+  - {fileID: 8300000, guid: a45c5671258007841bc77fc126ec4d15, type: 3}
+  InitialPoolSize: 3
+  StartAfterSeconds: 0
+  StopAfterSeconds: 0
+  Volume: 1
+  PitchRange: {x: 1, y: 1}
+  LoopInterval: 0
+  FadeInDuration: 0
+  FadeOutDuration: 0
+  PlayAllSequentially: 0
+  Loop: 0
+  IsSpatial: 0

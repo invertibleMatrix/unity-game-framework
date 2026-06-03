@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7e407ed3b2ac11e4d8280a69b1191b15, type: 3}
+  m_Name: ConfettiBurstAnimationStrategy
+  m_EditorClassIdentifier: AK.UISystem::AK.Systems.UI.Animations.ConfettiBurstAnimationStrategy
+  EntryDuration: 0.3
+  EntryEase: 9
+  ExitDuration: 0.3
+  ExitEase: 8
+  _confettiCount: 20
+  _burstForce: 300
+  _burstDuration: 0.8
+  _chaosIntensity: 0.8
+  _rotationSpeed: 720
+  _addGravity: 1
+  _gravityStrength: 200
+  _popScale: {x: 1.5, y: 1.5, z: 1.5}
+  _flashIntensity: 1.8
+  _addScreenShake: 1
+  _settlementBehavior: 0
+  _finalBounces: 3
+  _bounceDecay: 0.5
+  _continuousCelebration: 0
+  _celebrationInterval: 2
+  _addRainbowEffect: 0
+  _triggerBurstSound: 1
+  _triggerCelebrationSounds: 0

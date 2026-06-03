@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 5ae23ca067deb4a738a69250e1b002bb
+timeCreated: 1445545640
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Bunny/Nose.controller
+  uploadId: 769476

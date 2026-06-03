@@ -1,0 +1,41 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 76bcfa5eec4e72347991de83943d2ab4, type: 3}
+  m_Name: ZoomRotateAnimationStrategy
+  m_EditorClassIdentifier: AK.UISystem::AK.Systems.UI.Animations.ZoomRotateAnimationStrategy
+  EntryDuration: 0.3
+  EntryEase: 9
+  ExitDuration: 0.3
+  ExitEase: 8
+  _initialZoom: {x: 0.1, y: 0.1, z: 0.1}
+  _targetZoom: {x: 1, y: 1, z: 1}
+  _zoomOvershoot: {x: 1.3, y: 1.3, z: 1.3}
+  _addZoomBounce: 1
+  _rotationAxis: 2
+  _entryRotation: 720
+  _exitRotation: -1080
+  _rotationDirection: 0
+  _addRotationWobble: 0
+  _wobbleIntensity: 10
+  _addCameraShake: 0
+  _cameraShakeIntensity: 0.5
+  _addMotionBlur: 0
+  _addLensFlare: 0
+  _zoomInDuration: 0.8
+  _zoomOutDuration: 0.6
+  _addDramaticPause: 1
+  _pauseDuration: 0.2
+  _addSecondaryRotation: 0
+  _secondaryAxis: 1
+  _secondaryRotation: -90
+  _addScalePulse: 0
+  _pulseIntensity: 0.1

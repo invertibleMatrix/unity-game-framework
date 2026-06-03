@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 986b438b26aee8c4c8fd30c6866ceaa5, type: 3}
+  m_Name: CardStackAnimation
+  m_EditorClassIdentifier: AK.UISystem::AK.Systems.UI.Animations.CardStackAnimationStrategy
+  EntryDuration: 0.3
+  EntryEase: 9
+  ExitDuration: 0.3
+  ExitEase: 8
+  _stackIndex: 0
+  _totalCards: 5
+  _stackDirection: 1
+  _spawnOffset: {x: 0, y: 300}
+  _cardSpacing: 20
+  _randomizeSpacing: 1
+  _randomSpacingAmount: 5
+  _addRotation: 1
+  _maxRotation: 5
+  _randomizeRotation: 1
+  _startScale: {x: 0, y: 0, z: 0}
+  _stackDuration: 0.4
+  _staggerDelay: 0.08
+  _addSettleBounce: 1
+  _bounceIntensity: 0.02

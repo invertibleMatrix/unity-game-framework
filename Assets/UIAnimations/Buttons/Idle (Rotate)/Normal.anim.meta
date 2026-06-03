@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 4967e6d59486b4a90863eae97cd7203e
+timeCreated: 1445540431
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Buttons/Idle (Rotate)/Normal.anim
+  uploadId: 769476

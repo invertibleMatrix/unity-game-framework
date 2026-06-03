@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 346a5576b378f4850adeba47d6489ea5
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Effects/Enter - Pop/Enter.controller
+  uploadId: 769476

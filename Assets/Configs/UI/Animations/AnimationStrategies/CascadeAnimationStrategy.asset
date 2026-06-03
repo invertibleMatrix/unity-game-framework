@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 89619c1c00bec07418c2001624625b04, type: 3}
+  m_Name: CascadeAnimationStrategy
+  m_EditorClassIdentifier: AK.UISystem::AK.Systems.UI.Animations.CascadeAnimationStrategy
+  EntryDuration: 0.3
+  EntryEase: 9
+  ExitDuration: 0.3
+  ExitEase: 8
+  _triggerDelay: 0.2
+  _triggerType: 0
+  _triggerIntensity: 1.5
+  _cascadePattern: 0
+  _waveSpeed: 2
+  _waveDecay: 0.8
+  _cascadeStages: 5
+  _stageDelayMultiplier: 0.7
+  _addRandomDelays: 1
+  _randomDelayRange: {x: 0.1, y: 0.3}
+  _elementReaction: 0
+  _reactionIntensity: 1
+  _addElementVariation: 1
+  _addTrailEffects: 1
+  _addGlowPropagation: 1
+  _addScreenShake: 0
+  _soundPattern: 0
+  _addPitchVariation: 1

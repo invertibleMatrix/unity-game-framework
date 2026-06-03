@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 1c72bc6c661954ff3800ca5fccaa5896
+timeCreated: 1438105659
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Effects/Sparkle Shine/Sparkle
+    1.overrideController
+  uploadId: 769476

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: edef25e56dc8c46acad0497268bc116d
+timeCreated: 1445546986
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 48850
+  packageName: Cartoon GUI Pack
+  packageVersion: 2.0.5
+  assetPath: Assets/GUIPackCartoon/Demo/Animations/Bunny/EarRight.controller
+  uploadId: 769476

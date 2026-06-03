@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 09ea066fb3c63884fb29f1574ffe8ffb, type: 3}
+  m_Name: CardArcAnimation
+  m_EditorClassIdentifier: AK.UISystem::AK.Systems.UI.Animations.CardArcAnimationStrategy
+  EntryDuration: 0.3
+  EntryEase: 9
+  ExitDuration: 0.3
+  ExitEase: 8
+  _startDirection: 0
+  _arcHeight: 150
+  _arcDirection: 0
+  _startOffset: {x: 250, y: 250}
+  _startScale: {x: 0.2, y: 0.2, z: 0.2}
+  _midScale: {x: 1.2, y: 1.2, z: 1.2}
+  _addRotation: 1
+  _totalRotation: 360
+  _rotationDirection: 0
+  _arcDuration: 0.6
+  _arcEase: 10
+  _addImpactBounce: 1
+  _bounceIntensity: 0.08

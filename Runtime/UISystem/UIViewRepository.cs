@@ -17,6 +17,7 @@ namespace AK.UISystem
 
 #if UNITY_EDITOR
 		[Button("Refresh All Views In Project")]
+		[ContextMenu("Refresh All Views In Project")]
 		private void RefreshAllViews()
 		{
 			var prefabGuids = AssetDatabase.FindAssets("t:Prefab");
