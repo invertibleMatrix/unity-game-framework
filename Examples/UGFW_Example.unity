@@ -203,6 +203,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::UI.Camera.UICamera
   _role: 1
   _layerOrder: 999
+  _cameraType: {fileID: 11400000, guid: 77db2d992c6f31142af2cb3fb1d740f7, type: 2}
+  _baseCameraType: {fileID: 11400000, guid: 4893f45bccf2aff4097d9f8aee5b5ab5, type: 2}
   _camera: {fileID: 136519181}
 --- !u!114 &136519183
 MonoBehaviour:
@@ -567,6 +569,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: AK.Content::Gameplay.Cameras.MainCamera
   _role: 0
   _layerOrder: 0
+  _cameraType: {fileID: 11400000, guid: 4893f45bccf2aff4097d9f8aee5b5ab5, type: 2}
+  _baseCameraType: {fileID: 0}
   _camera: {fileID: 330585545}
 --- !u!1 &410087039
 GameObject:
@@ -833,6 +837,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6480a74f109f40f2820bafc37bb280fa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: AK.Core::AK.CameraSystem.CameraSystem
+  _cameraRegistry: {fileID: 11400000, guid: 106cac9e6d96be04f8593ddafd242d8a, type: 2}
 --- !u!1 &1565514365
 GameObject:
   m_ObjectHideFlags: 0
@@ -1003,7 +1008,7 @@ SceneRoots:
   - {fileID: 1640186949}
   - {fileID: 1565514367}
   - {fileID: 890448199}
-  - {fileID: 239575494}
   - {fileID: 330585546}
+  - {fileID: 239575494}
   - {fileID: 424368039}
   - {fileID: 1701672354}

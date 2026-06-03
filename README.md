@@ -1106,24 +1106,106 @@ UniResources.DisposeInstance(instance.gameObject);
 
 ### CameraSystem
 
-Multi-camera management with URP camera stacking.
+Registry-driven multi-camera management with URP camera stacking. Cameras can be **pre-placed** in the scene or **dynamically spawned** from the registry at runtime.
+
+#### Core Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **CameraType** | UID-based ScriptableObject that identifies a camera kind (e.g., "Main", "UI", "Effects"). Acts as the shared identity bridge between definitions and runtime instances. |
+| **CameraDefinition** | MetaDataAsset defining a camera's prefab, CameraType, role, layer order, and base camera reference. The single source of truth for spawned cameras. |
+| **CameraRegistry** | `TypedUIDRegistryAsset<CameraDefinition>` — lookup definitions by CameraType UID. Assigned to `CameraSystem` via Inspector. |
+| **CameraRole** | `Base` (renders to screen) or `Overlay` (stacks on top of a Base camera's URP output). |
+| **BaseCamera** | Abstract `StateEntity` implementing `IGameCamera`. All cameras extend this. |
+| **CinemachineBaseCamera** | Adds Cinemachine integration with impulse-based shake. |
+
+#### Pre-Placed Cameras
+
+Pre-placed cameras live in the scene hierarchy and configure themselves via their own serialized fields. They auto-bind to `ICameraSystem` via Reflex `[Inject]` in `Start()`:
 
 ```csharp
-// Get a camera
-var mainCam = cameraSystem.Get<MainCamera>();
+// Pre-placed in scene — auto-binds when Start() fires
+// _cameraSystem is injected by Reflex DI
+[Inject] private ICameraSystem _cameraSystem;
 
-// Enable/disable
-cameraSystem.EnableCamera<MainMenuCamera>();
-cameraSystem.DisableCamera<GameplayCamera>();
-
-// Camera shake
-mainCam.Shake(intensity: 0.5f, duration: 0.3f);
+protected virtual void Start()
+{
+    if (_cameraSystem != null && !_isBound)
+    {
+        _cameraSystem.BindCamera(this);
+        _isBound = true;
+    }
+}
 ```
 
-- `ICameraSystem` -- get/enable/disable cameras, reorder stacks
-- `CameraRole` -- `Base` (renders to screen) or `Overlay` (stacks on top)
-- `BaseCamera` -- abstract `StateEntity` implementing `IGameCamera`, auto-registers with `ICameraSystem`
-- `CinemachineBaseCamera` -- adds Cinemachine integration with impulse-based shake
+Pre-placed cameras use their own Inspector fields for `_cameraType`, `_role`, `_layerOrder`, and `_baseCameraType`. They do NOT need a `CameraDefinition` — their serialized fields are the configuration.
+
+#### Dynamically Spawned Cameras
+
+Cameras spawned at runtime via `CameraSystem.SpawnCamera<T>()` are created from `CameraDefinition` assets registered in the `CameraRegistry`. The definition is the single source of truth — `ApplyDefinition()` copies all config from the definition to the spawned instance:
+
+```csharp
+// Spawn a camera from the registry
+var uiCamera = cameraSystem.SpawnCamera<UICamera>(uiCameraType);
+
+// SpawnCamera flow:
+// 1. Look up CameraDefinition by CameraType in CameraRegistry
+// 2. Instantiate the prefab as a child of CameraSystem
+// 3. ApplyDefinition() — copies CameraType, Role, LayerOrder, BaseCameraType from definition
+// 4. BindToSystem() — registers with CameraSystem, sets _isBound flag
+//    (prevents double-bind when the spawned camera's Start() fires)
+```
+
+Cameras marked `SpawnOnStart` in their definition are automatically spawned during `CameraSystem.Start()`.
+
+#### URP Camera Stacking
+
+Overlay cameras are automatically added to their Base camera's URP camera stack. The binding system handles out-of-order registration — if an Overlay camera is bound before its Base camera, the overlay is deferred until the base registers:
+
+```
+Base Camera (CameraType: "Main")
+  └─ URP Camera Stack:
+       ├─ Overlay Camera (CameraType: "UI", LayerOrder: 10)
+       └─ Overlay Camera (CameraType: "Effects", LayerOrder: 20)
+```
+
+The `CameraType` SO acts as the shared identity bridge — both the Overlay camera's `_baseCameraType` field and the Base camera's `_cameraType` field reference the same CameraType asset, so they match by GUID.
+
+#### API Reference
+
+```csharp
+// --- Get cameras ---
+var mainCam = cameraSystem.Get<MainCamera>();           // by type
+var uiCam = cameraSystem.GetCamera(uiCameraTypeUID);    // by CameraType UID
+
+// --- Enable / Disable ---
+cameraSystem.EnableCamera<MainMenuCamera>();
+cameraSystem.DisableCamera<GameplayCamera>();
+cameraSystem.EnableCamera(uiCameraTypeUID);             // by UID
+cameraSystem.DisableCamera(effectsCameraTypeUID);        // by UID
+
+// --- Spawn / Remove ---
+var cam = cameraSystem.SpawnCamera<UICamera>(uiCameraType);  // spawn from registry
+cameraSystem.RemoveCamera(uiCameraType, destroy: true);       // remove and destroy
+
+// --- Camera shake ---
+mainCam.Shake(intensity: 0.5f, duration: 0.3f);
+
+// --- Manual binding (rare — only for non-Reflex contexts) ---
+baseCam.BindToSystem(cameraSystem);
+
+// --- Reorder stacks ---
+cameraSystem.ReorderCameraStack();
+```
+
+#### Setup
+
+1. Create `CameraType` ScriptableObjects for each camera kind (Create → AK → Camera → Camera Type)
+2. Create `CameraDefinition` ScriptableObjects linking CameraType + prefab + config (Create → AK → Camera → Camera Definition)
+3. Create a `CameraRegistry` and add all definitions (Create → AK → Camera → Camera Registry)
+4. Add `CameraSystem` MonoBehaviour to your scene, assign the `CameraRegistry` in Inspector
+5. For pre-placed cameras: add `BaseCamera` components to GameObjects in the scene, assign their `_cameraType` and `_baseCameraType` fields in Inspector
+6. For dynamic cameras: set `SpawnOnStart = true` on definitions that should auto-spawn, or call `SpawnCamera<T>()` at runtime
 
 ### Core Utilities
 

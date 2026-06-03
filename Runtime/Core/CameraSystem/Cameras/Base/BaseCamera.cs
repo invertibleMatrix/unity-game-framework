@@ -1,112 +1,175 @@
 ﻿using System;
 using System.Collections;
 using AK.Core;
-using Reflex.Extensions;
 using AK.StateMachine;
+using Reflex.Attributes;
+using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
 using Random = UnityEngine.Random;
+using Reflex.Core;
 
 namespace AK.Systems
 {
-	[RequireComponent(typeof(Camera))]
-	public abstract class BaseCamera<TEntity, TState> : StateEntity<TEntity, TState>, IGameCamera
-		where TEntity : GameEntity
-		where TState : BaseState<TEntity>, new()
-	{
-		[Header("Camera Config")] [SerializeField]
-		protected CameraRole _role = CameraRole.Base;
+    [RequireComponent(typeof(Camera))]
+    public abstract class BaseCamera<TEntity, TState> : StateEntity<TEntity, TState>, IGameCamera
+        where TEntity : GameEntity
+        where TState : BaseState<TEntity>, new()
+    {
+        [Header("Camera Config")] [SerializeField]
+        protected CameraRole _role = CameraRole.Base;
 
-		[SerializeField] protected int _layerOrder;
+        [SerializeField] protected int _layerOrder;
 
-		[Tooltip("Type name of the Base Camera this overlay belongs to (Optional)")] [SerializeField]
-		protected Camera _camera;
+        [Tooltip("The CameraType UID that identifies this camera (e.g., Main, UI, Effects).")]
+        [SerializeField] protected CameraType _cameraType;
 
-		private ICameraSystem _cameraSystem;
+        [Tooltip("For Overlay cameras: the CameraType UID of the Base camera this overlay stacks on.")]
+        [ShowIf("_role", CameraRole.Overlay)]
+        [SerializeField] protected CameraType _baseCameraType;
 
-		public CameraRole Role       => _role;
-		public int        LayerOrder => _layerOrder;
-		public Camera     Camera     => _camera;
-		public GameObject GameObject => gameObject;
+        [SerializeField] protected Camera _camera;
 
-		public virtual Type DefaultBaseCameraType => typeof(BaseCamera);
+        [Inject] private ICameraSystem _cameraSystem;
+        private bool _isBound;
+
+        public CameraRole Role       => _role;
+        public int        LayerOrder => _layerOrder;
+        public Camera     Camera     => _camera;
+        public GameObject GameObject => gameObject;
+
+        /// <summary>
+        /// UID identifying what kind of camera this is.
+        /// </summary>
+        public UID CameraTypeUID => _cameraType;
+
+        /// <summary>
+        /// If this is an Overlay camera, which Base CameraType UID does it belong to?
+        /// </summary>
+        public UID DefaultBaseCameraUID => _baseCameraType;
 
 #if UNITY_EDITOR
-		protected virtual void OnValidate()
-		{
-			if (_camera == null) _camera = GetComponent<Camera>();
-			UpdateCameraRenderType();
-		}
+        protected virtual void OnValidate()
+        {
+            if (_camera == null) _camera = GetComponent<Camera>();
+            UpdateCameraRenderType();
+        }
 #endif
 
-		protected override void Awake()
-		{
-			base.Awake();
+        protected override void Awake()
+        {
+            base.Awake();
 
-			if (_camera == null) _camera = GetComponent<Camera>();
-			UpdateCameraRenderType();
+            if (_camera == null) _camera = GetComponent<Camera>();
+            UpdateCameraRenderType();
+        }
 
-			var container = gameObject.scene.GetSceneContainer();
-			_cameraSystem = container.Resolve<ICameraSystem>();
-			_cameraSystem.BindCamera(this);
-		}
-		
-		private void UpdateCameraRenderType()
-		{
-			if (_camera == null) return;
+        protected virtual void Start()
+        {
+            // Auto-bind if ICameraSystem was injected by Reflex DI
+            if (_cameraSystem != null && !_isBound)
+            {
+                _cameraSystem.BindCamera(this);
+                _isBound = true;
+            }
+        }
 
-			var cameraData = _camera.GetUniversalAdditionalCameraData();
-			if (cameraData == null) return;
+        /// <summary>
+        /// Manually binds this camera to a CameraSystem.
+        /// Only needed for dynamically created cameras that weren't injected by Reflex.
+        /// </summary>
+        public void BindToSystem(ICameraSystem cameraSystem)
+        {
+            if (_isBound) return;
+            _cameraSystem = cameraSystem;
+            _cameraSystem.BindCamera(this);
+            _isBound = true;
+        }
 
-			switch (_role)
-			{
-				case CameraRole.Base:
-					cameraData.renderType = CameraRenderType.Base;
-					break;
-				case CameraRole.Overlay:
-					cameraData.renderType = CameraRenderType.Overlay;
-					break;
-			}
-		}
+        /// <summary>
+        /// Applies config from a CameraDefinition to this camera instance.
+        /// Used by CameraSystem when spawning cameras from the registry so that
+        /// the definition is the single source of truth, not the prefab's serialized fields.
+        /// </summary>
+        public void ApplyDefinition(CameraDefinition definition)
+        {
+            if (definition == null) return;
 
-		public void Enable(bool enableGameObject = true)
-		{
-			_cameraSystem.EnableCamera(GetType(), enableGameObject);
-		}
+            _cameraType = definition.CameraType;
+            _role = definition.Role;
+            _layerOrder = definition.LayerOrder;
+            _baseCameraType = definition.BaseCameraType;
 
-		public void Disable(bool disableGameObject = true)
-		{
-			_cameraSystem.DisableCamera(GetType(), disableGameObject);
-		}
+            UpdateCameraRenderType();
+        }
 
-		public virtual void Shake(float intensity, float duration)
-		{
-			StartCoroutine(ShakeRoutine(Camera.transform, intensity, duration));
-		}
+        protected override void OnDestroy()
+        {
+            if (_cameraSystem != null)
+            {
+                _cameraSystem.UnbindCamera(this);
+                _cameraSystem = null;
+            }
+        }
 
-		private IEnumerator ShakeRoutine(Transform camTransform, float intensity, float duration)
-		{
-			Vector3 originalPos = camTransform.localPosition;
-			float elapsed = 0.0f;
+        private void UpdateCameraRenderType()
+        {
+            if (_camera == null) return;
 
-			while (elapsed < duration)
-			{
-				float x = Random.Range(-1f, 1f) * intensity;
-				float y = Random.Range(-1f, 1f) * intensity;
+            var cameraData = _camera.GetUniversalAdditionalCameraData();
+            if (cameraData == null) return;
 
-				camTransform.localPosition = originalPos + new Vector3(x, y, 0);
+            switch (_role)
+            {
+                case CameraRole.Base:
+                    cameraData.renderType = CameraRenderType.Base;
+                    break;
+                case CameraRole.Overlay:
+                    cameraData.renderType = CameraRenderType.Overlay;
+                    break;
+            }
+        }
 
-				elapsed += Time.deltaTime;
-				yield return null;
-			}
+        public void Enable(bool enableGameObject = true)
+        {
+            if (_cameraSystem != null)
+                _cameraSystem.EnableCamera(GetType(), enableGameObject);
+        }
 
-			camTransform.localPosition = originalPos;
-		}
-	}
+        public void Disable(bool disableGameObject = true)
+        {
+            if (_cameraSystem != null)
+                _cameraSystem.DisableCamera(GetType(), disableGameObject);
+        }
 
-	// Non-generic wrapper for simple cameras
-	public class BaseCamera : BaseCamera<BaseCamera, BaseCamera.VoidState>
-	{
-		public sealed class VoidState : BaseState<BaseCamera> { }
-	}
+        public virtual void Shake(float intensity, float duration)
+        {
+            StartCoroutine(ShakeRoutine(Camera.transform, intensity, duration));
+        }
+
+        private IEnumerator ShakeRoutine(Transform camTransform, float intensity, float duration)
+        {
+            Vector3 originalPos = camTransform.localPosition;
+            float elapsed = 0.0f;
+
+            while (elapsed < duration)
+            {
+                float x = Random.Range(-1f, 1f) * intensity;
+                float y = Random.Range(-1f, 1f) * intensity;
+
+                camTransform.localPosition = originalPos + new Vector3(x, y, 0);
+
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            camTransform.localPosition = originalPos;
+        }
+    }
+
+    // Non-generic wrapper for simple cameras
+    public class BaseCamera : BaseCamera<BaseCamera, BaseCamera.VoidState>
+    {
+        public sealed class VoidState : BaseState<BaseCamera> { }
+    }
 }

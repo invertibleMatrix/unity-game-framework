@@ -1,11 +1,10 @@
-﻿using System;
-using AK.Systems;
+﻿using AK.Systems;
 using Gameplay.Cameras;
 
 namespace UI.Camera
 {
     public partial class UICamera : BaseCamera<UICamera, UICamera.Main>
     {
-        public override Type DefaultBaseCameraType => typeof(MainCamera);
+        // Base camera type is now assigned via the _baseCameraType serialized field in the Inspector.
     }
 }

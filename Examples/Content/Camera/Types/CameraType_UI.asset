@@ -1,0 +1,16 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d942c74dbea711144a639f1188f4bc0c, type: 3}
+  m_Name: CameraType_UI
+  m_EditorClassIdentifier: AK.Core::AK.Systems.CameraType
+  _id: c3e326ee-eabb-454e-a987-347c3f9aa1f3
+  _description: UID_CameraType_UI

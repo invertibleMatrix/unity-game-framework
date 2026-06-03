@@ -4,7 +4,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace AK.Systems.UI._Source.UISystem.Common
+namespace AK.Systems.UI
 {
 	public class UIViewToast : UIView
 	{

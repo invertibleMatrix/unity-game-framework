@@ -17,7 +17,6 @@ namespace AK.Systems
 
 		protected override void Awake()
 		{
-			// Base Awake handles Binding
 			base.Awake();
 			_cinemachineBrain = GetComponent<CinemachineBrain>();
 			_impulseSource = GetComponent<CinemachineImpulseSource>();
