@@ -60,7 +60,29 @@ namespace AK.Core.ResourceManagement
 		}
 
 		/// <summary>
-		/// Checks the remote CDN for catalog updates and applies them if available.
+		/// Checks the remote CDN for catalog updates without applying them.
+		/// Returns a list of catalog IDs that need updating, or an empty list if none.
+		/// Use this to check if a UI prompt should be shown before calling
+		/// <see cref="ApplyCatalogUpdatesAsync"/> or <see cref="CheckForCatalogUpdatesAsync"/>.
+		/// Must be called after <see cref="InitAsync"/> and before any asset loading.
+		/// </summary>
+		public static UniTask<List<string>> HasCatalogUpdatesAsync(CancellationToken cToken = default)
+		{
+			return _strategy.HasCatalogUpdatesAsync(cToken);
+		}
+
+		/// <summary>
+		/// Applies catalog updates that were discovered by <see cref="HasCatalogUpdatesAsync"/>.
+		/// <paramref name="catalogIds"/> is the list returned by <see cref="HasCatalogUpdatesAsync"/>.
+		/// <paramref name="progress"/> reports update progress as a float between 0 and 1.
+		/// </summary>
+		public static UniTask ApplyCatalogUpdatesAsync(List<string> catalogIds, IProgress<float> progress = null, CancellationToken cToken = default)
+		{
+			return _strategy.ApplyCatalogUpdatesAsync(catalogIds, progress, cToken);
+		}
+
+		/// <summary>
+		/// Convenience method that checks for catalog updates and applies them in one call.
 		/// Returns true if a catalog update was downloaded and applied.
 		/// Must be called after <see cref="InitAsync"/> and before any asset loading.
 		/// <paramref name="progress"/> reports update progress as a float between 0 and 1.
@@ -68,6 +90,19 @@ namespace AK.Core.ResourceManagement
 		public static UniTask<bool> CheckForCatalogUpdatesAsync(IProgress<float> progress = null, CancellationToken cToken = default)
 		{
 			return _strategy.CheckForCatalogUpdatesAsync(progress, cToken);
+		}
+
+		/// <summary>
+		/// Checks the total download size for remote content without downloading.
+		/// If <paramref name="labels"/> is null or empty, all catalog locations are enumerated.
+		/// Otherwise, only locations matching the provided labels are checked.
+		/// Returns the total download size in bytes (0 if nothing to download).
+		/// Use this to check if a content update is available before calling
+		/// <see cref="DownloadRemoteContentAsync"/> to show a UI prompt.
+		/// </summary>
+		public static UniTask<long> GetRemoteContentSizeAsync(string[] labels = null, CancellationToken cToken = default)
+		{
+			return _strategy.GetRemoteContentSizeAsync(labels, cToken);
 		}
 
 		/// <summary>

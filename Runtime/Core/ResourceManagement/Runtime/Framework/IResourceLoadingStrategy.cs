@@ -42,12 +42,36 @@ namespace AK.Core.ResourceManagement
 		UniTask<IList<IResourceLocation>> GetAllResourceLocationsAsync(Type type = null, CancellationToken cToken = default);
 
 		/// <summary>
-		/// Checks the remote CDN for catalog updates and applies them if available.
+		/// Checks the remote CDN for catalog updates without applying them.
+		/// Returns a list of catalog IDs that need updating, or an empty list if none.
+		/// Use this to check if a UI prompt should be shown before calling
+		/// <see cref="ApplyCatalogUpdatesAsync"/> or <see cref="CheckForCatalogUpdatesAsync"/>.
+		/// Must be called after <see cref="InitAsync"/> and before any asset loading.
+		/// </summary>
+		UniTask<List<string>> HasCatalogUpdatesAsync(CancellationToken cToken = default);
+
+		/// <summary>
+		/// Applies catalog updates that were discovered by <see cref="HasCatalogUpdatesAsync"/>.
+		/// <paramref name="catalogIds"/> is the list returned by <see cref="HasCatalogUpdatesAsync"/>.
+		/// <paramref name="progress"/> reports update progress as a float between 0 and 1.
+		/// </summary>
+		UniTask ApplyCatalogUpdatesAsync(List<string> catalogIds, IProgress<float> progress = null, CancellationToken cToken = default);
+
+		/// <summary>
+		/// Convenience method that checks for catalog updates and applies them in one call.
 		/// Returns true if a catalog update was downloaded and applied.
 		/// Must be called after <see cref="InitAsync"/> and before any asset loading.
 		/// <paramref name="progress"/> reports update progress as a float between 0 and 1.
 		/// </summary>
 		UniTask<bool> CheckForCatalogUpdatesAsync(IProgress<float> progress = null, CancellationToken cToken = default);
+
+		/// <summary>
+		/// Checks the total download size for remote content without downloading.
+		/// If <paramref name="labels"/> is null or empty, all catalog locations are enumerated.
+		/// Otherwise, only locations matching the provided labels are checked.
+		/// Returns the total download size in bytes (0 if nothing to download).
+		/// </summary>
+		UniTask<long> GetRemoteContentSizeAsync(string[] labels = null, CancellationToken cToken = default);
 
 		/// <summary>
 		/// Resolves resource locations and downloads all remote content.

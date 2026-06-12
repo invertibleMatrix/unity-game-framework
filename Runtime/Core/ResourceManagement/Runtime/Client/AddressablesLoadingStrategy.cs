@@ -49,18 +49,23 @@ namespace AK.Core.ResourceManagement
 		}
 
 		/// <inheritdoc />
-		public async UniTask<bool> CheckForCatalogUpdatesAsync(IProgress<float> progress = null, CancellationToken cToken = default)
+		public async UniTask<List<string>> HasCatalogUpdatesAsync(CancellationToken cToken = default)
 		{
-			progress?.Report(0f);
 			var catalogUpdates = await Addressables.CheckForCatalogUpdates().ToUniTask(cancellationToken: cToken);
-	
-			if (catalogUpdates == null || catalogUpdates.Count == 0)
+			return catalogUpdates ?? new List<string>();
+		}
+
+		/// <inheritdoc />
+		public async UniTask ApplyCatalogUpdatesAsync(List<string> catalogIds, IProgress<float> progress = null, CancellationToken cToken = default)
+		{
+			if (catalogIds == null || catalogIds.Count == 0)
 			{
 				progress?.Report(1f);
-				return false;
+				return;
 			}
 
-			var updateOp = Addressables.UpdateCatalogs(catalogUpdates);
+			progress?.Report(0f);
+			var updateOp = Addressables.UpdateCatalogs(catalogIds);
 			
 			// Poll for progress while updating catalogs
 			while (!updateOp.IsDone)
@@ -75,65 +80,34 @@ namespace AK.Core.ResourceManagement
 			
 			progress?.Report(1f);
 			Addressables.Release(updateOp);
+		}
+
+		/// <inheritdoc />
+		public async UniTask<bool> CheckForCatalogUpdatesAsync(IProgress<float> progress = null, CancellationToken cToken = default)
+		{
+			var catalogIds = await HasCatalogUpdatesAsync(cToken);
+			if (catalogIds.Count == 0)
+			{
+				progress?.Report(1f);
+				return false;
+			}
+
+			await ApplyCatalogUpdatesAsync(catalogIds, progress, cToken);
 			return true;
+		}
+
+		/// <inheritdoc />
+		public async UniTask<long> GetRemoteContentSizeAsync(string[] labels = null, CancellationToken cToken = default)
+		{
+			var keys = ResolveKeys(labels);
+			return await GetDownloadSizeAsync(keys, cToken);
 		}
 
 		/// <inheritdoc />
 		public async UniTask<long> DownloadRemoteContentAsync(string[] labels = null, IProgress<float> progress = null, CancellationToken cToken = default)
 		{
-			// Strategy: Use key-based GetDownloadSizeAsync which checks all bundles for the given keys.
-			// If labels are provided, use them as keys. Otherwise, enumerate all keys from the catalog.
-			// The wildcard "*" approach via LoadResourceLocationsAsync doesn't reliably enumerate
-			// all locations in all catalog configurations, so we enumerate catalog keys directly.
-			
-			IEnumerable<string> keys;
-			if (labels != null && labels.Length > 0)
-			{
-				keys = labels;
-			}
-			else
-			{
-				// Enumerate all keys from all resource locators (catalogs)
-				var allKeys = new List<string>();
-				foreach (var locator in Addressables.ResourceLocators)
-				{
-					foreach (var key in locator.Keys)
-					{
-						var keyStr = key?.ToString();
-						if (!string.IsNullOrEmpty(keyStr))
-							allKeys.Add(keyStr);
-					}
-				}
-				keys = allKeys;
-			}
-
-			// Use key-based download size check. This may throw InvalidKeyException for
-			// individual keys that have no matching locations, so we handle that gracefully.
-			long downloadSize;
-			try
-			{
-				downloadSize = await Addressables.GetDownloadSizeAsync(keys)
-					.ToUniTask(cancellationToken: cToken);
-			}
-			catch (Exception)
-			{
-				// Fallback: check each key individually and sum up the download sizes
-				downloadSize = 0;
-				foreach (var key in keys)
-				{
-					try
-					{
-						var keySize = await Addressables.GetDownloadSizeAsync(key.ToString())
-							.ToUniTask(cancellationToken: cToken);
-						if (keySize > 0)
-							downloadSize += keySize;
-					}
-					catch (Exception)
-					{
-						// Skip keys that throw — they have no matching locations
-					}
-				}
-			}
+			var keys = ResolveKeys(labels);
+			var downloadSize = await GetDownloadSizeAsync(keys, cToken);
 
 			if (downloadSize > 0)
 			{
@@ -357,6 +331,61 @@ namespace AK.Core.ResourceManagement
 		{
 			// TODO: Track Operations To Log & Keep States
 			return asyncOp;
+		}
+
+		/// <summary>
+		/// Resolves the keys to use for download operations.
+		/// If labels are provided, uses them directly. Otherwise, enumerates all catalog keys.
+		/// </summary>
+		private static IEnumerable<string> ResolveKeys(string[] labels)
+		{
+			if (labels != null && labels.Length > 0)
+				return labels;
+
+			var allKeys = new List<string>();
+			foreach (var locator in Addressables.ResourceLocators)
+			{
+				foreach (var key in locator.Keys)
+				{
+					var keyStr = key?.ToString();
+					if (!string.IsNullOrEmpty(keyStr))
+						allKeys.Add(keyStr);
+				}
+			}
+			return allKeys;
+		}
+
+		/// <summary>
+		/// Gets the total download size for the given keys without downloading.
+		/// Handles <see cref="InvalidKeyException"/> by falling back to per-key checks.
+		/// </summary>
+		private static async UniTask<long> GetDownloadSizeAsync(IEnumerable<string> keys, CancellationToken cToken)
+		{
+			try
+			{
+				return await Addressables.GetDownloadSizeAsync(keys)
+					.ToUniTask(cancellationToken: cToken);
+			}
+			catch (Exception)
+			{
+				// Fallback: check each key individually and sum up the download sizes
+				long downloadSize = 0;
+				foreach (var key in keys)
+				{
+					try
+					{
+						var keySize = await Addressables.GetDownloadSizeAsync(key.ToString())
+							.ToUniTask(cancellationToken: cToken);
+						if (keySize > 0)
+							downloadSize += keySize;
+					}
+					catch (Exception)
+					{
+						// Skip keys that throw — they have no matching locations
+					}
+				}
+				return downloadSize;
+			}
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
