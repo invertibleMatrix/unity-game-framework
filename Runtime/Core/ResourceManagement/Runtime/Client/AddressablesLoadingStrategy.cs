@@ -49,19 +49,37 @@ namespace AK.Core.ResourceManagement
 		}
 
 		/// <inheritdoc />
-		public async UniTask<bool> CheckForCatalogUpdatesAsync(CancellationToken cToken = default)
+		public async UniTask<bool> CheckForCatalogUpdatesAsync(IProgress<float> progress = null, CancellationToken cToken = default)
 		{
+			progress?.Report(0f);
 			var catalogUpdates = await Addressables.CheckForCatalogUpdates().ToUniTask(cancellationToken: cToken);
 	
 			if (catalogUpdates == null || catalogUpdates.Count == 0)
+			{
+				progress?.Report(1f);
 				return false;
-	
-			await Addressables.UpdateCatalogs(catalogUpdates).ToUniTask(cancellationToken: cToken);
+			}
+
+			var updateOp = Addressables.UpdateCatalogs(catalogUpdates);
+			
+			// Poll for progress while updating catalogs
+			while (!updateOp.IsDone)
+			{
+				if (updateOp.IsValid())
+				{
+					var status = updateOp.GetDownloadStatus();
+					progress?.Report(status.Percent);
+				}
+				await UniTask.Yield(cToken);
+			}
+			
+			progress?.Report(1f);
+			Addressables.Release(updateOp);
 			return true;
 		}
 
 		/// <inheritdoc />
-		public async UniTask<long> DownloadRemoteContentAsync(string[] labels = null, CancellationToken cToken = default)
+		public async UniTask<long> DownloadRemoteContentAsync(string[] labels = null, IProgress<float> progress = null, CancellationToken cToken = default)
 		{
 			// Strategy: Use key-based GetDownloadSizeAsync which checks all bundles for the given keys.
 			// If labels are provided, use them as keys. Otherwise, enumerate all keys from the catalog.
@@ -120,12 +138,30 @@ namespace AK.Core.ResourceManagement
 			if (downloadSize > 0)
 			{
 				var downloadOp = Addressables.DownloadDependenciesAsync(keys, Addressables.MergeMode.Union, true);
-				await downloadOp.ToUniTask(cancellationToken: cToken);
+				
+				// Poll for progress and report via IProgress<float>
+				while (!downloadOp.IsDone)
+				{
+					if (downloadOp.IsValid())
+					{
+						var status = downloadOp.GetDownloadStatus();
+						progress?.Report(status.Percent);
+					}
+					await UniTask.Yield(cToken);
+				}
+				
+				// Report 100% on completion
+				progress?.Report(1f);
 				
 				if (downloadOp.Status == AsyncOperationStatus.Failed)
 					Debug.LogError($"[AddressablesStrategy] Download FAILED: {downloadOp.OperationException}");
 				
 				Addressables.Release(downloadOp);
+			}
+			else
+			{
+				// Nothing to download — report complete immediately
+				progress?.Report(1f);
 			}
 
 			return downloadSize;

@@ -63,10 +63,11 @@ namespace AK.Core.ResourceManagement
 		/// Checks the remote CDN for catalog updates and applies them if available.
 		/// Returns true if a catalog update was downloaded and applied.
 		/// Must be called after <see cref="InitAsync"/> and before any asset loading.
+		/// <paramref name="progress"/> reports update progress as a float between 0 and 1.
 		/// </summary>
-		public static UniTask<bool> CheckForCatalogUpdatesAsync(CancellationToken cToken = default)
+		public static UniTask<bool> CheckForCatalogUpdatesAsync(IProgress<float> progress = null, CancellationToken cToken = default)
 		{
-			return _strategy.CheckForCatalogUpdatesAsync(cToken);
+			return _strategy.CheckForCatalogUpdatesAsync(progress, cToken);
 		}
 
 		/// <summary>
@@ -75,10 +76,11 @@ namespace AK.Core.ResourceManagement
 		/// Otherwise, only locations matching the provided labels are resolved.
 		/// Uses location-based APIs internally, which never throw InvalidKeyException.
 		/// Returns the total download size in bytes (0 if nothing to download).
+		/// <paramref name="progress"/> reports download progress as a float between 0 and 1.
 		/// </summary>
-		public static UniTask<long> DownloadRemoteContentAsync(string[] labels = null, CancellationToken cToken = default)
+		public static UniTask<long> DownloadRemoteContentAsync(string[] labels = null, IProgress<float> progress = null, CancellationToken cToken = default)
 		{
-			return _strategy.DownloadRemoteContentAsync(labels, cToken);
+			return _strategy.DownloadRemoteContentAsync(labels, progress, cToken);
 		}
 
 		/// <summary>
