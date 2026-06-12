@@ -52,12 +52,10 @@ namespace AK.Core.ResourceManagement
 		public async UniTask<bool> CheckForCatalogUpdatesAsync(CancellationToken cToken = default)
 		{
 			var catalogUpdates = await Addressables.CheckForCatalogUpdates().ToUniTask(cancellationToken: cToken);
-
+	
 			if (catalogUpdates == null || catalogUpdates.Count == 0)
-			{
 				return false;
-			}
-
+	
 			await Addressables.UpdateCatalogs(catalogUpdates).ToUniTask(cancellationToken: cToken);
 			return true;
 		}
@@ -65,34 +63,69 @@ namespace AK.Core.ResourceManagement
 		/// <inheritdoc />
 		public async UniTask<long> DownloadRemoteContentAsync(string[] labels = null, CancellationToken cToken = default)
 		{
-			// Resolve locations — either from specific labels or the entire catalog.
-			// Location-based APIs are used for download queries because they never throw
-			// InvalidKeyException (unlike key-based APIs which throw when a label has no entries).
-			IList<IResourceLocation> locations;
-
+			// Strategy: Use key-based GetDownloadSizeAsync which checks all bundles for the given keys.
+			// If labels are provided, use them as keys. Otherwise, enumerate all keys from the catalog.
+			// The wildcard "*" approach via LoadResourceLocationsAsync doesn't reliably enumerate
+			// all locations in all catalog configurations, so we enumerate catalog keys directly.
+			
+			IEnumerable<string> keys;
 			if (labels != null && labels.Length > 0)
 			{
-				locations = await Addressables.LoadResourceLocationsAsync(labels, Addressables.MergeMode.Union, null)
-					.ToUniTask(cancellationToken: cToken);
+				keys = labels;
 			}
 			else
 			{
-				locations = await Addressables.LoadResourceLocationsAsync("*", null)
+				// Enumerate all keys from all resource locators (catalogs)
+				var allKeys = new List<string>();
+				foreach (var locator in Addressables.ResourceLocators)
+				{
+					foreach (var key in locator.Keys)
+					{
+						var keyStr = key?.ToString();
+						if (!string.IsNullOrEmpty(keyStr))
+							allKeys.Add(keyStr);
+					}
+				}
+				keys = allKeys;
+			}
+
+			// Use key-based download size check. This may throw InvalidKeyException for
+			// individual keys that have no matching locations, so we handle that gracefully.
+			long downloadSize;
+			try
+			{
+				downloadSize = await Addressables.GetDownloadSizeAsync(keys)
 					.ToUniTask(cancellationToken: cToken);
 			}
-
-			if (locations == null || locations.Count == 0)
+			catch (Exception)
 			{
-				return 0;
+				// Fallback: check each key individually and sum up the download sizes
+				downloadSize = 0;
+				foreach (var key in keys)
+				{
+					try
+					{
+						var keySize = await Addressables.GetDownloadSizeAsync(key.ToString())
+							.ToUniTask(cancellationToken: cToken);
+						if (keySize > 0)
+							downloadSize += keySize;
+					}
+					catch (Exception)
+					{
+						// Skip keys that throw — they have no matching locations
+					}
+				}
 			}
-
-			var downloadSize = await Addressables.GetDownloadSizeAsync(locations)
-				.ToUniTask(cancellationToken: cToken);
 
 			if (downloadSize > 0)
 			{
-				await Addressables.DownloadDependenciesAsync(locations, true)
-					.ToUniTask(cancellationToken: cToken);
+				var downloadOp = Addressables.DownloadDependenciesAsync(keys, Addressables.MergeMode.Union, true);
+				await downloadOp.ToUniTask(cancellationToken: cToken);
+				
+				if (downloadOp.Status == AsyncOperationStatus.Failed)
+					Debug.LogError($"[AddressablesStrategy] Download FAILED: {downloadOp.OperationException}");
+				
+				Addressables.Release(downloadOp);
 			}
 
 			return downloadSize;
