@@ -111,26 +111,64 @@ namespace AK.Core.ResourceManagement
 
 			if (downloadSize > 0)
 			{
-				var downloadOp = Addressables.DownloadDependenciesAsync(keys, Addressables.MergeMode.Union, true);
-				
-				// Poll for progress and report via IProgress<float>
-				while (!downloadOp.IsDone)
+				// Use location-based download to avoid InvalidKeyException from key-based APIs.
+				// First resolve all resource locations, then download by location.
+				var locations = new List<IResourceLocation>();
+				foreach (var key in keys)
 				{
-					if (downloadOp.IsValid())
+					try
 					{
-						var status = downloadOp.GetDownloadStatus();
-						progress?.Report(status.Percent);
+						var locs = await Addressables.LoadResourceLocationsAsync(key).ToUniTask(cancellationToken: cToken);
+						if (locs != null)
+						{
+							foreach (var loc in locs)
+							{
+								if (loc != null && !locations.Contains(loc))
+									locations.Add(loc);
+							}
+						}
 					}
-					await UniTask.Yield(cToken);
+					catch (Exception)
+					{
+						// Skip keys that fail to resolve
+					}
 				}
-				
-				// Report 100% on completion
-				progress?.Report(1f);
-				
-				if (downloadOp.Status == AsyncOperationStatus.Failed)
-					Debug.LogError($"[AddressablesStrategy] Download FAILED: {downloadOp.OperationException}");
-				
-				Addressables.Release(downloadOp);
+
+				if (locations.Count > 0)
+				{
+					// Download using location-based API — never throws InvalidKeyException.
+					// autoRelease=false: we control the release in the finally block.
+					var downloadOp = Addressables.DownloadDependenciesAsync(locations, false);
+					
+					try
+					{
+						// Poll for progress and report via IProgress<float>
+						while (!downloadOp.IsDone)
+						{
+							if (downloadOp.IsValid())
+							{
+								var status = downloadOp.GetDownloadStatus();
+								progress?.Report(status.Percent);
+							}
+							await UniTask.Yield(cToken);
+						}
+						
+						// Report 100% on completion
+						progress?.Report(1f);
+						
+						if (downloadOp.Status == AsyncOperationStatus.Failed)
+							Debug.LogError($"[AddressablesStrategy] Download FAILED: {downloadOp.OperationException}");
+					}
+					finally
+					{
+						if (downloadOp.IsValid())
+							Addressables.Release(downloadOp);
+					}
+				}
+				else
+				{
+					progress?.Report(1f);
+				}
 			}
 			else
 			{
@@ -336,11 +374,12 @@ namespace AK.Core.ResourceManagement
 		/// <summary>
 		/// Resolves the keys to use for download operations.
 		/// If labels are provided, uses them directly. Otherwise, enumerates all catalog keys.
+		/// Always returns a materialized <see cref="List{T}"/> to avoid multiple enumeration.
 		/// </summary>
-		private static IEnumerable<string> ResolveKeys(string[] labels)
+		private static List<string> ResolveKeys(string[] labels)
 		{
 			if (labels != null && labels.Length > 0)
-				return labels;
+				return new List<string>(labels);
 
 			var allKeys = new List<string>();
 			foreach (var locator in Addressables.ResourceLocators)
@@ -359,7 +398,7 @@ namespace AK.Core.ResourceManagement
 		/// Gets the total download size for the given keys without downloading.
 		/// Handles <see cref="InvalidKeyException"/> by falling back to per-key checks.
 		/// </summary>
-		private static async UniTask<long> GetDownloadSizeAsync(IEnumerable<string> keys, CancellationToken cToken)
+		private static async UniTask<long> GetDownloadSizeAsync(IList<string> keys, CancellationToken cToken)
 		{
 			try
 			{
@@ -374,7 +413,7 @@ namespace AK.Core.ResourceManagement
 				{
 					try
 					{
-						var keySize = await Addressables.GetDownloadSizeAsync(key.ToString())
+						var keySize = await Addressables.GetDownloadSizeAsync(key)
 							.ToUniTask(cancellationToken: cToken);
 						if (keySize > 0)
 							downloadSize += keySize;
