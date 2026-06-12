@@ -83,24 +83,31 @@ namespace AK.Core.ResourceManagement
 			}
 
 			progress?.Report(0f);
-			var updateOp = Addressables.UpdateCatalogs(catalogIds);
+			// autoRelease=false: we control the release in the finally block.
+			// If autoRelease=true (default), the handle becomes invalid as soon as the
+			// operation completes, causing "Attempting to use an invalid operation handle"
+			// when we try to check updateOp.Status or call Addressables.Release().
+			var updateOp = Addressables.UpdateCatalogs(catalogIds, false);
 			
 			try
 			{
 				// Poll for progress while updating catalogs
-				while (!updateOp.IsDone)
+				while (true)
 				{
-					if (updateOp.IsValid())
-					{
-						var status = updateOp.GetDownloadStatus();
-						progress?.Report(status.Percent);
-					}
+					if (!updateOp.IsValid())
+						break;
+					
+					if (updateOp.IsDone)
+						break;
+					
+					var status = updateOp.GetDownloadStatus();
+					progress?.Report(status.Percent);
 					await UniTask.Yield(cToken);
 				}
 				
 				progress?.Report(1f);
 
-				if (updateOp.Status == AsyncOperationStatus.Failed)
+				if (updateOp.IsValid() && updateOp.Status == AsyncOperationStatus.Failed)
 					Debug.LogError($"[AddressablesStrategy] Catalog update FAILED: {updateOp.OperationException}");
 			}
 			finally
@@ -445,12 +452,16 @@ namespace AK.Core.ResourceManagement
 		                                        bool autoCleanBundleCache = false,
 		                                        CancellationToken cToken = default)
 		{
+			// autoRelease=false: we control the release ourselves to avoid
+			// "Attempting to use an invalid operation handle" when accessing the handle after completion.
 			var handle = autoCleanBundleCache
 				? Addressables.UpdateCatalogs(true, catalogs, false)
 				: Addressables.UpdateCatalogs(catalogs, false);
 
 			await handle.ToUniTask(cancellationToken: cToken);
-			Addressables.Release(handle);
+			
+			if (handle.IsValid())
+				Addressables.Release(handle);
 		}
 
 		// --------------------------------------------------------------------------
