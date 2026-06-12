@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -6,6 +6,8 @@ using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.ResourceLocations;
+using UnityEngine.ResourceManagement.ResourceProviders;
+using UnityEngine.SceneManagement;
 using Object = UnityEngine.Object;
 
 namespace AK.Core.ResourceManagement
@@ -24,7 +26,7 @@ namespace AK.Core.ResourceManagement
 
 		/// <summary>
 		/// <see cref="OverrideStrategy"/> Is Going To Override The Previous Concrete Of
-		/// <see cref="IResourceLoadingStrategy"/>' Instance..
+		/// <see cref="IResourceLoadingStrategy"/>'s Instance..
 		/// </summary>
 		/// <param name="strategy">Concrete Of <see cref="IResourceLoadingStrategy"/> TO Load/Override...</param>
 		public static void OverrideStrategy(IResourceLoadingStrategy strategy)
@@ -124,7 +126,7 @@ namespace AK.Core.ResourceManagement
 		/// </summary>
 		public static UniTask<IList<IResourceLocation>> GetResourceLocationsAsync(IEnumerable<string> keys,
 			Type type = null,
-			MergeMode mode = MergeMode.Union,
+			MergeMode mode = MergeMode.UseFirst,
 			CancellationToken cToken = default)
 		{
 			return _strategy.GetResourceLocationsAsync(keys, type, mode, cToken);
@@ -153,7 +155,7 @@ namespace AK.Core.ResourceManagement
 		/// Downloads dependencies of assets identified by a list of keys.
 		/// </summary>
 		public static UniTask GetRemoteDependenciesAsync(IEnumerable<string> keys, out IOperationStatusProvider provider,
-			MergeMode mode = MergeMode.Union,
+			MergeMode mode = MergeMode.UseFirst,
 			CancellationToken cToken = default)
 		{
 			return _strategy.GetRemoteDependenciesAsync(keys, out provider, mode, cToken);
@@ -202,7 +204,7 @@ namespace AK.Core.ResourceManagement
 		/// Loads multiple assets asynchronously.
 		/// </summary>
 		public static UniTask<AssetsGroup<TObject>> LoadAssetsAsync<TObject>(IEnumerable<string> keys,
-			MergeMode mode = MergeMode.Union,
+			MergeMode mode = MergeMode.UseFirst,
 			IProgress<float> progress = default,
 			CancellationToken cToken = default)
 		{
@@ -213,7 +215,7 @@ namespace AK.Core.ResourceManagement
 		/// Loads multiple assets from AssetReferences asynchronously.
 		/// </summary>
 		public static UniTask<AssetsGroup<TObject>> LoadAssetsAsync<TObject>(IEnumerable<AssetReference> references,
-			MergeMode mode = MergeMode.Union,
+			MergeMode mode = MergeMode.UseFirst,
 			IProgress<float> progress = default,
 			CancellationToken cToken = default)
 		{
@@ -261,12 +263,64 @@ namespace AK.Core.ResourceManagement
 		}
 
 		// --------------------------------------------------------------------------
+		// SCENE API
+		// --------------------------------------------------------------------------
+
+		/// <summary>
+		/// Loads an Addressable scene by key.
+		/// <para>⚠ If <paramref name="activateOnLoad"/> is false, it blocks the entire Addressable operation queue
+		/// until you call <see cref="SceneInstance.ActivateAsync"/> on the result. Use with caution.</para>
+		/// </summary>
+		public static UniTask<SceneInstance> LoadSceneAsync(string key, LoadSceneMode mode = LoadSceneMode.Single,
+			bool activateOnLoad = true, IProgress<float> progress = default,
+			CancellationToken cToken = default)
+		{
+			return _strategy.LoadSceneAsync(key, mode, activateOnLoad, progress, cToken);
+		}
+
+		/// <summary>
+		/// Unloads a previously loaded Addressable scene.
+		/// </summary>
+		public static UniTask UnloadSceneAsync(SceneInstance scene, IProgress<float> progress = default,
+			CancellationToken cToken = default)
+		{
+			return _strategy.UnloadSceneAsync(scene, progress, cToken);
+		}
+
+		// --------------------------------------------------------------------------
+		// CATALOG UPDATE API
+		// --------------------------------------------------------------------------
+
+		/// <summary>
+		/// Checks if any loaded content catalogs have remote updates available.
+		/// Returns a list of catalog IDs that have updates, or an empty list.
+		/// </summary>
+		public static UniTask<List<string>> CheckForCatalogUpdatesAsync(CancellationToken cToken = default)
+		{
+			return _strategy.CheckForCatalogUpdatesAsync(cToken);
+		}
+
+		/// <summary>
+		/// Downloads and applies updated content catalogs.
+		/// <para>⚠ This blocks all Addressable requests until complete. Call at startup or during loading screens.</para>
+		/// <para>When <paramref name="autoCleanBundleCache"/> is true, removes bundles no longer referenced by any catalog.</para>
+		/// </summary>
+		public static UniTask UpdateCatalogsAsync(IEnumerable<string> catalogs = null,
+			bool autoCleanBundleCache = false,
+			CancellationToken cToken = default)
+		{
+			return _strategy.UpdateCatalogsAsync(catalogs, autoCleanBundleCache, cToken);
+		}
+
+		// --------------------------------------------------------------------------
 		// SYNCHRONOUS API (Blocking - Mimics Resources.Load)
 		// --------------------------------------------------------------------------
 
 		/// <summary>
 		/// Loads an asset synchronously (Blocks frame).
 		/// Use this to replace Resources.Load().
+		/// <para>⚠ WARNING: Completes ALL active Addressable load operations. Do not use on WebGL.
+		/// Do not call from Awake (deadlock risk). Avoid for remote AssetBundles.</para>
 		/// </summary>
 		public static TObject LoadAsset<TObject>(string key)
 		{

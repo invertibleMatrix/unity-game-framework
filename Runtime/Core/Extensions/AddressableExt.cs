@@ -24,12 +24,12 @@ namespace AK.Core.Extensions
 		public static Addressables.MergeMode Convert(this MergeMode mode)
 		{
 			return mode switch
-			{
-				MergeMode.None or MergeMode.UseFirst => Addressables.MergeMode.None,
-				MergeMode.Union => Addressables.MergeMode.Union,
-				MergeMode.Intersection => Addressables.MergeMode.Intersection,
-				_ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null)
-			};
+				{
+					MergeMode.UseFirst => Addressables.MergeMode.None, // Addressables' "None" = UseFirst
+					MergeMode.Union => Addressables.MergeMode.Union,
+					MergeMode.Intersection => Addressables.MergeMode.Intersection,
+					_ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null)
+				};
 		}
 	}
 }

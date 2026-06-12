@@ -8,12 +8,12 @@
 		public readonly bool IsRunning;
 
 		/// <summary>
-		/// The number of bytes downloaded by the operation and all of its dependencies.
+		/// The total number of bytes needed to download by the operation and its dependencies.
 		/// </summary>
 		public readonly long TotalBytes;
 
 		/// <summary>
-		/// The total number of bytes needed to download by the operation and dependencies.
+		/// The number of bytes already downloaded by the operation and its dependencies.
 		/// </summary>
 		public readonly long DownloadedBytes;
 

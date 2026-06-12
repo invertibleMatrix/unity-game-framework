@@ -1,10 +1,12 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.ResourceLocations;
+using UnityEngine.ResourceManagement.ResourceProviders;
+using UnityEngine.SceneManagement;
 
 namespace AK.Core.ResourceManagement
 {
@@ -32,7 +34,7 @@ namespace AK.Core.ResourceManagement
 		/// Loads the resource locations specified by a set of keys.
 		/// </summary>
 		public UniTask<IList<IResourceLocation>> GetResourceLocationsAsync(IEnumerable<string> keys, Type type,
-			MergeMode mode = MergeMode.Union,
+			MergeMode mode = MergeMode.UseFirst,
 			CancellationToken cToken = default);
 
 		/// <summary>
@@ -42,12 +44,12 @@ namespace AK.Core.ResourceManagement
 		UniTask<IList<IResourceLocation>> GetAllResourceLocationsAsync(Type type = null, CancellationToken cToken = default);
 
 		/// <summary>
-		/// Checks the remote CDN for catalog updates without applying them.
+		/// Checks the remote CDN for catalog updates WITHOUT applying them.
 		/// Returns a list of catalog IDs that need updating, or an empty list if none.
-		/// Use this to check if a UI prompt should be shown before calling
-		/// <see cref="ApplyCatalogUpdatesAsync"/> or <see cref="CheckForCatalogUpdatesAsync"/>.
+		/// Use this for a two-step flow: check first, prompt user, then call <see cref="ApplyCatalogUpdatesAsync"/>.
 		/// Must be called after <see cref="InitAsync"/> and before any asset loading.
 		/// </summary>
+		/// <remarks>Does NOT apply updates. For check+apply in one call, use <see cref="CheckForCatalogUpdatesAsync(IProgress{float}, CancellationToken)"/>.</remarks>
 		UniTask<List<string>> HasCatalogUpdatesAsync(CancellationToken cToken = default);
 
 		/// <summary>
@@ -58,8 +60,9 @@ namespace AK.Core.ResourceManagement
 		UniTask ApplyCatalogUpdatesAsync(List<string> catalogIds, IProgress<float> progress = null, CancellationToken cToken = default);
 
 		/// <summary>
-		/// Convenience method that checks for catalog updates and applies them in one call.
-		/// Returns true if a catalog update was downloaded and applied.
+		/// Convenience method that checks for catalog updates AND applies them in one call.
+		/// Internally calls <see cref="HasCatalogUpdatesAsync"/> then <see cref="ApplyCatalogUpdatesAsync"/>.
+		/// Returns true if a catalog update was downloaded and applied, false if none were available.
 		/// Must be called after <see cref="InitAsync"/> and before any asset loading.
 		/// <paramref name="progress"/> reports update progress as a float between 0 and 1.
 		/// </summary>
@@ -106,7 +109,7 @@ namespace AK.Core.ResourceManagement
 		/// Throws <see cref="InvalidKeyException"/> if any key has no matching locations.
 		/// </summary>
 		UniTask GetRemoteDependenciesAsync(IEnumerable<string> keys, out IOperationStatusProvider provider,
-			MergeMode mode = MergeMode.Union,
+			MergeMode mode = MergeMode.UseFirst,
 			CancellationToken cToken = default);
 
 		// --------------------------------------------------------------------------
@@ -129,7 +132,7 @@ namespace AK.Core.ResourceManagement
 		/// Loads multiple assets, based on the list of keys provided.
 		/// </summary>
 		UniTask<AssetsGroup<TObject>> LoadAssetsAsync<TObject>(IEnumerable<string> keys,
-			MergeMode mode = MergeMode.Union,
+			MergeMode mode = MergeMode.UseFirst,
 			IProgress<float> progress = default,
 			CancellationToken cToken = default);
 
@@ -153,6 +156,48 @@ namespace AK.Core.ResourceManagement
 			CancellationToken cToken = default);
 
 		// --------------------------------------------------------------------------
+		// SCENE API
+		// --------------------------------------------------------------------------
+
+		/// <summary>
+		/// Loads an Addressable scene by key. Internally uses SceneManager.LoadSceneAsync.
+		/// <para>⚠ If <paramref name="activateOnLoad"/> is false, it blocks the entire async operation queue
+		/// until you call <see cref="SceneInstance.ActivateAsync"/> on the result.</para>
+		/// </summary>
+		UniTask<SceneInstance> LoadSceneAsync(string key, LoadSceneMode mode = LoadSceneMode.Single,
+			bool activateOnLoad = true, IProgress<float> progress = default,
+			CancellationToken cToken = default);
+
+		/// <summary>
+		/// Unloads a previously loaded Addressable scene.
+		/// </summary>
+		UniTask UnloadSceneAsync(SceneInstance scene, IProgress<float> progress = default,
+			CancellationToken cToken = default);
+
+		// --------------------------------------------------------------------------
+		// CATALOG UPDATE API (Low-level split)
+		// --------------------------------------------------------------------------
+
+		/// <summary>
+		/// Low-level: checks if any loaded catalogs have remote updates available.
+		/// Returns a list of modified catalog IDs, or an empty list if none.
+		/// Does NOT apply updates — call <see cref="UpdateCatalogsAsync"/> after this.
+		/// For the higher-level check+apply flow, see <see cref="HasCatalogUpdatesAsync"/>
+		/// + <see cref="ApplyCatalogUpdatesAsync"/> or the convenience
+		/// <see cref="CheckForCatalogUpdatesAsync(IProgress{float}, CancellationToken)"/>.
+		/// </summary>
+		UniTask<List<string>> CheckForCatalogUpdatesAsync(CancellationToken cToken = default);
+
+		/// <summary>
+		/// Downloads and applies updated content catalogs.
+		/// When <paramref name="autoCleanBundleCache"/> is true, removes bundles no longer referenced by any catalog.
+		/// <para>⚠ This blocks all Addressable requests until complete. Call at startup or during loading screens.</para>
+		/// </summary>
+		UniTask UpdateCatalogsAsync(IEnumerable<string> catalogs = null,
+			bool autoCleanBundleCache = false,
+			CancellationToken cToken = default);
+
+		// --------------------------------------------------------------------------
 		// SYNCHRONOUS API (Blocking)
 		// --------------------------------------------------------------------------
 
@@ -161,7 +206,8 @@ namespace AK.Core.ResourceManagement
 		/// </summary>
 		/// <remarks>
 		/// WARNING: This forces the asset to load immediately. It will freeze the game frame until completion.
-		/// Do not use on WebGL.
+		/// Do not use on WebGL. Completes ALL active asset load operations, not just this one.
+		/// Do not call in Awake — use Start instead to avoid deadlocks.
 		/// </remarks>
 		TObject LoadAsset<TObject>(string key);
 

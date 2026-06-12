@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -7,6 +7,8 @@ using UnityEngine;
 using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.ResourceManagement.ResourceLocations;
+using UnityEngine.ResourceManagement.ResourceProviders;
+using UnityEngine.SceneManagement;
 using AK.Core.Extensions;
 using Object = UnityEngine.Object;
 
@@ -15,7 +17,13 @@ namespace AK.Core.ResourceManagement
 	/// <inheritdoc />
 	public sealed class AddressablesLoadingStrategy : IResourceLoadingStrategy
 	{
-		private readonly Dictionary<Guid, AsyncOperationHandle> _operationsLookup = new();
+		// Tracks handles for AssetsGroup disposal (keyed by group Guid).
+		private readonly Dictionary<Guid, AsyncOperationHandle> _groupOperationsLookup = new();
+
+		// Tracks handles for individual asset loads and spawns (keyed by the loaded object reference).
+		// This is essential for proper ref-count management — every Load/Spawn must be paired with
+		// a DisposeAsset/DisposeInstance to release the handle and decrement the Addressables ref-count.
+		private readonly Dictionary<Object, AsyncOperationHandle> _objectHandleLookup = new();
 
 		/// <inheritdoc />
 		public UniTask InitAsync(CancellationToken cToken = default)
@@ -27,31 +35,41 @@ namespace AK.Core.ResourceManagement
 		public async UniTask<bool> HasResourceAsync(string key, Type type = null, CancellationToken cToken = default)
 		{
 			CheckResourceKey(key);
-			var locations = await Addressables.LoadResourceLocationsAsync(key, type).WithCancellation(cToken);
-			return locations.Count > 0;
+			// LoadResourceLocationsAsync creates a handle that must be released to avoid leaking ref-counts.
+			var handle = Addressables.LoadResourceLocationsAsync(key, type);
+			var locations = await handle.WithCancellation(cToken);
+			bool result = locations.Count > 0;
+			Addressables.Release(handle);
+			return result;
 		}
 
 		/// <inheritdoc />
-		public UniTask<IList<IResourceLocation>> GetResourceLocationsAsync(IEnumerable<string> keys, Type type,
+		public async UniTask<IList<IResourceLocation>> GetResourceLocationsAsync(IEnumerable<string> keys, Type type,
 		                                                                   MergeMode mode,
 		                                                                   CancellationToken cToken = default)
 		{
-			return Addressables.LoadResourceLocationsAsync(keys, mode.Convert(), type)
-			                   .ToUniTask(cancellationToken: cToken);
+			var handle = Addressables.LoadResourceLocationsAsync(keys, mode.Convert(), type);
+			var result = await handle.ToUniTask(cancellationToken: cToken);
+			Addressables.Release(handle);
+			return result;
 		}
 
 		/// <inheritdoc />
-		public UniTask<IList<IResourceLocation>> GetAllResourceLocationsAsync(Type type = null,
+		public async UniTask<IList<IResourceLocation>> GetAllResourceLocationsAsync(Type type = null,
 		                                                                     CancellationToken cToken = default)
 		{
-			return Addressables.LoadResourceLocationsAsync("*", type)
-			                   .ToUniTask(cancellationToken: cToken);
+			var handle = Addressables.LoadResourceLocationsAsync("*", type);
+			var result = await handle.ToUniTask(cancellationToken: cToken);
+			Addressables.Release(handle);
+			return result;
 		}
 
 		/// <inheritdoc />
 		public async UniTask<List<string>> HasCatalogUpdatesAsync(CancellationToken cToken = default)
 		{
-			var catalogUpdates = await Addressables.CheckForCatalogUpdates().ToUniTask(cancellationToken: cToken);
+			var handle = Addressables.CheckForCatalogUpdates(false);
+			var catalogUpdates = await handle.ToUniTask(cancellationToken: cToken);
+			Addressables.Release(handle);
 			return catalogUpdates ?? new List<string>();
 		}
 
@@ -67,19 +85,29 @@ namespace AK.Core.ResourceManagement
 			progress?.Report(0f);
 			var updateOp = Addressables.UpdateCatalogs(catalogIds);
 			
-			// Poll for progress while updating catalogs
-			while (!updateOp.IsDone)
+			try
+			{
+				// Poll for progress while updating catalogs
+				while (!updateOp.IsDone)
+				{
+					if (updateOp.IsValid())
+					{
+						var status = updateOp.GetDownloadStatus();
+						progress?.Report(status.Percent);
+					}
+					await UniTask.Yield(cToken);
+				}
+				
+				progress?.Report(1f);
+
+				if (updateOp.Status == AsyncOperationStatus.Failed)
+					Debug.LogError($"[AddressablesStrategy] Catalog update FAILED: {updateOp.OperationException}");
+			}
+			finally
 			{
 				if (updateOp.IsValid())
-				{
-					var status = updateOp.GetDownloadStatus();
-					progress?.Report(status.Percent);
-				}
-				await UniTask.Yield(cToken);
+					Addressables.Release(updateOp);
 			}
-			
-			progress?.Report(1f);
-			Addressables.Release(updateOp);
 		}
 
 		/// <inheritdoc />
@@ -118,7 +146,10 @@ namespace AK.Core.ResourceManagement
 				{
 					try
 					{
-						var locs = await Addressables.LoadResourceLocationsAsync(key).ToUniTask(cancellationToken: cToken);
+						var locsHandle = Addressables.LoadResourceLocationsAsync(key);
+						var locs = await locsHandle.ToUniTask(cancellationToken: cToken);
+						Addressables.Release(locsHandle);
+
 						if (locs != null)
 						{
 							foreach (var loc in locs)
@@ -128,6 +159,7 @@ namespace AK.Core.ResourceManagement
 							}
 						}
 					}
+					catch (OperationCanceledException) { throw; }
 					catch (Exception)
 					{
 						// Skip keys that fail to resolve
@@ -180,17 +212,23 @@ namespace AK.Core.ResourceManagement
 		}
 
 		/// <inheritdoc />
-		public UniTask<long> GetRemoteDependenciesSizeAsync(IEnumerable<string> keys,
+		public async UniTask<long> GetRemoteDependenciesSizeAsync(IEnumerable<string> keys,
 		                                                    CancellationToken cToken = default)
 		{
-			return Addressables.GetDownloadSizeAsync(keys).ToUniTask(cancellationToken: cToken);
+			var handle = Addressables.GetDownloadSizeAsync(keys);
+			var result = await handle.ToUniTask(cancellationToken: cToken);
+			Addressables.Release(handle);
+			return result;
 		}
 
 		/// <inheritdoc />
-		public UniTask<long> GetRemoteDependenciesSizeAsync(IList<IResourceLocation> locations,
+		public async UniTask<long> GetRemoteDependenciesSizeAsync(IList<IResourceLocation> locations,
 		                                                    CancellationToken cToken = default)
 		{
-			return Addressables.GetDownloadSizeAsync(locations).ToUniTask(cancellationToken: cToken);
+			var handle = Addressables.GetDownloadSizeAsync(locations);
+			var result = await handle.ToUniTask(cancellationToken: cToken);
+			Addressables.Release(handle);
+			return result;
 		}
 
 		/// <inheritdoc />
@@ -198,6 +236,9 @@ namespace AK.Core.ResourceManagement
 		                                          out IOperationStatusProvider provider,
 		                                          CancellationToken cToken = default)
 		{
+			// autoReleaseHandle=true: handle auto-released on completion.
+			// OperationStatusProvider.ToOperationStatus() gracefully handles invalid/released handles
+			// by checking IsValid() first and returning OperationStatus(IsRunning=false) if invalid.
 			var asyncOp = Addressables.DownloadDependenciesAsync(locations, true);
 			provider = new OperationStatusProvider(asyncOp);
 			return asyncOp.ToUniTask(cancellationToken: cToken);
@@ -205,9 +246,11 @@ namespace AK.Core.ResourceManagement
 
 		/// <inheritdoc />
 		public UniTask GetRemoteDependenciesAsync(IEnumerable<string> keys, out IOperationStatusProvider provider,
-		                                          MergeMode mode = MergeMode.Union,
+		                                          MergeMode mode = MergeMode.UseFirst,
 		                                          CancellationToken cToken = default)
 		{
+			// autoReleaseHandle=true: handle auto-released on completion.
+			// OperationStatusProvider.ToOperationStatus() gracefully handles invalid/released handles.
 			var asyncOp = Addressables.DownloadDependenciesAsync(keys, mode.Convert(), true);
 			provider = new OperationStatusProvider(asyncOp);
 			return asyncOp.ToUniTask(cancellationToken: cToken);
@@ -218,34 +261,44 @@ namespace AK.Core.ResourceManagement
 		// --------------------------------------------------------------------------
 
 		/// <inheritdoc />
-		public UniTask<TObject> LoadAssetAsync<TObject>(string key, IProgress<float> progress = default,
+		public async UniTask<TObject> LoadAssetAsync<TObject>(string key, IProgress<float> progress = default,
 		                                                CancellationToken cToken = default)
 		{
 			CheckResourceKey(key);
 			var asyncOp = Addressables.LoadAssetAsync<TObject>(key);
-			return TrackOperation(asyncOp).ToUniTask(progress: progress, cancellationToken: cToken);
+			var result = await asyncOp.ToUniTask(progress: progress, cancellationToken: cToken);
+
+			if (asyncOp.Status == AsyncOperationStatus.Succeeded && result != null)
+				TrackObjectHandle(result as Object, asyncOp);
+
+			return result;
 		}
 
 		/// <inheritdoc />
-		public UniTask<TObject> LoadAssetAsync<TObject>(AssetReference reference, IProgress<float> progress = default,
+		public async UniTask<TObject> LoadAssetAsync<TObject>(AssetReference reference, IProgress<float> progress = default,
 		                                                CancellationToken cToken = default)
 		{
 			ValidateReference(reference);
 			var asyncOp = Addressables.LoadAssetAsync<TObject>(reference);
-			return TrackOperation(asyncOp).ToUniTask(progress: progress, cancellationToken: cToken);
+			var result = await asyncOp.ToUniTask(progress: progress, cancellationToken: cToken);
+
+			if (asyncOp.Status == AsyncOperationStatus.Succeeded && result != null)
+				TrackObjectHandle(result as Object, asyncOp);
+
+			return result;
 		}
 
 		/// <inheritdoc />
 		public async UniTask<AssetsGroup<TObject>> LoadAssetsAsync<TObject>(IEnumerable<string> keys,
-		                                                                    MergeMode mode = MergeMode.Union,
+		                                                                    MergeMode mode = MergeMode.UseFirst,
 		                                                                    IProgress<float> progress = default,
 		                                                                    CancellationToken cToken = default)
 		{
 			var asyncOp = Addressables.LoadAssetsAsync<TObject>(keys, default, mode.Convert());
-			var task = TrackOperation(asyncOp).ToUniTask(progress: progress, cancellationToken: cToken);
+			var task = asyncOp.ToUniTask(progress: progress, cancellationToken: cToken);
 			var assetsGroup = new AssetsGroup<TObject>(await task);
 
-			_operationsLookup[assetsGroup.Guid] = asyncOp;
+			_groupOperationsLookup[assetsGroup.Guid] = asyncOp;
 			return assetsGroup;
 		}
 
@@ -255,29 +308,39 @@ namespace AK.Core.ResourceManagement
 		                                                                    CancellationToken cToken = default)
 		{
 			var asyncOp = Addressables.LoadAssetsAsync<TObject>(keys, default);
-			var task = TrackOperation(asyncOp).ToUniTask(progress: progress, cancellationToken: cToken);
+			var task = asyncOp.ToUniTask(progress: progress, cancellationToken: cToken);
 			var assetsGroup = new AssetsGroup<TObject>(await task);
 
-			_operationsLookup[assetsGroup.Guid] = asyncOp;
+			_groupOperationsLookup[assetsGroup.Guid] = asyncOp;
 			return assetsGroup;
 		}
 
 		/// <inheritdoc />
-		public UniTask<GameObject> SpawnAsync(string key, Transform root, IProgress<float> progress = default,
+		public async UniTask<GameObject> SpawnAsync(string key, Transform root, IProgress<float> progress = default,
 		                                      CancellationToken cToken = default)
 		{
 			CheckResourceKey(key);
 			var asyncOp = Addressables.InstantiateAsync(key, root);
-			return TrackOperation(asyncOp).ToUniTask(progress: progress, cancellationToken: cToken);
+			var result = await asyncOp.ToUniTask(progress: progress, cancellationToken: cToken);
+
+			if (asyncOp.Status == AsyncOperationStatus.Succeeded && result != null)
+				TrackObjectHandle(result, asyncOp);
+
+			return result;
 		}
 
 		/// <inheritdoc />
-		public UniTask<GameObject> SpawnAsync(AssetReference reference, Transform root, IProgress<float> progress = default,
+		public async UniTask<GameObject> SpawnAsync(AssetReference reference, Transform root, IProgress<float> progress = default,
 		                                      CancellationToken cToken = default)
 		{
 			ValidateReference(reference);
 			var asyncOp = Addressables.InstantiateAsync(reference, root);
-			return TrackOperation(asyncOp).ToUniTask(progress: progress, cancellationToken: cToken);
+			var result = await asyncOp.ToUniTask(progress: progress, cancellationToken: cToken);
+
+			if (asyncOp.Status == AsyncOperationStatus.Succeeded && result != null)
+				TrackObjectHandle(result, asyncOp);
+
+			return result;
 		}
 
 		// --------------------------------------------------------------------------
@@ -289,7 +352,12 @@ namespace AK.Core.ResourceManagement
 		{
 			CheckResourceKey(key);
 			var op = Addressables.LoadAssetAsync<TObject>(key);
-			return op.WaitForCompletion();
+			var result = op.WaitForCompletion();
+
+			if (op.Status == AsyncOperationStatus.Succeeded && result != null)
+				TrackObjectHandle(result as Object, op);
+
+			return result;
 		}
 
 		/// <inheritdoc />
@@ -297,7 +365,12 @@ namespace AK.Core.ResourceManagement
 		{
 			ValidateReference(reference);
 			var op = Addressables.LoadAssetAsync<TObject>(reference);
-			return op.WaitForCompletion();
+			var result = op.WaitForCompletion();
+
+			if (op.Status == AsyncOperationStatus.Succeeded && result != null)
+				TrackObjectHandle(result as Object, op);
+
+			return result;
 		}
 
 		/// <inheritdoc />
@@ -305,7 +378,12 @@ namespace AK.Core.ResourceManagement
 		{
 			CheckResourceKey(key);
 			var op = Addressables.InstantiateAsync(key, root);
-			return op.WaitForCompletion();
+			var result = op.WaitForCompletion();
+
+			if (op.Status == AsyncOperationStatus.Succeeded && result != null)
+				TrackObjectHandle(result, op);
+
+			return result;
 		}
 
 		/// <inheritdoc />
@@ -313,7 +391,66 @@ namespace AK.Core.ResourceManagement
 		{
 			ValidateReference(reference);
 			var op = Addressables.InstantiateAsync(reference, root);
-			return op.WaitForCompletion();
+			var result = op.WaitForCompletion();
+
+			if (op.Status == AsyncOperationStatus.Succeeded && result != null)
+				TrackObjectHandle(result, op);
+
+			return result;
+		}
+
+		// --------------------------------------------------------------------------
+		// SCENE LOADING
+		// --------------------------------------------------------------------------
+
+		/// <inheritdoc />
+		public async UniTask<SceneInstance> LoadSceneAsync(string key, LoadSceneMode mode = LoadSceneMode.Single,
+		                                                   bool activateOnLoad = true, IProgress<float> progress = default,
+		                                                   CancellationToken cToken = default)
+		{
+			CheckResourceKey(key);
+			var asyncOp = Addressables.LoadSceneAsync(key, mode, activateOnLoad);
+			var result = await asyncOp.ToUniTask(progress: progress, cancellationToken: cToken);
+
+			// SceneInstance handles are released via UnloadSceneAsync, not DisposeAsset.
+			// We don't track them in _objectHandleLookup since they have a dedicated unload path.
+			return result;
+		}
+
+		/// <inheritdoc />
+		public UniTask UnloadSceneAsync(SceneInstance scene, IProgress<float> progress = default,
+		                                CancellationToken cToken = default)
+		{
+			if (scene.Scene.IsValid() == false)
+				return UniTask.CompletedTask;
+
+			return Addressables.UnloadSceneAsync(scene).ToUniTask(progress: progress, cancellationToken: cToken);
+		}
+
+		// --------------------------------------------------------------------------
+		// CATALOG UPDATES (Low-level split API)
+		// --------------------------------------------------------------------------
+
+		/// <inheritdoc />
+		public async UniTask<List<string>> CheckForCatalogUpdatesAsync(CancellationToken cToken = default)
+		{
+			var handle = Addressables.CheckForCatalogUpdates(false);
+			var result = await handle.ToUniTask(cancellationToken: cToken);
+			Addressables.Release(handle);
+			return result;
+		}
+
+		/// <inheritdoc />
+		public async UniTask UpdateCatalogsAsync(IEnumerable<string> catalogs = null,
+		                                        bool autoCleanBundleCache = false,
+		                                        CancellationToken cToken = default)
+		{
+			var handle = autoCleanBundleCache
+				? Addressables.UpdateCatalogs(true, catalogs, false)
+				: Addressables.UpdateCatalogs(catalogs, false);
+
+			await handle.ToUniTask(cancellationToken: cToken);
+			Addressables.Release(handle);
 		}
 
 		// --------------------------------------------------------------------------
@@ -321,7 +458,21 @@ namespace AK.Core.ResourceManagement
 		// --------------------------------------------------------------------------
 
 		/// <inheritdoc />
-		public void DisposeAsset(UnityEngine.Object uObject) => Addressables.Release(uObject);
+		public void DisposeAsset(Object uObject)
+		{
+			if (uObject == null) return;
+
+			// If we tracked this object's handle, release through the handle for proper ref-count management.
+			if (_objectHandleLookup.TryGetValue(uObject, out var handle))
+			{
+				_objectHandleLookup.Remove(uObject);
+				Addressables.Release(handle);
+				return;
+			}
+
+			// Fallback: release by object reference (works for simple loads not tracked in the lookup).
+			Addressables.Release(uObject);
+		}
 
 		/// <inheritdoc />
 		public void DisposeAssetsGroup<T>(AssetsGroup<T> group)
@@ -329,10 +480,10 @@ namespace AK.Core.ResourceManagement
 			if (group == null) return;
 			if (group == AssetsGroup<T>.Default) return;
 
-			if (_operationsLookup.TryGetValue(group.Guid, out var operation))
+			if (_groupOperationsLookup.TryGetValue(group.Guid, out var operation))
 			{
 				group.DisposeAssets();
-				_operationsLookup.Remove(group.Guid);
+				_groupOperationsLookup.Remove(group.Guid);
 
 				Addressables.Release(operation);
 				return;
@@ -345,6 +496,9 @@ namespace AK.Core.ResourceManagement
 		public bool DisposeInstance(GameObject gObject)
 		{
 			if (gObject == null) return false;
+
+			// Remove from handle tracking first.
+			_objectHandleLookup.Remove(gObject);
 
 			// Addressables.ReleaseInstance returns true if it successfully released the instance.
 			// If it returns false, it means this object is not one that Addressables is tracking
@@ -362,13 +516,45 @@ namespace AK.Core.ResourceManagement
 		/// <inheritdoc />
 		public void Reset()
 		{
-			_operationsLookup.Clear();
+			// Release tracked individual asset handles.
+			// For spawned instances (GameObject keys), use ReleaseInstance instead of Release
+			// to avoid double-release: InstantiateAsync with trackHandle=true auto-releases on destroy,
+			// so using ReleaseInstance correctly decrements Addressables' internal ref-count.
+			foreach (var kvp in _objectHandleLookup)
+			{
+				if (kvp.Key is GameObject go)
+					Addressables.ReleaseInstance(go);
+				else
+					Addressables.Release(kvp.Value);
+			}
+			_objectHandleLookup.Clear();
+
+			// Release all tracked group operations.
+			foreach (var kvp in _groupOperationsLookup)
+				Addressables.Release(kvp.Value);
+			_groupOperationsLookup.Clear();
 		}
 
-		private static AsyncOperationHandle<T> TrackOperation<T>(AsyncOperationHandle<T> asyncOp)
+		/// <summary>
+		/// Tracks individual asset/spawn handles so DisposeAsset/DisposeInstance can
+		/// release the handle and decrement the Addressables ref-count.
+		/// If the same object was loaded before, releases the old handle first to prevent leaks.
+		/// </summary>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private void TrackObjectHandle(Object obj, AsyncOperationHandle handle)
 		{
-			// TODO: Track Operations To Log & Keep States
-			return asyncOp;
+			if (obj == null) return;
+
+			// If the same object was loaded before (e.g., same asset loaded twice),
+			// release the previous handle before tracking the new one to avoid leaking the old reference.
+			if (_objectHandleLookup.TryGetValue(obj, out var existingHandle))
+			{
+				Addressables.Release(existingHandle);
+				_objectHandleLookup[obj] = handle;
+				return;
+			}
+
+			_objectHandleLookup[obj] = handle;
 		}
 
 		/// <summary>
@@ -402,8 +588,14 @@ namespace AK.Core.ResourceManagement
 		{
 			try
 			{
-				return await Addressables.GetDownloadSizeAsync(keys)
-					.ToUniTask(cancellationToken: cToken);
+				var handle = Addressables.GetDownloadSizeAsync(keys);
+				var result = await handle.ToUniTask(cancellationToken: cToken);
+				Addressables.Release(handle);
+				return result;
+			}
+			catch (OperationCanceledException)
+			{
+				throw;
 			}
 			catch (Exception)
 			{
@@ -413,10 +605,15 @@ namespace AK.Core.ResourceManagement
 				{
 					try
 					{
-						var keySize = await Addressables.GetDownloadSizeAsync(key)
-							.ToUniTask(cancellationToken: cToken);
+						var keyHandle = Addressables.GetDownloadSizeAsync(key);
+						var keySize = await keyHandle.ToUniTask(cancellationToken: cToken);
+						Addressables.Release(keyHandle);
 						if (keySize > 0)
 							downloadSize += keySize;
+					}
+					catch (OperationCanceledException)
+					{
+						throw;
 					}
 					catch (Exception)
 					{

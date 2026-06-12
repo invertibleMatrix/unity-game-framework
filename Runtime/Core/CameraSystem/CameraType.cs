@@ -8,7 +8,7 @@ namespace AK.Systems
     /// Used by CameraRegistry and CameraSystem for UID-based camera lookups.
     /// </summary>
     [CreateAssetMenu(fileName = "CameraType_", menuName = "AK/Camera/Camera Type")]
-    public class CameraType : UID
+    public class CameraType : MetaDataAsset
     {
     }
 }
