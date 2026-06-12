@@ -36,9 +36,38 @@ namespace AK.Core.ResourceManagement
 			CancellationToken cToken = default);
 
 		/// <summary>
-		/// Determines the required download size.
+		/// Enumerates all resource locations from the catalog.
+		/// Uses the wildcard key to match every location regardless of label assignment.
+		/// </summary>
+		UniTask<IList<IResourceLocation>> GetAllResourceLocationsAsync(Type type = null, CancellationToken cToken = default);
+
+		/// <summary>
+		/// Checks the remote CDN for catalog updates and applies them if available.
+		/// Returns true if a catalog update was downloaded and applied.
+		/// Must be called after <see cref="InitAsync"/> and before any asset loading.
+		/// </summary>
+		UniTask<bool> CheckForCatalogUpdatesAsync(CancellationToken cToken = default);
+
+		/// <summary>
+		/// Resolves resource locations and downloads all remote content.
+		/// If <paramref name="labels"/> is null or empty, all catalog locations are enumerated.
+		/// Otherwise, only locations matching the provided labels are resolved.
+		/// Uses location-based APIs internally, which never throw <see cref="InvalidKeyException"/>.
+		/// Returns the total download size in bytes (0 if nothing to download).
+		/// </summary>
+		UniTask<long> DownloadRemoteContentAsync(string[] labels = null, CancellationToken cToken = default);
+
+		/// <summary>
+		/// Determines the required download size for assets identified by keys.
+		/// Throws <see cref="InvalidKeyException"/> if any key has no matching locations.
 		/// </summary>
 		UniTask<long> GetRemoteDependenciesSizeAsync(IEnumerable<string> keys, CancellationToken cToken = default);
+
+		/// <summary>
+		/// Determines the required download size for assets identified by locations.
+		/// Location-based API never throws — returns 0 for empty lists.
+		/// </summary>
+		UniTask<long> GetRemoteDependenciesSizeAsync(IList<IResourceLocation> locations, CancellationToken cToken = default);
 
 		/// <summary>
 		/// Downloads dependencies of assets identified by a list of locations.
@@ -48,6 +77,7 @@ namespace AK.Core.ResourceManagement
 
 		/// <summary>
 		/// Downloads dependencies of assets identified by a list of keys.
+		/// Throws <see cref="InvalidKeyException"/> if any key has no matching locations.
 		/// </summary>
 		UniTask GetRemoteDependenciesAsync(IEnumerable<string> keys, out IOperationStatusProvider provider,
 			MergeMode mode = MergeMode.Union,

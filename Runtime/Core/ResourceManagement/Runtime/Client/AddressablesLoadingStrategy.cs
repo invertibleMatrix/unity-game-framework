@@ -41,10 +41,75 @@ namespace AK.Core.ResourceManagement
 		}
 
 		/// <inheritdoc />
+		public UniTask<IList<IResourceLocation>> GetAllResourceLocationsAsync(Type type = null,
+		                                                                     CancellationToken cToken = default)
+		{
+			return Addressables.LoadResourceLocationsAsync("*", type)
+			                   .ToUniTask(cancellationToken: cToken);
+		}
+
+		/// <inheritdoc />
+		public async UniTask<bool> CheckForCatalogUpdatesAsync(CancellationToken cToken = default)
+		{
+			var catalogUpdates = await Addressables.CheckForCatalogUpdates().ToUniTask(cancellationToken: cToken);
+
+			if (catalogUpdates == null || catalogUpdates.Count == 0)
+			{
+				return false;
+			}
+
+			await Addressables.UpdateCatalogs(catalogUpdates).ToUniTask(cancellationToken: cToken);
+			return true;
+		}
+
+		/// <inheritdoc />
+		public async UniTask<long> DownloadRemoteContentAsync(string[] labels = null, CancellationToken cToken = default)
+		{
+			// Resolve locations — either from specific labels or the entire catalog.
+			// Location-based APIs are used for download queries because they never throw
+			// InvalidKeyException (unlike key-based APIs which throw when a label has no entries).
+			IList<IResourceLocation> locations;
+
+			if (labels != null && labels.Length > 0)
+			{
+				locations = await Addressables.LoadResourceLocationsAsync(labels, Addressables.MergeMode.Union, null)
+					.ToUniTask(cancellationToken: cToken);
+			}
+			else
+			{
+				locations = await Addressables.LoadResourceLocationsAsync("*", null)
+					.ToUniTask(cancellationToken: cToken);
+			}
+
+			if (locations == null || locations.Count == 0)
+			{
+				return 0;
+			}
+
+			var downloadSize = await Addressables.GetDownloadSizeAsync(locations)
+				.ToUniTask(cancellationToken: cToken);
+
+			if (downloadSize > 0)
+			{
+				await Addressables.DownloadDependenciesAsync(locations, true)
+					.ToUniTask(cancellationToken: cToken);
+			}
+
+			return downloadSize;
+		}
+
+		/// <inheritdoc />
 		public UniTask<long> GetRemoteDependenciesSizeAsync(IEnumerable<string> keys,
 		                                                    CancellationToken cToken = default)
 		{
 			return Addressables.GetDownloadSizeAsync(keys).ToUniTask(cancellationToken: cToken);
+		}
+
+		/// <inheritdoc />
+		public UniTask<long> GetRemoteDependenciesSizeAsync(IList<IResourceLocation> locations,
+		                                                    CancellationToken cToken = default)
+		{
+			return Addressables.GetDownloadSizeAsync(locations).ToUniTask(cancellationToken: cToken);
 		}
 
 		/// <inheritdoc />

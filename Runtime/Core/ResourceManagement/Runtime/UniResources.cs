@@ -5,6 +5,7 @@ using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
+using UnityEngine.ResourceManagement.ResourceLocations;
 using Object = UnityEngine.Object;
 
 namespace AK.Core.ResourceManagement
@@ -49,12 +50,66 @@ namespace AK.Core.ResourceManagement
 		}
 
 		/// <summary>
-		/// Determines the required download size.
+		/// Enumerates all resource locations from the catalog.
+		/// Does not require any labels to be assigned — uses the wildcard key internally.
+		/// </summary>
+		public static UniTask<IList<IResourceLocation>> GetAllResourceLocationsAsync(Type type = null,
+			CancellationToken cToken = default)
+		{
+			return _strategy.GetAllResourceLocationsAsync(type, cToken);
+		}
+
+		/// <summary>
+		/// Checks the remote CDN for catalog updates and applies them if available.
+		/// Returns true if a catalog update was downloaded and applied.
+		/// Must be called after <see cref="InitAsync"/> and before any asset loading.
+		/// </summary>
+		public static UniTask<bool> CheckForCatalogUpdatesAsync(CancellationToken cToken = default)
+		{
+			return _strategy.CheckForCatalogUpdatesAsync(cToken);
+		}
+
+		/// <summary>
+		/// Resolves resource locations and downloads all remote content.
+		/// If <paramref name="labels"/> is null or empty, all catalog locations are enumerated.
+		/// Otherwise, only locations matching the provided labels are resolved.
+		/// Uses location-based APIs internally, which never throw InvalidKeyException.
+		/// Returns the total download size in bytes (0 if nothing to download).
+		/// </summary>
+		public static UniTask<long> DownloadRemoteContentAsync(string[] labels = null, CancellationToken cToken = default)
+		{
+			return _strategy.DownloadRemoteContentAsync(labels, cToken);
+		}
+
+		/// <summary>
+		/// Loads resource locations for the given keys with the specified merge mode.
+		/// Returns an empty list if no locations match — never throws InvalidKeyException.
+		/// </summary>
+		public static UniTask<IList<IResourceLocation>> GetResourceLocationsAsync(IEnumerable<string> keys,
+			Type type = null,
+			MergeMode mode = MergeMode.Union,
+			CancellationToken cToken = default)
+		{
+			return _strategy.GetResourceLocationsAsync(keys, type, mode, cToken);
+		}
+
+		/// <summary>
+		/// Determines the required download size for assets identified by keys.
 		/// </summary>
 		public static UniTask<long> GetRemoteResourcesSizeAsync(IEnumerable<string> keys,
 			CancellationToken cToken = default)
 		{
 			return _strategy.GetRemoteDependenciesSizeAsync(keys, cToken);
+		}
+
+		/// <summary>
+		/// Determines the required download size for assets identified by locations.
+		/// Location-based API never throws InvalidKeyException.
+		/// </summary>
+		public static UniTask<long> GetRemoteResourcesSizeAsync(IList<IResourceLocation> locations,
+			CancellationToken cToken = default)
+		{
+			return _strategy.GetRemoteDependenciesSizeAsync(locations, cToken);
 		}
 
 		/// <summary>
@@ -65,6 +120,17 @@ namespace AK.Core.ResourceManagement
 			CancellationToken cToken = default)
 		{
 			return _strategy.GetRemoteDependenciesAsync(keys, out provider, mode, cToken);
+		}
+
+		/// <summary>
+		/// Downloads dependencies of assets identified by a list of locations.
+		/// Location-based API never throws InvalidKeyException.
+		/// </summary>
+		public static UniTask GetRemoteDependenciesAsync(IList<IResourceLocation> locations,
+			out IOperationStatusProvider provider,
+			CancellationToken cToken = default)
+		{
+			return _strategy.GetRemoteDependenciesAsync(locations, out provider, cToken);
 		}
 
 		/// <summary>
