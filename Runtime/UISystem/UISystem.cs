@@ -456,6 +456,43 @@ namespace AK.Systems
 			ShowRegisteredViewAsync(view, record.Parent, context, stackBehaviour).Forget();
 		}
 
+		/// <summary>
+		/// Shows multiple static children in parallel. All children are pushed onto the parent's
+		/// history stack synchronously first, then all show animations run simultaneously.
+		/// This avoids the sequential _pendingShowTasks serialization that would cause
+		/// child N to wait for child N-1's animation before starting.
+		/// </summary>
+		internal void ShowStaticChildrenBatch(UIView parent, IReadOnlyList<StaticViewEntry> entries)
+		{
+			if (parent == null || entries == null || entries.Count == 0) return;
+
+			// Ensure the history stack exists
+			if (!_historyStacks.TryGetValue(parent, out var history))
+			{
+				history = new Stack<UIView>();
+				_historyStacks[parent] = history;
+			}
+
+			var tasks = new List<UniTask>();
+
+			foreach (var entry in entries)
+			{
+				if (entry.View == null || !entry.ShowOnStart) continue;
+				if (!_viewRegistry.TryGetValue(entry.View, out _)) continue;
+
+				// Prepare and push onto history stack synchronously (no stack behaviour between siblings)
+				entry.View.PrepareForShowAnimation();
+				RemoveFromStack(entry.View, history);
+				history.Push(entry.View);
+
+				// Collect animation tasks — they'll all run in parallel
+				tasks.Add(entry.View.InternalShowAsync());
+			}
+
+			// Fire-and-forget the parallel batch
+			UniTask.WhenAll(tasks).Forget();
+		}
+
 		internal bool IsViewRegistered(UIView view)
 		{
 			return view != null && view.gameObject != null && _viewRegistry.ContainsKey(view);

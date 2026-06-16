@@ -718,13 +718,7 @@ namespace AK.Systems
 
 		private void ShowStaticChildrenOnStart()
 		{
-			foreach (var entry in _staticViews)
-			{
-				if (entry.ShowOnStart && entry.View != null)
-				{
-					_uiSystem.ShowExistingView(entry.View, entry.View.ViewId);
-				}
-			}
+			_uiSystem.ShowStaticChildrenBatch(this, _staticViews);
 		}
 
 		private void CancelCurrentAnimation()
