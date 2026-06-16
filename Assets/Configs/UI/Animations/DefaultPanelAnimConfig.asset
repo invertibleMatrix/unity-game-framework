@@ -12,5 +12,5 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 74fb1dd8480b4c0478ba3393af04d97e, type: 3}
   m_Name: DefaultPanelAnimConfig
   m_EditorClassIdentifier: GeminiMenuSystem::GeminiMenuSystem.Configuration.MenuAnimConfig
-  _animationStrategy: {fileID: 11400000, guid: 7c6c88567305aa04497011d51f430b0f, type: 2}
+  _animationStrategy: {fileID: 11400000, guid: 0127d0938cd976e4190ab33120b4efb7, type: 2}
   _playInParallelWithPrevious: 0

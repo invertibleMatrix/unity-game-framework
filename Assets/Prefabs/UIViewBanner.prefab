@@ -166,8 +166,6 @@ GameObject:
   m_Component:
   - component: {fileID: 2215327947008850712}
   - component: {fileID: 4066118942661235652}
-  - component: {fileID: 8859920149432409042}
-  - component: {fileID: 5406616461201638096}
   - component: {fileID: 8831360766382092123}
   m_Layer: 5
   m_Name: UIViewBanner
@@ -208,32 +206,6 @@ CanvasGroup:
   m_Interactable: 1
   m_BlocksRaycasts: 1
   m_IgnoreParentGroups: 0
---- !u!114 &8859920149432409042
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6396735973510217971}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0b2f6e6e2aaa4c0f9115f3c0a23c583a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UI::UI.UIAudioPlayer
-  AudioId: {fileID: 11400000, guid: 2f7ecd121841c5f4ebc792ed094fcefa, type: 2}
---- !u!114 &5406616461201638096
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6396735973510217971}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0b2f6e6e2aaa4c0f9115f3c0a23c583a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UI::UI.UIAudioPlayer
-  AudioId: {fileID: 11400000, guid: 3fffe1af514e7544299b198b6d2789c3, type: 2}
 --- !u!114 &8831360766382092123
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -258,34 +230,10 @@ MonoBehaviour:
   _staticViews: []
   _onShow:
     m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 8859920149432409042}
-        m_TargetAssemblyTypeName: UI.UIAudioPlayer, UI
-        m_MethodName: Play
-        m_Mode: 1
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
   _onHide:
     m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 5406616461201638096}
-        m_TargetAssemblyTypeName: UI.UIAudioPlayer, UI
-        m_MethodName: Play
-        m_Mode: 1
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
   _text: {fileID: 2162197988025610920}
   _animator: {fileID: 0}
 --- !u!1 &9175751130237631384

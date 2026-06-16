@@ -79,7 +79,7 @@ namespace AK.Systems
 		internal ViewStackBehaviour? _overriddenStackBehaviour;
 		internal UIChannel?          _overriddenChannel;
 
-		private UISystem            _uiSystem;
+		private UISystem				_uiSystem;
 		private CancellationTokenSource _animationCts;
 		private CancellationTokenSource _destroyCts;
 		private Vector2                 _entryPosition = Vector2.zero;
@@ -92,7 +92,7 @@ namespace AK.Systems
 		private bool                    _isCleanedUp;
 		private bool                    _isShowComplete;
 
-		protected UIView _parentView;
+		protected UIView    _parentView;
 
 		// --- Public Properties ---
 
@@ -108,6 +108,7 @@ namespace AK.Systems
 		public UIContext                      Context                { get; protected set; }
 		public UIView                         ParentView             => _parentView;
 		public IReadOnlyList<StaticViewEntry> StaticViews            => _staticViews;
+		public IUISystem                      UISystem               => _uiSystem;
 
 		/// <summary>
 		/// Returns the UIChannel component if this view has one, null otherwise.
