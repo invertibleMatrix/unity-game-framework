@@ -85,6 +85,7 @@ namespace AK.Systems
 		private Vector2                 _entryPosition = Vector2.zero;
 		private GameObject              _darkBg;
 		private Texture2D               _bgTexture;
+		private Sprite                  _bgSprite;
 		private Canvas                  _tutorialCanvas;
 		private GraphicRaycaster        _tutorialRaycaster;
 		private bool                    _isResourcesRegistered;
@@ -153,21 +154,9 @@ namespace AK.Systems
 		public virtual void OnReset()
 		{
 			ResetViewId();
-			_isResourcesRegistered = false;
-			_isCleanedUp = false;
-			_isShowComplete = false;
-			if (_animatableContent != null)
-			{
-				_animatableContent.localScale = Vector3.one;
-				_animatableContent.localRotation = Quaternion.identity;
-				_animatableContent.anchoredPosition = Vector2.zero;
-			}
-
-			DestroyBackgroundOverlay();
-			CleanupTutorialMode();
+			ResetState();
 		}
 
-		/// <summary>
 		/// <summary>
 		/// Override this to close dynamic fragments before pooling.
 		/// </summary>
@@ -267,7 +256,7 @@ namespace AK.Systems
 		// =====================================================================
 
 		[Button]
-		public virtual void ShowBackgroundOverlay(float alpha = UIViewConstants.DEFAULT_OVERLAY_ALPHA, bool blockRayCasts = true)
+		public virtual void ShowBackgroundOverlay(float alpha = UIConstants.DEFAULT_OVERLAY_ALPHA, bool blockRayCasts = true)
 		{
 			if (_darkBg != null)
 			{
@@ -275,7 +264,7 @@ namespace AK.Systems
 				img.raycastTarget = blockRayCasts;
 				img.color = new Color(0f, 0f, 0f, alpha);
 				img.canvasRenderer.SetAlpha(0f);
-				img.CrossFadeAlpha(1f, UIViewConstants.OVERLAY_FADE_IN_DURATION, false);
+				img.CrossFadeAlpha(1f, UIConstants.OVERLAY_FADE_IN_DURATION, false);
 				return;
 			}
 
@@ -320,13 +309,13 @@ namespace AK.Systems
 			}
 
 			Rect rect = new Rect(0, 0, _bgTexture.width, _bgTexture.height);
-			Sprite sprite = Sprite.Create(_bgTexture, rect, new Vector2(0.5f, 0.5f), 1f);
+			_bgSprite = Sprite.Create(_bgTexture, rect, new Vector2(0.5f, 0.5f), 1f);
 			image.material.mainTexture = _bgTexture;
-			image.sprite = sprite;
+			image.sprite = _bgSprite;
 
 			image.color = new Color(0f, 0f, 0f, alpha);
 			image.canvasRenderer.SetAlpha(0f);
-			image.CrossFadeAlpha(1f, UIViewConstants.OVERLAY_FADE_IN_DURATION, false);
+			image.CrossFadeAlpha(1f, UIConstants.OVERLAY_FADE_IN_DURATION, false);
 
 			_darkBg.transform.localScale = Vector3.one;
 		}
@@ -338,7 +327,7 @@ namespace AK.Systems
 			var image = _darkBg.GetComponent<Image>();
 			image.raycastTarget = false;
 			if (image != null)
-				image.CrossFadeAlpha(UIViewConstants.ZERO_ALPHA, UIViewConstants.OVERLAY_FADE_OUT_DURATION, false);
+				image.CrossFadeAlpha(UIConstants.ZERO_ALPHA, UIConstants.OVERLAY_FADE_OUT_DURATION, false);
 		}
 
 		public void DestroyBackgroundOverlay()
@@ -347,6 +336,13 @@ namespace AK.Systems
 			{
 				Destroy(_darkBg);
 				_darkBg = null;
+			}
+
+			if (_bgSprite != null)
+			{
+				if (Application.isPlaying) Destroy(_bgSprite);
+				else DestroyImmediate(_bgSprite);
+				_bgSprite = null;
 			}
 
 			if (_bgTexture != null)
@@ -365,7 +361,7 @@ namespace AK.Systems
 		public virtual void SetupTutorialMode()
 		{
 			CleanupTutorialMode();
-			ShowBackgroundOverlay(UIViewConstants.TUTORIAL_OVERLAY_ALPHA, true);
+			ShowBackgroundOverlay(UIConstants.TUTORIAL_OVERLAY_ALPHA, true);
 			
 			if (HasChannel)
 			{
@@ -431,13 +427,19 @@ namespace AK.Systems
 
 			// Create a CTS tied to this GameObject's lifetime.
 			// All animation tasks link to this so they auto-cancel on Destroy.
-			if (_destroyCts == null)
+			if (_destroyCts == null || _destroyCts.IsCancellationRequested)
 			{
+				_destroyCts?.Dispose();
 				_destroyCts = new CancellationTokenSource();
 			}
 		}
 
 		internal void InitializeStaticChildren(Container diContainer)
+		{
+			InitializeStaticChildrenRecursive(diContainer, new HashSet<UIView>());
+		}
+
+		private void InitializeStaticChildrenRecursive(Container diContainer, HashSet<UIView> visited)
 		{
 			foreach (var entry in _staticViews)
 			{
@@ -449,9 +451,9 @@ namespace AK.Systems
 					continue;
 				}
 
-				if (entry.View._staticViews.Any(nested => nested.View == this))
+				if (visited.Contains(entry.View))
 				{
-					Debug.LogError($"Cycle detected: View '{entry.View.name}' already references '{name}'. Skipping.", this);
+					Debug.LogError($"Cycle detected in static view hierarchy involving '{entry.View.name}'. Skipping.", this);
 					continue;
 				}
 
@@ -459,12 +461,9 @@ namespace AK.Systems
 				// just reset its state so it can be shown again. Don't double-register.
 				if (_uiSystem.IsViewRegistered(entry.View))
 				{
-					entry.View._isCleanedUp = false;
-					entry.View._isResourcesRegistered = false;
-					entry.View._isShowComplete = false;
-					// Call OnReset to clear visual state (text, images, etc.) for pool reuse
-					// but skip ViewId reset since this is a static child, not a pooled instance
-					entry.View.OnReset();
+					// Reset state for re-initialization without clearing ViewId.
+					// Static children must preserve their ViewId unlike pooled instances.
+					entry.View.ResetState();
 					entry.View.gameObject.SetActive(entry.SetActive);
 					continue;
 				}
@@ -473,6 +472,10 @@ namespace AK.Systems
 				entry.View.InternalInitialize(_uiSystem, this);
 				entry.View.gameObject.SetActive(entry.SetActive);
 				_uiSystem.RegisterStaticView(entry.View, this);
+
+				visited.Add(entry.View);
+				entry.View.InitializeStaticChildrenRecursive(diContainer, visited);
+				visited.Remove(entry.View);
 			}
 		}
 
@@ -480,7 +483,7 @@ namespace AK.Systems
 		/// Full SHOW lifecycle. Used when a view is being opened for the first time or re-opened.
 		/// Order: SetActive → OnPrepareShow → RegisterResources → [animation] → IsVisible → OnShow
 		/// </summary>
-		internal async UniTask InternalShowAsync(CancellationToken ct = default)
+		internal async UniTask InternalShowAsync(CancellationToken ct = default, bool immediate = false)
 		{
 			_isCleanedUp = false;
 			_isShowComplete = false;
@@ -493,7 +496,7 @@ namespace AK.Systems
 				RegisterResources();
 			}
 
-			if (_animationConfig == null || _animationConfig.NoAnimation)
+			if (immediate || _animationConfig == null || _animationConfig.NoAnimation)
 			{
 				CanvasGroup.alpha = 1f;
 				if (_showBackgroundOverlay) ShowBackgroundOverlay();
@@ -549,7 +552,7 @@ namespace AK.Systems
 			}
 
 			CancelCurrentAnimation();
-			_animationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+			_animationCts = CreateLinkedAnimationCts(ct);
 
 			try
 			{
@@ -593,7 +596,7 @@ namespace AK.Systems
 			}
 
 			CancelCurrentAnimation();
-			_animationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+			_animationCts = CreateLinkedAnimationCts(ct);
 
 			try
 			{
@@ -618,11 +621,11 @@ namespace AK.Systems
 		/// Order: SetActive → [animation] → IsVisible=true
 		/// OnResume is called by the SYSTEM, not here, because the system controls the timing.
 		/// </summary>
-		internal async UniTask InternalResumeShowAsync(CancellationToken ct = default)
+		internal async UniTask InternalResumeShowAsync(CancellationToken ct = default, bool immediate = false)
 		{
 			gameObject.SetActive(true);
 
-			if (_animationConfig == null || _animationConfig.NoAnimation)
+			if (immediate || _animationConfig == null || _animationConfig.NoAnimation)
 			{
 				CanvasGroup.alpha = 1f;
 				if (_showBackgroundOverlay) ShowBackgroundOverlay();
@@ -745,6 +748,32 @@ namespace AK.Systems
 			return CancellationTokenSource.CreateLinkedTokenSource(ct);
 		}
 
+		/// <summary>
+		/// Resets internal state without clearing the ViewId. Used for static children
+		/// that need their state reset on re-initialization but must preserve their ViewId.
+		/// </summary>
+		private void ResetState()
+		{
+			_isResourcesRegistered = false;
+			_isCleanedUp = false;
+			_isShowComplete = false;
+			if (_animatableContent != null)
+			{
+				_animatableContent.localScale = Vector3.one;
+				_animatableContent.localRotation = Quaternion.identity;
+				_animatableContent.anchoredPosition = Vector2.zero;
+			}
+
+			DestroyBackgroundOverlay();
+			CleanupTutorialMode();
+
+			if (_destroyCts == null || _destroyCts.IsCancellationRequested)
+			{
+				_destroyCts?.Dispose();
+				_destroyCts = new CancellationTokenSource();
+			}
+		}
+		
 		protected virtual void OnDestroy()
 		{
 			// Cancel the destroy CTS — this kills any fire-and-forget animation tasks

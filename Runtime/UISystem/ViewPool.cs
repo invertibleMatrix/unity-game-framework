@@ -23,7 +23,7 @@ namespace AK.Systems
 
 		public TView Get<TView>(TView prefab, Transform parent) where TView : UIView
 		{
-			var key = new PoolKey { Type = typeof(TView), ViewId = prefab.ViewId };
+			var key = new PoolKey { Type = prefab.GetType(), ViewId = prefab.ViewId };
 
 			if (_pools.TryGetValue(key, out var stack) && stack.Count > 0)
 			{
