@@ -224,8 +224,6 @@ GameObject:
   - component: {fileID: 2846690813217843617}
   - component: {fileID: 6141548281610677009}
   - component: {fileID: 6641753814833098594}
-  - component: {fileID: 4486534639095018369}
-  - component: {fileID: 8525523098523835457}
   m_Layer: 5
   m_Name: UIViewBannerTransparent
   m_TagString: Untagged
@@ -289,59 +287,9 @@ MonoBehaviour:
   _staticViews: []
   _onShow:
     m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 4486534639095018369}
-        m_TargetAssemblyTypeName: UI.UIAudioPlayer, UI
-        m_MethodName: Play
-        m_Mode: 1
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
   _onHide:
     m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 8525523098523835457}
-        m_TargetAssemblyTypeName: UI.UIAudioPlayer, UI
-        m_MethodName: Play
-        m_Mode: 1
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
   _text: {fileID: 4090196905737796017}
   _animator: {fileID: 0}
---- !u!114 &4486534639095018369
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7209208403874922223}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0b2f6e6e2aaa4c0f9115f3c0a23c583a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UI::UI.UIAudioPlayer
-  AudioId: {fileID: 11400000, guid: 2f7ecd121841c5f4ebc792ed094fcefa, type: 2}
---- !u!114 &8525523098523835457
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7209208403874922223}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0b2f6e6e2aaa4c0f9115f3c0a23c583a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UI::UI.UIAudioPlayer
-  AudioId: {fileID: 11400000, guid: 3fffe1af514e7544299b198b6d2789c3, type: 2}

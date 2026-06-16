@@ -13,8 +13,9 @@ MonoBehaviour:
   m_Name: UIViewRepository
   m_EditorClassIdentifier: AK.UISystem::AK.Systems.UI.V2.UIViewRepository
   _views:
-  - {fileID: 3579953736738326318, guid: 0f4f504a46c27b44eacaf78fbf232f50, type: 3}
   - {fileID: 8831360766382092123, guid: de62f4fc50d9c0348927171dfdac6e02, type: 3}
   - {fileID: 1206485832435062108, guid: 3137656b9236e85488d3a5958c77f186, type: 3}
   - {fileID: 6641753814833098594, guid: 8e067e784b859a646a8b63025b6a5168, type: 3}
+  - {fileID: 3579953736738326318, guid: 0f4f504a46c27b44eacaf78fbf232f50, type: 3}
   - {fileID: 8486124242467826112, guid: 651416cab65a7584087a85065fdcea26, type: 3}
+  - {fileID: 612203123609671605, guid: ff03e1b687f3c244baadcd1362e8a536, type: 3}

@@ -27,7 +27,7 @@ namespace UI
 				return;
 			}
 
-			_audioSpawner.PlayAudio(AudioId);
+			_audioSpawner?.PlayAudio(AudioId);
 		}
 	}
 }
