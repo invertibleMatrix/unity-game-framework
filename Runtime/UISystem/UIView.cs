@@ -377,10 +377,16 @@ namespace AK.Systems
 						$"Tutorial mode cannot be set up on view '{name}' because it has no parent view. " +
 						"Non-channel views must be children of a channel-owning screen.");
 				}
+				else if (!_parentView.HasChannel)
+				{
+					Debug.LogError(
+						$"Tutorial mode cannot be set up on view '{name}' because its parent '{_parentView.name}' has no UIChannel. " +
+						"Non-channel views must be children of a channel-owning screen.");
+				}
 
 				_tutorialCanvas = gameObject.AddComponent<Canvas>();
 				_tutorialCanvas.overrideSorting = true;
-				Canvas parentCanvas = _parentView.Channel.Canvas;
+				Canvas parentCanvas = _parentView.Channel != null ? _parentView.Channel.Canvas : null;
 				_tutorialCanvas.sortingOrder = (parentCanvas != null ? parentCanvas.sortingOrder : 0) + 1;
 				_tutorialRaycaster = gameObject.AddComponent<GraphicRaycaster>();
 			}

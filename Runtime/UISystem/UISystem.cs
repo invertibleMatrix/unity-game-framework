@@ -233,140 +233,6 @@ namespace AK.Systems
 			return view;
 		}
 
-		public void CloseImmediate(UIView view, CloseContext context = CloseContext.Normal)
-		{
-			if (view == null) return;
-
-			// Guard against double-close
-			if (_closingViews.Contains(view)) return;
-
-			if (!_viewRegistry.TryGetValue(view, out var record))
-			{
-				Debug.LogWarning($"Cannot close view '{view.name}': not registered.");
-				return;
-			}
-
-			// Close immediately without animation
-			if (view.HasChannel)
-			{
-				CloseScreenImmediate(view, record, context);
-			}
-			else
-			{
-				CloseFragmentImmediate(view, record, context);
-			}
-		}
-
-		private void CloseScreenImmediate(UIView view, ViewRecord record, CloseContext context)
-		{
-			UIChannel sortOrder = view.Channel.SortOrder;
-
-			if (!_channelStacks.TryGetValue(sortOrder, out var stack))
-			{
-				DestroyViewImmediate(view, record, context);
-				return;
-			}
-
-			// Remove from stack
-			if (stack.Contains(view))
-				RemoveFromStack(view, stack);
-
-			_closingViews.Add(view);
-			try
-			{
-				DestroyViewImmediate(view, record, context);
-			}
-			finally
-			{
-				_closingViews.Remove(view);
-			}
-		}
-
-		private void CloseFragmentImmediate(UIView view, ViewRecord record, CloseContext context)
-		{
-			_closingViews.Add(view);
-			try
-			{
-				// Remove from history stack
-				UIView parent = record.Parent;
-				UIView fragmentBelow = null;
-
-				if (parent != null && _historyStacks.TryGetValue(parent, out var history))
-				{
-					// Before removing, find the fragment directly below for potential mid-stack resume
-					fragmentBelow = FindBelowInStack(view, history);
-					RemoveFromStack(view, history);
-				}
-
-				DestroyViewImmediate(view, record, context);
-
-				// Mid-stack resume: if the closed fragment was hiding/blocking the one below,
-				// and nothing else in the remaining stack covers it, resume it.
-				if (fragmentBelow != null && parent != null &&
-				    _viewRegistry.ContainsKey(fragmentBelow) &&
-				    _historyStacks.TryGetValue(parent, out var remainingHistory))
-				{
-					bool wasHiddenOrBlocked = view.StackBehaviour is ViewStackBehaviour.HideBelow
-						or ViewStackBehaviour.PauseAndHideBelow
-						or ViewStackBehaviour.PauseOnlyBelow;
-
-					if (wasHiddenOrBlocked && !IsViewCoveredByAnythingAbove(fragmentBelow, remainingHistory))
-					{
-						ResumeFragmentFromMidStackAsync(fragmentBelow, view.StackBehaviour, ct:CancellationToken.None).Forget();
-					}
-				}
-			}
-			finally
-			{
-				_closingViews.Remove(view);
-			}
-		}
-
-		private void DestroyViewImmediate(UIView view, ViewRecord record, CloseContext context)
-		{
-			// Run hide lifecycle immediately without animation
-			view.InternalHideAsync(immediate: true, CancellationToken.None).Forget();
-
-			bool shouldDestroy = ShouldDestroyView(record, context);
-
-			if (!shouldDestroy)
-			{
-				CloseChildrenOfSurvivingView(view);
-				view._overriddenStackBehaviour = null;
-				view._overriddenChannel = null;
-				view.gameObject.SetActive(false);
-
-				if (view.ParentView != null && _historyStacks.TryGetValue(view.ParentView, out var history))
-				{
-					RemoveFromStack(view, history);
-				}
-
-				return;
-			}
-
-			CloseChildrenImmediate(view, context);
-
-			if (record.Parent != null && _viewRegistry.TryGetValue(record.Parent, out var parentRecord))
-			{
-				parentRecord.RemoveChild(view);
-			}
-
-			_viewRegistry.Remove(view);
-
-			if (record.Instance.ReturnToPoolOnClose && record.IsDynamic)
-			{
-				_viewPool.Release(view);
-			}
-			else
-			{
-				view.InternalCleanup();
-				Destroy(view.gameObject);
-			}
-
-			view._overriddenStackBehaviour = null;
-			view._overriddenChannel = null;
-		}
-
 		public void DisplayToast(string text)
 		{
 			Show<UIViewToast>(onInit: toast =>
@@ -1059,18 +925,26 @@ namespace AK.Systems
 			if (!_historyStacks.TryGetValue(parentView, out var history) || history.Count == 0)
 				return;
 
-			var currentView = history.Pop();
+			// Peek before popping — validate the view is still registered.
+			// If it's not in the registry, it was already cleaned up (e.g., via parent destruction),
+			// so we must not pop it blindly (that would corrupt the stack and skip resume of the previous view).
+			var currentView = history.Peek();
+
+			if (!_viewRegistry.TryGetValue(currentView, out var record))
+			{
+				// The top view is no longer registered — remove it from history and bail out.
+				history.Pop();
+				return;
+			}
+
+			// Now safe to pop — the view is valid and we have its record.
+			history.Pop();
 			UIView previousView = history.Count > 0 ? history.Peek() : null;
 
 			bool parallel = !immediate &&
 			                previousView != null &&
 			                previousView.AnimationConfig != null &&
 			                previousView.AnimationConfig.PlayInParallelWithPrevious;
-
-			if (!_viewRegistry.TryGetValue(currentView, out var record))
-			{
-				return;
-			}
 
 			try
 			{
@@ -1606,7 +1480,8 @@ namespace AK.Systems
 		private UIView FindBestParentView(UIChannel? preferredChannel = null)
 		{
 			UIView bestCandidate = null;
-			UIChannel bestSortOrder = UIChannel.HUD;
+			// Initialize below any real channel so HUD (0) can be selected as fallback.
+			UIChannel bestSortOrder = (UIChannel)(-1);
 
 			foreach ((UIChannel effectiveOrder, Stack<UIView> value) in _channelStacks)
 			{

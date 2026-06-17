@@ -17,6 +17,7 @@ namespace AK.Systems.UI
 		private string   _textToDisplay;
 		private Sequence _floaterMoveSequence;
 		private Sequence _floaterHideSequence;
+		private bool     _isDestroying;
 
 		public void Init(float spawnPositionY, string textToDisplay)
 		{
@@ -37,7 +38,7 @@ namespace AK.Systems.UI
 
 			_floaterMoveSequence
 				.Append(ContainerPanel.DOAnchorPosY(_initialPosition.y + (_moveDirection * UIConstants.TOAST_FLOAT_DISTANCE), UIConstants.TOAST_FLOAT_DURATION).SetEase(Ease.OutSine)
-				                      .OnKill(Hide))
+				                      .OnComplete(Hide))
 				.Join(FloaterBg.DOFade(UIConstants.FULL_ALPHA, UIConstants.ZERO_ALPHA))
 				.Join(FloaterText.DOFade(UIConstants.FULL_ALPHA, UIConstants.ZERO_ALPHA));
 			_floaterMoveSequence.Play();
@@ -45,20 +46,26 @@ namespace AK.Systems.UI
 
 		private void Hide()
 		{
+			if (_isDestroying) return;
+
 			_floaterHideSequence?.Kill();
 			_floaterHideSequence = DOTween.Sequence();
 			_floaterHideSequence.Append(FloaterBg.DOFade(UIConstants.ZERO_ALPHA, UIConstants.TOAST_FADE_OUT_DURATION))
-			                    .Join(FloaterText.DOFade(UIConstants.ZERO_ALPHA, UIConstants.TOAST_FADE_OUT_DURATION).OnKill(() => Close()));
+			                    .Join(FloaterText.DOFade(UIConstants.ZERO_ALPHA, UIConstants.TOAST_FADE_OUT_DURATION).OnComplete(() => Close()));
 			_floaterHideSequence.Play();
 		}
 
 		protected override void OnDestroy()
 		{
+			_isDestroying = true;
+
 			_floaterMoveSequence?.Kill();
 			_floaterMoveSequence = null;
 
 			_floaterHideSequence?.Kill();
 			_floaterHideSequence = null;
+
+			base.OnDestroy();
 		}
 	}
 }

@@ -140,7 +140,7 @@ namespace AK.Systems
 		/// Closes a view instantly without animation. Useful for tooltips that need to
 		/// relocate quickly. Skips animation but still runs lifecycle hooks.
 		/// </summary>
-		void CloseImmediate(UIView view, CloseContext context = CloseContext.Normal);
+		void CloseImmediate(UIView view, CloseContext context = CloseContext.Normal, Action onClose = null);
 
 		void DisplayToast(string text);
 
