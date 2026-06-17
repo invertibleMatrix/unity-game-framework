@@ -326,9 +326,9 @@ namespace AK.Systems
 			if (_darkBg == null) return;
 
 			var image = _darkBg.GetComponent<Image>();
+			if (image == null) return;
 			image.raycastTarget = false;
-			if (image != null)
-				image.CrossFadeAlpha(UIConstants.ZERO_ALPHA, UIConstants.OVERLAY_FADE_OUT_DURATION, false);
+			image.CrossFadeAlpha(UIConstants.ZERO_ALPHA, UIConstants.OVERLAY_FADE_OUT_DURATION, false);
 		}
 
 		public void DestroyBackgroundOverlay()
@@ -363,7 +363,7 @@ namespace AK.Systems
 		{
 			CleanupTutorialMode();
 			ShowBackgroundOverlay(UIConstants.TUTORIAL_OVERLAY_ALPHA, true);
-			
+
 			if (HasChannel)
 			{
 				Channel.Canvas.overrideSorting = true;
@@ -371,6 +371,13 @@ namespace AK.Systems
 			}
 			else
 			{
+				if (_parentView == null)
+				{
+					Debug.LogError(
+						$"Tutorial mode cannot be set up on view '{name}' because it has no parent view. " +
+						"Non-channel views must be children of a channel-owning screen.");
+				}
+
 				_tutorialCanvas = gameObject.AddComponent<Canvas>();
 				_tutorialCanvas.overrideSorting = true;
 				Canvas parentCanvas = _parentView.Channel.Canvas;
@@ -635,7 +642,7 @@ namespace AK.Systems
 			}
 
 			CancelCurrentAnimation();
-			_animationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+			_animationCts = CreateLinkedAnimationCts(ct);
 
 			try
 			{
