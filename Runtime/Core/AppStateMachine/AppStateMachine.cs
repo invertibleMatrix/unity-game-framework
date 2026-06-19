@@ -16,6 +16,7 @@ namespace AK.Core
 		private AppState _previousState;
 		private readonly List<AppState> _pausedStates = new();
 
+		public AppState CurrentState => _currentState;
 		public AppState PreviousState => _previousState;
 
 		private void Awake()
