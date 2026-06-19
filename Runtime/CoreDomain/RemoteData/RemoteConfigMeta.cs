@@ -15,33 +15,6 @@ namespace AK.CoreDomain.RemoteConfig
 	{
 		[SerializeField] private RemoteVariablesRegistry _registry;
 
-		[SerializeField] private RemoteBool   _iosCheckForUpdate;
-		[SerializeField] private RemoteBool   _androidCheckForUpdate;
-		[SerializeField] private RemoteString _iosAppVersion;
-		[SerializeField] private RemoteString _androidAppVersion;
-
-		[SerializeField] private RemoteBool _forcedAdsEnabled;
-		[SerializeField] private RemoteBool _rvAdsEnabled;
-		[SerializeField] private RemoteInt  _showForcedAdsAfterLevel;
-		[SerializeField] private RemoteInt  _showRvAdsAfterLevel;
-		[SerializeField] private RemoteInt  _minRiskTilesCountForEasyPunishment;
-
-		public bool RvAdsEnabled                         => _rvAdsEnabled.Value;
-		public bool ForcedAdsEnabled                     => _forcedAdsEnabled.Value;
-		public int  ShowForcedAdsAfterLevel              => _showForcedAdsAfterLevel.Value;
-		public int  ShowRvAdsAfterLevel                  => _showRvAdsAfterLevel.Value;
-		public int  MinRiskTilesCountForEasyPunishment => _minRiskTilesCountForEasyPunishment.Value;
-
-		public bool AreRvAdsEnabled(int levelNumber)
-		{
-			return _rvAdsEnabled.Value && levelNumber > _showRvAdsAfterLevel.Value;
-		}
-
-		public bool AreForcedAdsEnabled(int levelNumber)
-		{
-			return _forcedAdsEnabled.Value && levelNumber > _showForcedAdsAfterLevel.Value;
-		}
-
 		/// <summary>
 		/// The registry containing all remote variables.
 		/// </summary>
@@ -144,29 +117,6 @@ namespace AK.CoreDomain.RemoteConfig
 
 			return _registry.GetAllObjects();
 		}
-
-		public bool IsAppUpdateAvailable()
-		{
-#if PLATFORM_ANDROID
-			if (_androidCheckForUpdate.Value)
-			{
-				if (float.TryParse(_androidAppVersion.Value, out float remote) && float.TryParse(Application.version, out float current))
-				{
-					return remote > current;
-				}
-			}
-#elif UNITY_IOS
-			if (_iosCheckForUpdate.Value)
-			{
-				if (float.TryParse(_iosAppVersion.Value, out float remote) && float.TryParse(Application.version, out float current))
-				{
-					return remote > current;
-				}
-			}
-#endif
-			return false;
-		}
-
 		#endregion
 
 		#region Firebase Integration Helpers
@@ -324,6 +274,7 @@ namespace AK.CoreDomain.RemoteConfig
 
 #if UNITY_EDITOR
 		[Button("Refresh Registry"), PropertyOrder(100)]
+		[ContextMenu("Refresh Registry")]
 		public void RefreshRegistry()
 		{
 			if (_registry != null)
@@ -334,6 +285,7 @@ namespace AK.CoreDomain.RemoteConfig
 		}
 
 		[Button("Validate Variables"), PropertyOrder(101)]
+		[ContextMenu("Validate Variables")]
 		public void ValidateVariables()
 		{
 			if (_registry == null)
@@ -374,6 +326,7 @@ namespace AK.CoreDomain.RemoteConfig
 		}
 
 		[Button("Print Defaults Dictionary"), PropertyOrder(102)]
+		[ContextMenu("Print Defaults Dictionary")]
 		public void PrintDefaultsDictionary()
 		{
 			var defaults = GetDefaultsForFirebase();
