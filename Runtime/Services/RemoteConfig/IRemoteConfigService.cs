@@ -20,7 +20,7 @@ namespace AK.Services
 		/// - Fetches values from the remote server
 		/// - Applies fetched values to RemoteVariables
 		/// </summary>
-		UniTask InitializeAsync(RemoteConfigMeta remoteConfigMeta);
+		UniTask InitializeAsync();
 
 		/// <summary>
 		/// Fetches the latest values from the remote server.

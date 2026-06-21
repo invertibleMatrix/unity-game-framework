@@ -37,7 +37,7 @@ namespace AK.Services
 			_fetchTimeout = TimeSpan.FromSeconds(fetchTimeoutSeconds);
 		}
 
-		public async UniTask InitializeAsync(RemoteConfigMeta remoteConfigMeta)
+		public async UniTask InitializeAsync()
 		{
 			if (_isInitialized)
 			{
@@ -53,7 +53,7 @@ namespace AK.Services
 				return;
 			}
 
-			if (remoteConfigMeta == null)
+			if (_remoteConfigMeta == null)
 			{
 				Debug.LogError("[FirebaseRemoteConfigService] RemoteConfigMeta is null in MetaDataRepository!");
 				_isInitialized = true;
@@ -63,11 +63,11 @@ namespace AK.Services
 			try
 			{
 				// Step 1: Load any cached values first (for offline support)
-				remoteConfigMeta.LoadAllCachedValues();
+				_remoteConfigMeta.LoadAllCachedValues();
 				Debug.Log("[FirebaseRemoteConfigService] Loaded cached values");
 
 				// Step 2: Get defaults from RemoteConfigMeta
-				var defaults = remoteConfigMeta.GetDefaultsForFirebase();
+				var defaults = _remoteConfigMeta.GetDefaultsForFirebase();
 				Debug.Log($"[FirebaseRemoteConfigService] Got {defaults.Count} default values");
 
 				// Step 3: Set defaults in Firebase
@@ -83,7 +83,7 @@ namespace AK.Services
 				Debug.Log("[FirebaseRemoteConfigService] Activated fetched values");
 
 				// Step 6: Apply values to RemoteVariables
-				ApplyFetchedValuesToVariables(remoteConfigMeta);
+				ApplyFetchedValuesToVariables(_remoteConfigMeta);
 				Debug.Log("[FirebaseRemoteConfigService] Applied values to variables");
 
 				_isInitialized = true;
