@@ -382,7 +382,38 @@ namespace AK.Systems
 		{
 			string id = viewId ?? string.Empty;
 
-			// --- Find prefab ---
+			// =================================================================
+			//   • Explicit parent → reuse only a static already registered under THAT parent.
+			//   • No parent       → reuse any static for (type, id) and re-route it onto its
+			//                       own registered host parent (its effective parent).
+			//
+			// Only when no static is registered do we fall through to the repository
+			// (instantiate/clone a prefab). Views mid-close are excluded so we never
+			// reuse a view that is currently tearing down.
+			// =================================================================
+			ViewRecord staticRecord = parent != null
+				? _viewRegistry.Values.FirstOrDefault(r =>
+					r.Instance != null &&
+					r.Instance.GetType() == type &&
+					r.Instance.ViewId == id &&
+					r.Parent == parent &&
+					r.IsStatic &&
+					!_closingViews.Contains(r.Instance))
+				: _viewRegistry.Values.FirstOrDefault(r =>
+					r.Instance != null &&
+					r.Instance.GetType() == type &&
+					r.Instance.ViewId == id &&
+					r.IsStatic &&
+					!_closingViews.Contains(r.Instance));
+
+			if (staticRecord != null && staticRecord.Instance is TView staticView)
+			{
+				UIView effectiveParent = parent ?? staticRecord.Parent;
+				onInit?.Invoke(staticView);
+				return (staticView, ShowRegisteredViewAsync(staticView, effectiveParent, context, stackBehaviour, immediate));
+			}
+
+			// --- Find prefab (repository fallback) ---
 			var prefab = FindPrefab<TView>(type, id);
 			if (prefab == null)
 			{
@@ -403,21 +434,14 @@ namespace AK.Systems
 				}
 			}
 
-			// --- Check for existing instance (static or non-multi-instance dynamic) ---
-			// Exclude views that are currently closing — they'll be destroyed shortly.
+			// --- Check for an existing DYNAMIC instance on this parent ---
+			// Static instances are resolved above; this only finds a dynamic instance that
+			// must be closed-and-replaced when multiple instances are not allowed.
 			ViewRecord existingRecord = _viewRegistry.Values.FirstOrDefault(r =>
 				r.Instance.GetType() == type && r.Instance.ViewId == id && r.Parent == parent
+				&& !r.IsStatic
 				&& !_closingViews.Contains(r.Instance));
 
-			if (existingRecord != null && existingRecord.IsStatic)
-			{
-				// Static view — show it in place
-				onInit?.Invoke(existingRecord.Instance as TView);
-				var task = ShowRegisteredViewAsync(existingRecord.Instance, parent, context, stackBehaviour, immediate);
-				return (existingRecord.Instance as TView, task);
-			}
-
-			// Close existing non-multi-instance dynamic
 			if (existingRecord != null && !prefab.AllowMultipleInstances)
 			{
 				CloseInternalAsync(existingRecord.Instance, CloseContext.Normal, false).Forget();
