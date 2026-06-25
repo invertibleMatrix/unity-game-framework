@@ -76,7 +76,7 @@ namespace AK.Services.Analytics.Providers
 				return;
 			}
 
-#if FIREBASE_ANALYTICS
+#if FIREBASE_ANALYTICS && !UNITY_WEBGL
 			try
 			{
 				var firebaseParams = ConvertToFirebaseParameters(parameters);
@@ -106,7 +106,7 @@ namespace AK.Services.Analytics.Providers
 				return;
 			}
 
-#if FIREBASE_ANALYTICS
+#if FIREBASE_ANALYTICS && !UNITY_WEBGL
 			try
 			{
 				var parameters = new Firebase.Analytics.Parameter[]
@@ -142,7 +142,7 @@ namespace AK.Services.Analytics.Providers
 				return;
 			}
 
-#if FIREBASE_ANALYTICS
+#if FIREBASE_ANALYTICS && !UNITY_WEBGL
 			try
 			{
 				var parameters = new Firebase.Analytics.Parameter[]
@@ -177,7 +177,7 @@ namespace AK.Services.Analytics.Providers
 				return;
 			}
 
-#if FIREBASE_ANALYTICS
+#if FIREBASE_ANALYTICS && !UNITY_WEBGL
 			try
 			{
 				var parameters = new Firebase.Analytics.Parameter[]
@@ -212,7 +212,7 @@ namespace AK.Services.Analytics.Providers
 				return;
 			}
 
-#if FIREBASE_ANALYTICS
+#if FIREBASE_ANALYTICS && !UNITY_WEBGL
 			try
 			{
 				var parameters = new Firebase.Analytics.Parameter[]
@@ -248,7 +248,7 @@ namespace AK.Services.Analytics.Providers
 				return;
 			}
 
-#if FIREBASE_ANALYTICS
+#if FIREBASE_ANALYTICS && !UNITY_WEBGL
 			try
 			{
 				Firebase.Analytics.FirebaseAnalytics.SetUserProperty(propertyName, value);
@@ -277,7 +277,7 @@ namespace AK.Services.Analytics.Providers
 				return;
 			}
 
-#if FIREBASE_ANALYTICS
+#if FIREBASE_ANALYTICS && !UNITY_WEBGL
 			try
 			{
 				Firebase.Analytics.FirebaseAnalytics.SetUserId(userID);
@@ -306,7 +306,7 @@ namespace AK.Services.Analytics.Providers
 				return;
 			}
 
-#if FIREBASE_ANALYTICS
+#if FIREBASE_ANALYTICS && !UNITY_WEBGL
 			try
 			{
 				// Firebase Analytics automatically batches and flushes events
@@ -328,7 +328,7 @@ namespace AK.Services.Analytics.Providers
 #endif
 		}
 
-#if FIREBASE_ANALYTICS
+#if FIREBASE_ANALYTICS && !UNITY_WEBGL
 		/// <summary>
 		/// Converts Dictionary{string, object} to Firebase Parameter array.
 		/// Only available when Firebase SDK is integrated.

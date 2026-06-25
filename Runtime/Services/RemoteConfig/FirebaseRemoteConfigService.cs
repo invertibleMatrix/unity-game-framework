@@ -101,7 +101,7 @@ namespace AK.Services
 		{
 			try
 			{
-#if FIREBASE_REMOTE_CONFIG
+#if FIREBASE_REMOTE_CONFIG && !UNITY_WEBGL
 				var remoteConfig = Firebase.RemoteConfig.FirebaseRemoteConfig.DefaultInstance;
 				await remoteConfig.FetchAsync(_fetchTimeout).AsUniTask();
 				Debug.Log("[FirebaseRemoteConfigService] Fetch complete");
@@ -120,7 +120,7 @@ namespace AK.Services
 		{
 			try
 			{
-#if FIREBASE_REMOTE_CONFIG
+#if FIREBASE_REMOTE_CONFIG && !UNITY_WEBGL
 				var remoteConfig = Firebase.RemoteConfig.FirebaseRemoteConfig.DefaultInstance;
 				await remoteConfig.ActivateAsync().AsUniTask();
 				Debug.Log("[FirebaseRemoteConfigService] Activate complete");
@@ -145,7 +145,7 @@ namespace AK.Services
 		{
 			try
 			{
-#if FIREBASE_REMOTE_CONFIG
+#if FIREBASE_REMOTE_CONFIG && !UNITY_WEBGL
 				var remoteConfig = Firebase.RemoteConfig.FirebaseRemoteConfig.DefaultInstance;
 				await remoteConfig.SetDefaultsAsync(defaults).AsUniTask();
 #else
@@ -185,7 +185,7 @@ namespace AK.Services
 
 		private string GetRemoteValue(string key)
 		{
-#if FIREBASE_REMOTE_CONFIG
+#if FIREBASE_REMOTE_CONFIG && !UNITY_WEBGL
 			var remoteConfig = Firebase.RemoteConfig.FirebaseRemoteConfig.DefaultInstance;
 			return remoteConfig.GetValue(key).StringValue;
 #else

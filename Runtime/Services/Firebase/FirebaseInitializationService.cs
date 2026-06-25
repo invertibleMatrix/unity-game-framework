@@ -2,7 +2,7 @@ using System;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 
-#if FIREBASE_INITIALIZATION
+#if FIREBASE_INITIALIZATION && !UNITY_WEBGL
 using Firebase.Extensions;
 #endif
 
@@ -46,10 +46,10 @@ namespace AK.Services
 				return _isAvailable;
 			}
 
-#if FIREBASE_INITIALIZATION
-			try
-			{
-				Debug.Log("[FirebaseInitializationService] Checking Firebase dependencies...");
+#if FIREBASE_INITIALIZATION && !UNITY_WEBGL
+		try
+		{
+			Debug.Log("[FirebaseInitializationService] Checking Firebase dependencies...");
 
 				var tcs = new UniTaskCompletionSource<bool>();
 
