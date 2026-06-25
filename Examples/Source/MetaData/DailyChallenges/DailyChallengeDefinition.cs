@@ -18,17 +18,6 @@ namespace AK.Examples.DailyChallenges
         [Tooltip("Unique string ID for this challenge")]
         public string ChallengeID;
 
-        [Header("Display Information")]
-        [Tooltip("Display name shown to players")]
-        public string DisplayName;
-
-        [Tooltip("Description shown to players")]
-        [TextArea]
-        public string Description;
-
-        [Tooltip("Icon displayed in UI")]
-        public Sprite Icon;
-
         [Tooltip("Difficulty level of this challenge")]
         public ChallengeDifficulty Difficulty;
 

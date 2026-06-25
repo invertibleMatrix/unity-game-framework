@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using AK.Core;
 using Sirenix.OdinInspector;
 using UnityEngine;
@@ -87,14 +88,16 @@ namespace AK.CoreDomain.RemoteConfig
 
 			try
 			{
-				// Handle primitive types directly
+				// Handle primitive types directly.
+				// CultureInfo.InvariantCulture ensures that decimal separators (e.g. "1.5")
+				// are parsed correctly regardless of the device's locale (e.g. German "1,5").
 				if (typeof(T) == typeof(int))
 				{
-					_remoteValue = (T)(object)int.Parse(value);
+					_remoteValue = (T)(object)int.Parse(value, CultureInfo.InvariantCulture);
 				}
 				else if (typeof(T) == typeof(float))
 				{
-					_remoteValue = (T)(object)float.Parse(value);
+					_remoteValue = (T)(object)float.Parse(value, CultureInfo.InvariantCulture);
 				}
 				else if (typeof(T) == typeof(bool))
 				{
@@ -106,11 +109,11 @@ namespace AK.CoreDomain.RemoteConfig
 				}
 				else if (typeof(T) == typeof(long))
 				{
-					_remoteValue = (T)(object)long.Parse(value);
+					_remoteValue = (T)(object)long.Parse(value, CultureInfo.InvariantCulture);
 				}
 				else if (typeof(T) == typeof(double))
 				{
-					_remoteValue = (T)(object)double.Parse(value);
+					_remoteValue = (T)(object)double.Parse(value, CultureInfo.InvariantCulture);
 				}
 				else
 				{

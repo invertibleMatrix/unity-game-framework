@@ -12,10 +12,6 @@ namespace AK.Examples.Difficulty
     [CreateAssetMenu(fileName = "DifficultyDefinition", menuName = "AK/Examples/MetaData/Difficulty/DifficultyDefinition")]
     public class DifficultyDefinition : MetaDataAsset
     {
-        [Header("Identification")]
-        [Tooltip("Display name for the difficulty")]
-        public string DisplayName;
-
         [Tooltip("Internal name for reference")]
         public string InternalName;
 
