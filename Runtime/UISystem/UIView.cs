@@ -1,4 +1,5 @@
-﻿using System;
+﻿using AK.Systems.Animations;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -46,8 +47,13 @@ namespace AK.Systems
 		[Title("Stack Behaviour")] [SerializeField]
 		private ViewStackBehaviour _stackBehaviour = ViewStackBehaviour.DoNothing;
 
-		[Title("Animation")] [InlineEditor, SerializeField]
-		private UIAnimationConfig _animationConfig;
+		[Title("Animation Strategy (direct)")]
+		[SerializeField, Tooltip("Animation strategy applied directly on this view. Migrated from _animationConfig via editor script.")]
+		private AnimationStrategy _animationStrategy;
+
+		[Title("Stack Orchestration")]
+		[SerializeField, Tooltip("If true, this view's hide animation runs in parallel with the next view's show animation. Migrated from _animationConfig.")]
+		private bool _playInParallelWithPrevious;
 
 		[Title("Animation Target")]
 		[SerializeField, Tooltip("The child containing all visual elements to animate. Falls back to this RectTransform.")]
@@ -98,7 +104,9 @@ namespace AK.Systems
 
 		public string                         ViewId                 => _viewId;
 		public ViewStackBehaviour             StackBehaviour         => _overriddenStackBehaviour ?? _stackBehaviour;
-		public UIAnimationConfig              AnimationConfig        => _animationConfig;
+		public IAnimationStrategy             AnimationStrategy      => _animationStrategy;
+		public bool                           PlayInParallelWithPrevious => _playInParallelWithPrevious;
+		public bool                           NoAnimation            => _animationStrategy == null;
 		public bool                           ReturnToPoolOnClose    => _returnToPoolOnClose;
 		public bool                           AllowMultipleInstances => _allowMultipleInstances;
 		public bool                           IsVisible              { get; private set; }
@@ -510,7 +518,7 @@ namespace AK.Systems
 				RegisterResources();
 			}
 
-			if (immediate || _animationConfig == null || _animationConfig.NoAnimation)
+			if (immediate || NoAnimation)
 			{
 				CanvasGroup.alpha = 1f;
 				if (_showBackgroundOverlay) ShowBackgroundOverlay();
@@ -526,7 +534,7 @@ namespace AK.Systems
 
 			try
 			{
-				await _animationConfig.AnimationStrategy.PlayShowAsync(
+				await AnimationStrategy.PlayShowAsync(
 					_animatableContent, CanvasGroup, _entryPosition, _animationCts.Token);
 			}
 			catch (OperationCanceledException)
@@ -555,7 +563,7 @@ namespace AK.Systems
 
 			if (_showBackgroundOverlay) HideBackgroundOverlay();
 
-			if (immediate || _animationConfig == null || _animationConfig.NoAnimation)
+			if (immediate || NoAnimation)
 			{
 				CanvasGroup.alpha = 0f;
 				gameObject.SetActive(false);
@@ -570,7 +578,7 @@ namespace AK.Systems
 
 			try
 			{
-				await _animationConfig.AnimationStrategy.PlayHideAsync(
+				await AnimationStrategy.PlayHideAsync(
 					_animatableContent, CanvasGroup, _animationCts.Token);
 			}
 			catch (OperationCanceledException)
@@ -601,7 +609,7 @@ namespace AK.Systems
 		{
 			if (_showBackgroundOverlay) HideBackgroundOverlay();
 
-			if (immediate || _animationConfig == null || _animationConfig.NoAnimation)
+			if (immediate || NoAnimation)
 			{
 				CanvasGroup.alpha = 0f;
 				gameObject.SetActive(false);
@@ -614,7 +622,7 @@ namespace AK.Systems
 
 			try
 			{
-				await _animationConfig.AnimationStrategy.PlayHideAsync(
+				await AnimationStrategy.PlayHideAsync(
 					_animatableContent, CanvasGroup, _animationCts.Token);
 			}
 			catch (OperationCanceledException)
@@ -639,7 +647,7 @@ namespace AK.Systems
 		{
 			gameObject.SetActive(true);
 
-			if (immediate || _animationConfig == null || _animationConfig.NoAnimation)
+			if (immediate || NoAnimation)
 			{
 				CanvasGroup.alpha = 1f;
 				if (_showBackgroundOverlay) ShowBackgroundOverlay();
@@ -652,7 +660,7 @@ namespace AK.Systems
 
 			try
 			{
-				await _animationConfig.AnimationStrategy.PlayShowAsync(
+				await AnimationStrategy.PlayShowAsync(
 					_animatableContent, CanvasGroup, _entryPosition, _animationCts.Token);
 			}
 			catch (OperationCanceledException)
@@ -702,7 +710,7 @@ namespace AK.Systems
 
 		internal void PrepareForShowAnimation()
 		{
-			if (_animationConfig == null) return;
+			if (NoAnimation) return;
 			CanvasGroup.alpha = 0f;
 		}
 

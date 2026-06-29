@@ -278,6 +278,8 @@ MonoBehaviour:
   _viewId: banner2
   _stackBehaviour: 0
   _animationConfig: {fileID: 11400000, guid: bcfa4a479ecac7b43b371207549e5409, type: 2}
+  _animationStrategy: {fileID: 11400000, guid: eba5e2b09c5cb4a41ade035d92628772, type: 2}
+  _playInParallelWithPrevious: 0
   _animatableContent: {fileID: 0}
   _fragmentContainer: {fileID: 0}
   _returnToPoolOnClose: 1
