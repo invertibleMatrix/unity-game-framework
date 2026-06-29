@@ -529,8 +529,7 @@ namespace AK.Systems
 			if (previousView != null)
 			{
 				bool parallel = !immediate &&
-				                previousView.AnimationConfig != null &&
-				                previousView.AnimationConfig.PlayInParallelWithPrevious;
+				                previousView.PlayInParallelWithPrevious;
 
 				if (parallel)
 				{
@@ -843,8 +842,7 @@ namespace AK.Systems
 			{
 				bool parallel = !immediate &&
 				                previousView != null &&
-				                previousView.AnimationConfig != null &&
-				                previousView.AnimationConfig.PlayInParallelWithPrevious;
+				                previousView.PlayInParallelWithPrevious;
 
 				if (parallel)
 				{
@@ -967,8 +965,7 @@ namespace AK.Systems
 
 			bool parallel = !immediate &&
 			                previousView != null &&
-			                previousView.AnimationConfig != null &&
-			                previousView.AnimationConfig.PlayInParallelWithPrevious;
+			                previousView.PlayInParallelWithPrevious;
 
 			try
 			{
@@ -1092,8 +1089,7 @@ namespace AK.Systems
 					case ViewStackBehaviour.PauseAndHideBelow:
 						previousFragment.OnPause();
 						previousFragment.SetInteractable(false);
-						bool parallel = previousFragment.AnimationConfig != null &&
-						                previousFragment.AnimationConfig.PlayInParallelWithPrevious;
+						bool parallel = previousFragment.PlayInParallelWithPrevious;
 						if (parallel)
 						{
 							await UniTask.WhenAll(
@@ -1116,8 +1112,7 @@ namespace AK.Systems
 						break;
 
 					case ViewStackBehaviour.CloseBelow:
-						if (previousFragment.AnimationConfig != null &&
-						    previousFragment.AnimationConfig.PlayInParallelWithPrevious)
+						if (previousFragment.PlayInParallelWithPrevious)
 						{
 							CloseInternalAsync(previousFragment, CloseContext.Normal, true, ct).Forget();
 							await newView.InternalShowAsync(ct);
