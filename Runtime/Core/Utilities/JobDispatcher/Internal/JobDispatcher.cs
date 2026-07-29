@@ -27,7 +27,8 @@ namespace Utilities.Jobs
 
         // Shutdown state tracking
         private volatile bool _isShuttingDown        = false;
-        private const    int  THREAD_JOIN_TIMEOUT_MS = 2000; // 2 second timeout
+        private const    int  THREAD_JOIN_TIMEOUT_MS  = 2000; // 2 second timeout
+        private const    int  FRAME_BARRIER_TIMEOUT_MS = 5000; // 5 second per-frame barrier timeout
 
         public static JobDispatcher Construct()
         {
@@ -140,7 +141,14 @@ namespace Utilities.Jobs
             if (_isShuttingDown) return;
 
             Profiler.BeginSample("WaitingForJobsHandler");
-            _threadsBarrierJoinEvent.Wait();
+
+            // Bounded wait: if a jobs thread died despite containment, log and re-sync instead
+            // of freezing the game on an unsignalable barrier.
+            if (!_threadsBarrierJoinEvent.Wait(FRAME_BARRIER_TIMEOUT_MS))
+            {
+                Debug.LogError("JobDispatcher: frame barrier timed out - a jobs thread is dead or stuck. Re-syncing the barrier.");
+            }
+
             _threadsBarrierJoinEvent.Reset(2);
             Profiler.EndSample();
 

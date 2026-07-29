@@ -55,6 +55,18 @@ namespace AK.Services
 
 				Firebase.FirebaseApp.CheckAndFixDependenciesAsync().ContinueWithOnMainThread(task =>
 				{
+					// Fault/cancel handling comes first: task.Result on a faulted task throws,
+					// which would escape this callback and leave the tcs (and the awaiter) hanging forever.
+					if (task.IsFaulted || task.IsCanceled)
+					{
+						_isAvailable = false;
+						_unavailableReason = task.Exception?.GetBaseException().Message ?? "Dependency check was canceled";
+						Debug.LogError($"[FirebaseInitializationService] Dependency check failed: {_unavailableReason}");
+						OnInitializationFailed?.Invoke(_unavailableReason);
+						tcs.TrySetResult(false);
+						return;
+					}
+
 					var dependencyStatus = task.Result;
 
 					if (dependencyStatus == Firebase.DependencyStatus.Available)
@@ -76,7 +88,8 @@ namespace AK.Services
 					}
 				});
 
-				var result = await tcs.Task;
+				// Timeout guard: a lost native callback must never hang the caller forever.
+				var result = await tcs.Task.Timeout(TimeSpan.FromSeconds(30));
 				_isInitialized = true;
 				return result;
 			}

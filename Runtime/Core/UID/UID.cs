@@ -46,17 +46,24 @@ namespace AK.Core
 			return string.IsNullOrEmpty(_description) ? _id : $"{_description} ({_id})";
 		}
 
+		private static UID _empty;
+
 		public static UID EmptyUID()
 		{
-			var instance = CreateInstance<UID>();
-			instance._id = Guid.Empty.ToString();
-			return instance;
+			if (_empty == null)
+			{
+				_empty = CreateInstance<UID>();
+				_empty._id = Guid.Empty.ToString();
+				_empty.hideFlags = HideFlags.HideAndDontSave;
+			}
+
+			return _empty;
 		}
 
 		// This is the key - always compares by GUID string, never reference
 		public bool Equals(UID other)
 		{
-			if (ReferenceEquals(null, other)) return IsEmpty();
+			if (ReferenceEquals(null, other)) return false;
 			if (ReferenceEquals(this, other)) return true;
 
 			// Handle empty/null cases consistently
@@ -87,8 +94,12 @@ namespace AK.Core
 		
 		public static bool operator ==(UID left, UID right)
 		{
-			if (ReferenceEquals(left, null) && ReferenceEquals(right, null)) return true;
-			if (ReferenceEquals(left, null) || ReferenceEquals(right, null)) return false;
+			// Unity fake-null aware: a destroyed UID compares equal to null.
+			bool leftNull  = ReferenceEquals(left, null)  || (UnityEngine.Object)left  == null;
+			bool rightNull = ReferenceEquals(right, null) || (UnityEngine.Object)right == null;
+
+			if (leftNull && rightNull) return true;
+			if (leftNull || rightNull) return false;
 			return left.Equals(right);
 		}
 

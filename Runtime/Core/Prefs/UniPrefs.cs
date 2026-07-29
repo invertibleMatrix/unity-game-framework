@@ -35,8 +35,6 @@ namespace AK.Core
 		/// </summary>
 		public static event Action OnReset = default;
 
-		private static HashSet<string> PrefsKeySet { get; set; } = new();
-
 		/// <summary>
 		/// Stores a value in <see cref="PlayerPrefs"/> as a JSON string.
 		/// </summary>
@@ -45,7 +43,7 @@ namespace AK.Core
 		/// <param name="data">The value to store.</param>
 		public static void Set<T>(string key, T data)
 		{
-			EnsureKey(key);
+			ValidateKey(key);
 
 			var json = JsonUtility.ToJson(new DataWrapper<T>(data));
 			PlayerPrefs.SetString(key, json);
@@ -61,11 +59,21 @@ namespace AK.Core
 		/// <returns>The retrieved value or the default value if the key does not exist or the value is null.</returns>
 		public static TReturn Get<TReturn>(string key, TReturn @default = default)
 		{
-			var json = PlayerPrefs.GetString(EnsureKey(key));
+			ValidateKey(key);
+
+			var json = PlayerPrefs.GetString(key);
 			if (string.IsNullOrEmpty(json)) return @default;
 
-			var dataWrapper = JsonUtility.FromJson<DataWrapper<TReturn>>(json);
-			return dataWrapper.Data ?? @default;
+			try
+			{
+				var dataWrapper = JsonUtility.FromJson<DataWrapper<TReturn>>(json);
+				return dataWrapper.Data ?? @default;
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning($"[UniPrefs] Failed to deserialize key '{key}': {e.Message}. Returning default.");
+				return @default;
+			}
 		}
 
 		/// <summary>
@@ -75,7 +83,8 @@ namespace AK.Core
 		/// <returns>True if the key exists; otherwise, false.</returns>
 		public static bool HasKey(string key)
 		{
-			return PlayerPrefs.HasKey(EnsureKey(key));
+			ValidateKey(key);
+			return PlayerPrefs.HasKey(key);
 		}
 
 		/// <summary>
@@ -84,7 +93,8 @@ namespace AK.Core
 		/// <param name="key">The key to delete from PlayerPrefs.</param>
 		public static void Delete(string key)
 		{
-			PlayerPrefs.DeleteKey(EnsureKey(key));
+			ValidateKey(key);
+			PlayerPrefs.DeleteKey(key);
 			PlayerPrefs.Save();
 		}
 
@@ -97,24 +107,13 @@ namespace AK.Core
 		}
 
 		/// <summary>
-		/// Ensures that the specified key is valid and adds it to the set of known keys if it's new.
+		/// Validates that the specified key is usable.
 		/// </summary>
-		/// <param name="key">The key to ensure.</param>
+		/// <param name="key">The key to validate.</param>
 		/// <exception cref="Exception">Thrown if the key is null or empty.</exception>
-		private static string EnsureKey(string key)
+		private static void ValidateKey(string key)
 		{
-			if (string.IsNullOrEmpty(key)) throw new Exception("Cannot set a null or blank key");
-
-			PrefsKeySet ??= Get(nameof(PrefsKeySet), PrefsKeySet.ToList()).ToHashSet();
-
-			var success = PrefsKeySet.Add(key);
-
-			if (success)
-			{
-				Set(nameof(PrefsKeySet), PrefsKeySet.ToList());
-			}
-
-			return key;
+			if (string.IsNullOrEmpty(key)) throw new Exception("Cannot use a null or blank key");
 		}
 	}
 }

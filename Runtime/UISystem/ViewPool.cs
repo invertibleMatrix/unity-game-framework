@@ -1,15 +1,37 @@
 ﻿using System;
 using System.Collections.Generic;
+using DG.Tweening;
 using UnityEngine;
 
 namespace AK.Systems
 {
 	/// <summary>
 	/// Object pool for UIViews. Generalised from V1's FragmentPool — works for any UIView.
+	/// Released views are parked under a dedicated hidden root (not the scene root), have their
+	/// interaction state restored, and have leftover tweens killed - so a pooled view always
+	/// comes back sane.
 	/// </summary>
 	public class ViewPool
 	{
 		private readonly Dictionary<PoolKey, Stack<UIView>> _pools = new();
+
+		private Transform _poolRoot;
+
+		private Transform PoolRoot
+		{
+			get
+			{
+				if (_poolRoot == null)
+				{
+					var go = new GameObject("[UIViewPool]");
+					go.SetActive(false);
+					UnityEngine.Object.DontDestroyOnLoad(go);
+					_poolRoot = go.transform;
+				}
+
+				return _poolRoot;
+			}
+		}
 
 		private struct PoolKey : IEquatable<PoolKey>
 		{
@@ -30,6 +52,12 @@ namespace AK.Systems
 				var view = stack.Pop();
 				var rect = view.transform as RectTransform;
 
+				if (rect == null)
+				{
+					Debug.LogError($"[ViewPool] Pooled view '{view.name}' has no RectTransform - cannot re-parent. Instantiating instead.");
+					return UnityEngine.Object.Instantiate(prefab, parent);
+				}
+
 				rect.SetParent(parent, false);
 				rect.localScale = Vector3.one;
 				rect.localRotation = Quaternion.identity;
@@ -44,11 +72,20 @@ namespace AK.Systems
 
 		public void Release(UIView view)
 		{
+			if (view == null) return;
+
 			var key = new PoolKey { Type = view.GetType(), ViewId = view.ViewId };
 
-			if (!_pools.ContainsKey(key))
+			if (!_pools.TryGetValue(key, out var stack))
 			{
-				_pools[key] = new Stack<UIView>();
+				stack = new Stack<UIView>();
+				_pools[key] = stack;
+			}
+
+			if (stack.Contains(view))
+			{
+				Debug.LogWarning($"[ViewPool] View '{view.name}' released twice - ignoring the second release.");
+				return;
 			}
 
 			// Let the view close its dynamic children before pooling
@@ -61,10 +98,33 @@ namespace AK.Systems
 
 			// OnReset lets the view clear custom state (text, images, references) for reuse.
 			view.OnReset();
-			view.gameObject.SetActive(false);
-			view.transform.SetParent(null);
 
-			_pools[key].Push(view);
+			// Kill any tweens still targeting this view's hierarchy. InternalCleanup handles the
+			// view's own animation targets, but per-view leftovers (e.g. toast floaters) and
+			// animation-strategy ambient loops can survive that - a surviving sequence that
+			// completes later would call Close() on an unregistered view.
+			foreach (var canvasGroup in view.GetComponentsInChildren<CanvasGroup>(true))
+			{
+				DOTween.Kill(canvasGroup);
+			}
+
+			foreach (var rectTransform in view.GetComponentsInChildren<RectTransform>(true))
+			{
+				DOTween.Kill(rectTransform);
+			}
+
+			// Restore interaction state: pause-behaviours (PauseOnlyBelow etc.) flip
+			// interactable/blocksRaycasts off, and nothing restored them on the reuse path.
+			if (view.CanvasGroup != null)
+			{
+				view.CanvasGroup.interactable = true;
+				view.CanvasGroup.blocksRaycasts = true;
+			}
+
+			view.gameObject.SetActive(false);
+			view.transform.SetParent(PoolRoot, false);
+
+			stack.Push(view);
 		}
 
 		public void Clear()
@@ -85,4 +145,3 @@ namespace AK.Systems
 		}
 	}
 }
-

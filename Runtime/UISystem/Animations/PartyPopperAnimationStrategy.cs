@@ -217,7 +217,8 @@ namespace AK.Systems.Animations
             if (!_addBreathing) return;
             
             var breatheScale = Vector3.one * (1f + _breathingIntensity);
-            target.DOScale(breatheScale, 2f).SetEase(Ease.InOutSine).SetLoops(-1, LoopType.Yoyo);
+            target.DOScale(breatheScale, 2f).SetEase(Ease.InOutSine).SetLoops(-1, LoopType.Yoyo)
+                .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
         }
 
         private void StopBreathing(RectTransform target)

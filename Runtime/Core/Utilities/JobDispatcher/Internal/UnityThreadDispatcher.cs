@@ -46,7 +46,11 @@ namespace Utilities.Jobs
                 }
             }
 
-            internal void FixedUpdate() { }
+            internal void FixedUpdate()
+            {
+                if (_jobDispatcher._isShuttingDown) return;
+                ExecutePersistentFixedUpdateJobs();
+            }
 
             public IDispatchedJobHandle ExecuteCoroutineJob(ICoroutineJob job)
             {
@@ -79,8 +83,17 @@ namespace Utilities.Jobs
             {
                 if (_coroutineJobs.Count > 0)
                 {
-                    foreach (CoroutineJobImpl job in _coroutineJobs)
+                    for (int i = _coroutineJobs.Count - 1; i >= 0; i--)
                     {
+                        CoroutineJobImpl job = _coroutineJobs[i];
+
+                        // A job cancelled before its first LateUpdate must never start.
+                        if (job.IsCancelled)
+                        {
+                            _coroutineJobs.RemoveAt(i);
+                            continue;
+                        }
+
                         if (job.CoroutineHandle == null && !_jobDispatcher._isShuttingDown)
                         {
                             job.Execute();
@@ -160,9 +173,9 @@ namespace Utilities.Jobs
 
             protected override void InjectFixedUpdateJobIntoBuffer(FixedJobImpl fixedJobImpl)
             {
-                CurrentFrameJobs.FixedUpdateJobs.Add(fixedJobImpl);
-                NextFrameJobs.FixedUpdateJobs.Add(fixedJobImpl);
-                HandlerBackBuffer.FixedUpdateJobs.Add(fixedJobImpl);
+                // FixedUpdate jobs live in a persistent list (see ThreadDispatcherBase) - the
+                // transient frame buffers are cleared at frame boundaries and can't represent them.
+                AddPersistentFixedUpdateJob(fixedJobImpl);
             }
 
             public void ExecuteJob(IDispatchableJob job)

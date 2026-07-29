@@ -43,12 +43,14 @@ namespace AK.Systems
 		[SerializeField] private float _autoHideDelay = 3f;
 		
 		private RectTransform _canvasRect;
+		private Canvas        _canvas;
 		private Tween _hideTween;
 
 		public override void OnReset()
 		{
 			base.OnReset();
 			_canvasRect = null;
+			_canvas = null;
 		}
 
 		public override void OnPrepareShow()
@@ -70,10 +72,10 @@ namespace AK.Systems
 				_descriptionText.gameObject.SetActive(!string.IsNullOrEmpty(Context.Description));
 			}
 
-			// Get canvas rect for positioning
-			Canvas canvas = GetComponentInParent<Canvas>();
-			if (canvas != null)
-				_canvasRect = canvas.GetComponent<RectTransform>();
+			// Get canvas + rect for positioning
+			_canvas = GetComponentInParent<Canvas>();
+			if (_canvas != null)
+				_canvasRect = _canvas.GetComponent<RectTransform>();
 
 			// Force layout rebuild
 			Canvas.ForceUpdateCanvases();
@@ -114,12 +116,18 @@ namespace AK.Systems
 		target.GetWorldCorners(targetCorners);
 		Vector3 targetWorldCenter = (targetCorners[0] + targetCorners[2]) * 0.5f;
 
-		// Convert target center to canvas local space
+		// Convert target center to canvas local space.
+		// A null camera is only valid for ScreenSpaceOverlay; the framework's UIViewChannel
+		// defaults to ScreenSpaceCamera, so pass the canvas's world camera explicitly.
+		Camera canvasCamera = _canvas == null || _canvas.renderMode == RenderMode.ScreenSpaceOverlay
+			? null
+			: _canvas.worldCamera;
+
 		Vector2 targetLocalPos;
 		RectTransformUtility.ScreenPointToLocalPointInRectangle(
-			_canvasRect, 
-			RectTransformUtility.WorldToScreenPoint(null, targetWorldCenter), 
-			null, 
+			_canvasRect,
+			RectTransformUtility.WorldToScreenPoint(canvasCamera, targetWorldCenter),
+			canvasCamera,
 			out targetLocalPos);
 
 		// Get canvas size
@@ -135,34 +143,36 @@ namespace AK.Systems
 		TooltipPosition position = Context.Position ?? _preferredPosition;
 		if (position == TooltipPosition.Auto)
 		{
-			// Priority: Right → BottomRight → Left → BottomLeft → TopRight → TopLeft → Bottom → Top
-			
-			// For centered positions, we need space for the full tooltip on that side
-			// The tooltip will be clamped to canvas bounds, so we just need enough space on the primary axis
-			
-			// Check Right (centered) - needs horizontal space, vertical centering will be clamped if needed
-			if (spaceRight >= tooltipSize.x + _padding)
+			// Priority: Right → BottomRight → Left → BottomLeft → TopRight → TopLeft → Bottom → Top.
+			// Centered placements need the full tooltip on the primary axis plus vertical/horizontal
+			// centering room; corner placements need the full height on their secondary axis.
+			// (The previous cascade repeated the primary condition in the corner branches, which
+			// made every corner branch unreachable.)
+			var halfW = tooltipSize.x * 0.5f + _padding;
+			var halfH = tooltipSize.y * 0.5f + _padding;
+
+			bool fitsRight    = spaceRight  >= tooltipSize.x + _padding;
+			bool fitsLeft     = spaceLeft   >= tooltipSize.x + _padding;
+			bool fitsTop      = spaceTop    >= tooltipSize.y + _padding;
+			bool fitsBottom   = spaceBottom >= tooltipSize.y + _padding;
+			bool fitsVCenter  = spaceTop >= halfH && spaceBottom >= halfH;
+			bool fitsHCenter  = spaceLeft >= halfW && spaceRight >= halfW;
+
+			if (fitsRight && fitsVCenter)
 				position = TooltipPosition.Right;
-			// Check BottomRight corner - needs both horizontal and full vertical space below
-			else if (spaceRight >= tooltipSize.x + _padding && spaceBottom >= tooltipSize.y + _padding)
+			else if (fitsRight && fitsBottom)
 				position = TooltipPosition.BottomRight;
-			// Check Left (centered) - needs horizontal space, vertical centering will be clamped if needed
-			else if (spaceLeft >= tooltipSize.x + _padding)
+			else if (fitsLeft && fitsVCenter)
 				position = TooltipPosition.Left;
-			// Check BottomLeft corner - needs both horizontal and full vertical space below
-			else if (spaceLeft >= tooltipSize.x + _padding && spaceBottom >= tooltipSize.y + _padding)
+			else if (fitsLeft && fitsBottom)
 				position = TooltipPosition.BottomLeft;
-			// Check TopRight corner - needs both horizontal and full vertical space above
-			else if (spaceRight >= tooltipSize.x + _padding && spaceTop >= tooltipSize.y + _padding)
+			else if (fitsRight && fitsTop)
 				position = TooltipPosition.TopRight;
-			// Check TopLeft corner - needs both horizontal and full vertical space above
-			else if (spaceLeft >= tooltipSize.x + _padding && spaceTop >= tooltipSize.y + _padding)
+			else if (fitsLeft && fitsTop)
 				position = TooltipPosition.TopLeft;
-			// Check Bottom (centered) - needs vertical space below, horizontal centering will be clamped if needed
-			else if (spaceBottom >= tooltipSize.y + _padding)
+			else if (fitsBottom && fitsHCenter)
 				position = TooltipPosition.Bottom;
-			// Check Top (centered) - needs vertical space above, horizontal centering will be clamped if needed
-			else if (spaceTop >= tooltipSize.y + _padding)
+			else if (fitsTop && fitsHCenter)
 				position = TooltipPosition.Top;
 			else
 				position = TooltipPosition.Right; // Default, will be clamped

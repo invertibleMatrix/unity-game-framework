@@ -276,15 +276,18 @@ namespace AK.Core
 				{
 					if (!Equals(_sortedListeners[i].Handler, handler)) continue;
 
-					_sortedListeners.RemoveAt(i);
+						_sortedListeners.RemoveAt(i);
 
-					foreach (var enumerator in _activeEnumerators)
-					{
-						if (enumerator.Index >= i && enumerator.Index > 0)
+						foreach (var enumerator in _activeEnumerators)
 						{
-							enumerator.Index--;
+							// Index points to the NEXT listener to deliver. Decrement only when the
+							// removed listener sits before it - otherwise the current listener would
+							// be delivered a second time.
+							if (enumerator.Index > i)
+							{
+								enumerator.Index--;
+							}
 						}
-					}
 				}
 			}
 

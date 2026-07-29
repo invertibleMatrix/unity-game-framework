@@ -227,7 +227,11 @@ namespace AK.Core
 				TargetedEventListeners<TEvent>> Listeners =
 				new Dictionary<GenericEventBus<TBaseEvent, TObject>, TargetedEventListeners<TEvent>>();
 
-			private static readonly Dictionary<EventHandler<TEvent>, TargetedEventHandler<TEvent>>
+			// Instance-level: this cache maps untargeted -> targeted delegates per bus instance.
+			// A static cache is shared by every bus instance: unsubscribing a handler on bus A
+			// removes the mapping while bus B still holds the converted delegate, making B's
+			// listener unremovable (a ghost listener).
+			private readonly Dictionary<EventHandler<TEvent>, TargetedEventHandler<TEvent>>
 				ConvertedEventHandlers = new Dictionary<EventHandler<TEvent>, TargetedEventHandler<TEvent>>();
 
 			private static readonly ObjectPool<Enumerator> EnumeratorPool = new ObjectPool<Enumerator>();
@@ -302,7 +306,9 @@ namespace AK.Core
 
 					foreach (var enumerator in _activeEnumerators)
 					{
-						if (enumerator.Index >= i && enumerator.Index > 0)
+						// Index points to the NEXT listener to deliver; decrement only when the
+						// removed listener sits before it (see GenericEventBus<TBaseEvent>).
+						if (enumerator.Index > i)
 						{
 							enumerator.Index--;
 						}
@@ -373,7 +379,7 @@ namespace AK.Core
 					{
 						if (!ObjectComparer.Equals(target, enumerator.Target)) continue;
 
-						if (enumerator.TargetIndex >= i && enumerator.TargetIndex > 0)
+						if (enumerator.TargetIndex > i)
 						{
 							enumerator.TargetIndex--;
 						}
@@ -434,7 +440,7 @@ namespace AK.Core
 					{
 						if (!ObjectComparer.Equals(source, enumerator.Source)) continue;
 
-						if (enumerator.SourceIndex >= i && enumerator.SourceIndex > 0)
+						if (enumerator.SourceIndex > i)
 						{
 							enumerator.SourceIndex--;
 						}
@@ -564,70 +570,65 @@ namespace AK.Core
 
 				public bool MoveNext()
 				{
-					Listener? nextListener = null;
-					ref var index = ref Index;
-
-					do
+					// Every iteration advances exactly one list head, so this loop always makes
+					// progress. The previous do/while re-evaluated the same heads without advancing
+					// and could spin forever when a higher-priority listener subscribed mid-dispatch.
+					while (true)
 					{
-						if (Index < SortedListeners.Count && SortedListeners.Count > 0)
+						Listener? nextListener = null;
+						var nextList = 0; // 0 = global, 1 = target, 2 = source
+
+						if (SortedListeners != null && Index < SortedListeners.Count)
 						{
 							nextListener = SortedListeners[Index];
 						}
 
-						var targetListenerCount = TargetListeners?.Count ?? 0;
-
-						if (targetListenerCount > 0 && TargetIndex < targetListenerCount)
+						if (TargetListeners != null && TargetIndex < TargetListeners.Count)
 						{
-							var targetListener = TargetListeners[TargetIndex];
+							var candidate = TargetListeners[TargetIndex];
 
-							if (nextListener.HasValue)
+							if (!nextListener.HasValue || candidate.Priority > nextListener.Value.Priority)
 							{
-								if (targetListener.Priority > nextListener.Value.Priority)
-								{
-									nextListener = targetListener;
-									index = ref TargetIndex;
-								}
-							}
-							else
-							{
-								nextListener = targetListener;
-								index = ref TargetIndex;
+								nextListener = candidate;
+								nextList = 1;
 							}
 						}
 
-						var sourceListenerCount = SourceListeners?.Count ?? 0;
-
-						if (sourceListenerCount > 0 && SourceIndex < sourceListenerCount)
+						if (SourceListeners != null && SourceIndex < SourceListeners.Count)
 						{
-							var sourceListener = SourceListeners[SourceIndex];
+							var candidate = SourceListeners[SourceIndex];
 
-							if (nextListener.HasValue)
+							if (!nextListener.HasValue || candidate.Priority > nextListener.Value.Priority)
 							{
-								if (sourceListener.Priority > nextListener.Value.Priority)
-								{
-									nextListener = sourceListener;
-									index = ref SourceIndex;
-								}
-							}
-							else
-							{
-								nextListener = sourceListener;
-								index = ref SourceIndex;
+								nextListener = candidate;
+								nextList = 2;
 							}
 						}
-					} while (nextListener.HasValue && nextListener.Value.Priority > LastPriority);
 
-					if (nextListener.HasValue)
-					{
-						var value = nextListener.Value;
-						Current = value.Handler;
-						LastPriority = value.Priority;
-						index++;
+						if (!nextListener.HasValue)
+						{
+							return false;
+						}
+
+						switch (nextList)
+						{
+							case 0: Index++; break;
+							case 1: TargetIndex++; break;
+							default: SourceIndex++; break;
+						}
+
+						// A listener that surfaced mid-dispatch with priority higher than the last
+						// delivered one was already passed over - skip it to preserve ordering.
+						if (nextListener.Value.Priority > LastPriority)
+						{
+							continue;
+						}
+
+						Current = nextListener.Value.Handler;
+						LastPriority = nextListener.Value.Priority;
 
 						return true;
 					}
-
-					return false;
 				}
 
 				public void Dispose()

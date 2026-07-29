@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using Sirenix.OdinInspector;
+#if UNITY_EDITOR
 using UnityEditor;
+#endif
 using UnityEngine;
 
 namespace AK.Core
@@ -48,9 +50,10 @@ namespace AK.Core
 
 		public T GetObjectByUID(UID uid)
 		{
-			if (uid.IsEmpty())
+			if (uid == null || uid.IsEmpty())
 			{
-				Debug.LogWarning($"{uid} is Empty or Null");
+				Debug.LogWarning($"{typeof(T).Name} registry: requested UID is null or empty.");
+				return null;
 			}
 
 			T obj = GetObjectByUID(uid.Id);
@@ -72,7 +75,7 @@ namespace AK.Core
 
 		public IReadOnlyList<T> GetAllObjects()
 		{
-			return _objects.AsReadOnly();
+			return _objects;
 		}
 
 		// Editor helpers

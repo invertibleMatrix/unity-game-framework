@@ -65,6 +65,54 @@ namespace Utilities.Jobs
                 ExecuteTimedJobs(NextFrameJobs.FrameDelayedJobs);
                 ExecuteTimedJobs(NextFrameJobs.TimeDelayedJobs);
                 NextFrameJobs.ClearBuffer();
+
+                OnFrameStarted();
+            }
+
+            /// <summary>
+            /// Called at the end of <see cref="FrameStarted"/>. The worker thread uses this to run
+            /// its persistent FixedUpdate jobs once per frame (it has no real FixedUpdate tick).
+            /// </summary>
+            protected virtual void OnFrameStarted() { }
+
+            // FixedUpdate jobs are persistent (run every FixedUpdate until cancelled), so they
+            // cannot live in the transient frame buffers - those are cleared at frame boundaries.
+            private readonly List<FixedJobImpl> _persistentFixedUpdateJobs = new();
+            private readonly object             _fixedUpdateJobsLock = new();
+
+            protected void AddPersistentFixedUpdateJob(FixedJobImpl job)
+            {
+                lock (_fixedUpdateJobsLock)
+                {
+                    _persistentFixedUpdateJobs.Add(job);
+                }
+            }
+
+            protected void ExecutePersistentFixedUpdateJobs()
+            {
+                lock (_fixedUpdateJobsLock)
+                {
+                    for (int i = _persistentFixedUpdateJobs.Count - 1; i >= 0; i--)
+                    {
+                        var job = _persistentFixedUpdateJobs[i];
+
+                        if (job.IsMarkedForCancellation() || job.Job == null)
+                        {
+                            _persistentFixedUpdateJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        try
+                        {
+                            job.Job.OnExecute();
+                            CallCompleteOnJob(job);
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.LogException(e);
+                        }
+                    }
+                }
             }
 
             private void SwapThreadBuffers()
@@ -105,11 +153,6 @@ namespace Utilities.Jobs
             {
                 if (jobs.Count > 0)
                 {
-                    if (jobs.Count > 1)
-                    {
-                        Debug.LogError("Race");
-                    }
-
                     Profiler.BeginSample("ExecuteRepeatingJobs");
                     for (int i = 0; i < jobs.Count; i++)
                     {
@@ -117,8 +160,7 @@ namespace Utilities.Jobs
                         if (job.IsMarkedForExecution() && !job.IsMarkedForCancellation())
                         {
                             job.ClearMarkForExecution();
-                            job.Job.OnExecute();
-                            CallCompleteOnJob(job);
+                            ExecuteJobIsolated(job);
                         }
                     }
 
@@ -135,12 +177,33 @@ namespace Utilities.Jobs
                     {
                         if (job.IsMarkedForExecution())
                         {
-                            job.Job.OnExecute();
-                            CallCompleteOnJob(job);
+                            ExecuteJobIsolated(job);
                         }
                     }
 
                     Profiler.EndSample();
+                }
+            }
+
+            /// <summary>
+            /// Executes one job with exception isolation: a throwing job must not kill the
+            /// dispatch loop (a dead worker thread wedges the frame barrier) nor skip the
+            /// remaining jobs. Job can be nulled cross-thread by CancelJob, so capture first.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private void ExecuteJobIsolated<T>(T job) where T : IInternalJob
+            {
+                var userJob = job.Job;
+                if (userJob == null) return;
+
+                try
+                {
+                    userJob.OnExecute();
+                    CallCompleteOnJob(job);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
                 }
             }
 
@@ -248,6 +311,11 @@ namespace Utilities.Jobs
 
             public virtual void Dispose()
             {
+                lock (_fixedUpdateJobsLock)
+                {
+                    _persistentFixedUpdateJobs.Clear();
+                }
+
                 lock (FrontBuffer)
                 {
                     FrontBuffer.ClearBuffer();

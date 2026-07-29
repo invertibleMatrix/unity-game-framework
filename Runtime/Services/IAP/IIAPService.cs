@@ -15,6 +15,14 @@ namespace AK.Services
 		bool IsInitialized { get; }
 
 		/// <summary>
+		/// Fired when a purchase is confirmed by the store WITHOUT a matching PurchaseAsync call -
+		/// i.e. restored, deferred (e.g. Ask-to-Buy), or promotional purchases. Subscribing to this
+		/// is the grant path for those orders; otherwise they are confirmed into the void and the
+		/// player receives nothing.
+		/// </summary>
+		event System.Action<IAPPurchaseResult> OnExternalPurchaseConfirmed;
+
+		/// <summary>
 		/// Initializes the IAP service with the given product definitions.
 		/// Must be called before any other operations.
 		/// </summary>

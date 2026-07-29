@@ -36,7 +36,7 @@ namespace AK.Services.Ads.Providers
 		private bool _isInitialized;
 		private bool _userCanTrack = true;
 		private bool _userUnderAge = false;
-		private List<string> _testDeviceIds = new(){"4CC6FC5A960785DC366E5E022B91C409"};
+		private List<string> _testDeviceIds = new();
 
 		// Ad references by placement ID
 		private readonly Dictionary<string, AdMobAdInfo> _loadedAds = new();
@@ -109,9 +109,10 @@ namespace AK.Services.Ads.Providers
 				return true;
 #else
 				await UniTask.CompletedTask;
-				Debug.LogWarning($"{TAG} AdMob not enabled or not on supported platform");
-				_isInitialized = true;
-				return true;
+				// Report honestly: pretending to be initialized makes AdService route real load/show
+				// calls here, all failing with misleading NoFill/UnsupportedAdType errors.
+				Debug.LogWarning($"{TAG} AdMob not enabled or not on supported platform - provider stays uninitialized");
+				return false;
 #endif
 			}
 			catch (Exception e)
@@ -335,9 +336,11 @@ namespace AK.Services.Ads.Providers
 					return;
 				}
 
-				adInfo.RewardedAd = ad;
-				adInfo.LoadTime = DateTime.UtcNow;
-				Debug.Log($"{TAG} Loaded rewarded ad for {adInfo.PlacementId}");
+					// Destroy the previous native ad before overwriting, or it leaks.
+					adInfo.RewardedAd?.Destroy();
+					adInfo.RewardedAd = ad;
+					adInfo.LoadTime = DateTime.UtcNow;
+					Debug.Log($"{TAG} Loaded rewarded ad for {adInfo.PlacementId}");
 				tcs.TrySetResult(AdLoadResult.Succeeded(adInfo.PlacementId, AdType.Rewarded));
 			});
 
@@ -360,8 +363,9 @@ namespace AK.Services.Ads.Providers
 					return;
 				}
 
-				adInfo.InterstitialAd = ad;
-				adInfo.LoadTime = DateTime.UtcNow;
+					adInfo.InterstitialAd?.Destroy();
+					adInfo.InterstitialAd = ad;
+					adInfo.LoadTime = DateTime.UtcNow;
 				Debug.Log($"{TAG} Loaded interstitial ad for {adInfo.PlacementId}");
 				tcs.TrySetResult(AdLoadResult.Succeeded(adInfo.PlacementId, AdType.Interstitial));
 			});
@@ -385,8 +389,9 @@ namespace AK.Services.Ads.Providers
 					return;
 				}
 
-				adInfo.RewardedInterstitialAd = ad;
-				adInfo.LoadTime = DateTime.UtcNow;
+					adInfo.RewardedInterstitialAd?.Destroy();
+					adInfo.RewardedInterstitialAd = ad;
+					adInfo.LoadTime = DateTime.UtcNow;
 				Debug.Log($"{TAG} Loaded rewarded interstitial ad for {adInfo.PlacementId}");
 				tcs.TrySetResult(AdLoadResult.Succeeded(adInfo.PlacementId, AdType.RewardedInterstitial));
 			});
@@ -410,8 +415,9 @@ namespace AK.Services.Ads.Providers
 					return;
 				}
 
-				adInfo.AppOpenAd = ad;
-				adInfo.LoadTime = DateTime.UtcNow;
+					adInfo.AppOpenAd?.Destroy();
+					adInfo.AppOpenAd = ad;
+					adInfo.LoadTime = DateTime.UtcNow;
 				Debug.Log($"{TAG} Loaded app open ad for {adInfo.PlacementId}");
 				tcs.TrySetResult(AdLoadResult.Succeeded(adInfo.PlacementId, AdType.AppOpen));
 			});
@@ -423,7 +429,9 @@ namespace AK.Services.Ads.Providers
 		{
 			var tcs = new UniTaskCompletionSource<AdLoadResult>();
 
-			// Create banner view
+			// Destroy any previous banner before creating a new one, or the native view leaks.
+			adInfo.BannerView?.Destroy();
+
 			var adSize = GoogleMobileAds.Api.AdSize.GetCurrentOrientationAnchoredAdaptiveBannerAdSizeWithWidth(GoogleMobileAds.Api.AdSize.FullWidth);
 			adInfo.BannerView = new GoogleMobileAds.Api.BannerView(adInfo.AdUnitId, adSize, MapBannerPosition(_currentBannerPosition));
 
@@ -458,13 +466,17 @@ namespace AK.Services.Ads.Providers
 			var tcs = new UniTaskCompletionSource<AdResult>();
 			bool rewardEarned = false;
 
-			// Register events before showing
-			adInfo.RewardedAd.OnAdFullScreenContentClosed += () =>
-			{
-				adInfo.RewardedAd?.Destroy();
-				adInfo.RewardedAd = null;
-				tcs.TrySetResult(AdResult.Succeeded(adInfo.PlacementId, AdType.Rewarded, ProviderName, rewardEarned ? 0.01 : 0));
-			};
+				// Register events before showing
+				adInfo.RewardedAd.OnAdFullScreenContentClosed += () =>
+				{
+					adInfo.RewardedAd?.Destroy();
+					adInfo.RewardedAd = null;
+
+					// Only the reward callback earns the reward - closing early means no reward.
+					tcs.TrySetResult(rewardEarned
+						? AdResult.Succeeded(adInfo.PlacementId, AdType.Rewarded, ProviderName, rewardGranted: true)
+						: AdResult.Failed(adInfo.PlacementId, AdType.Rewarded, AdErrorType.UserCancelled, "Ad closed before the reward was earned"));
+				};
 
 			adInfo.RewardedAd.OnAdFullScreenContentFailed += (error) =>
 			{
@@ -521,12 +533,16 @@ namespace AK.Services.Ads.Providers
 			var tcs = new UniTaskCompletionSource<AdResult>();
 			bool rewardEarned = false;
 
-			adInfo.RewardedInterstitialAd.OnAdFullScreenContentClosed += () =>
-			{
-				adInfo.RewardedInterstitialAd?.Destroy();
-				adInfo.RewardedInterstitialAd = null;
-				tcs.TrySetResult(AdResult.Succeeded(adInfo.PlacementId, AdType.RewardedInterstitial, ProviderName, rewardEarned ? 0.01 : 0));
-			};
+				adInfo.RewardedInterstitialAd.OnAdFullScreenContentClosed += () =>
+				{
+					adInfo.RewardedInterstitialAd?.Destroy();
+					adInfo.RewardedInterstitialAd = null;
+
+					// Only the reward callback earns the reward - closing early means no reward.
+					tcs.TrySetResult(rewardEarned
+						? AdResult.Succeeded(adInfo.PlacementId, AdType.RewardedInterstitial, ProviderName, rewardGranted: true)
+						: AdResult.Failed(adInfo.PlacementId, AdType.RewardedInterstitial, AdErrorType.UserCancelled, "Ad closed before the reward was earned"));
+				};
 
 			adInfo.RewardedInterstitialAd.OnAdFullScreenContentFailed += (error) =>
 			{

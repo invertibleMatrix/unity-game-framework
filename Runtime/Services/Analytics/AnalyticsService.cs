@@ -21,9 +21,20 @@ namespace AK.Services
 
 		private readonly List<IAnalyticsProvider> _providers = new();
 
-		private AnalyticsMeta _analyticsMeta;
+		[Tooltip("Event definitions metadata. Assign in the inspector or via SetMeta before Initialize.")]
+		[SerializeField] private AnalyticsMeta _analyticsMeta;
 
 		public bool IsAnalyticsEnabled => _isEnabled;
+
+		/// <summary>
+		/// Assigns the analytics metadata (event definitions). Required for UID-based tracking;
+		/// without it <see cref="TrackEvent(UID, Dictionary{ParameterName, object})"/> cannot
+		/// resolve event definitions.
+		/// </summary>
+		public void SetMeta(AnalyticsMeta analyticsMeta)
+		{
+			_analyticsMeta = analyticsMeta;
+		}
 
 		/// <summary>
 		/// Registers an analytics provider.
@@ -91,6 +102,12 @@ namespace AK.Services
 		{
 			if (!_isEnabled || !_isInitialized)
 			{
+				return;
+			}
+
+			if (_analyticsMeta == null)
+			{
+				Debug.LogError("[AnalyticsService] No AnalyticsMeta assigned - call SetMeta() or assign it in the inspector. Event dropped: " + eventID);
 				return;
 			}
 

@@ -93,11 +93,13 @@ namespace AK.CoreDomain.Ads
 				return AndroidAdUnitID;
 #elif UNITY_IOS
 				return IOSAdUnitID;
+#else
+				// Editor/standalone: fall back to the Android ID so placements resolve in testing.
+				return AndroidAdUnitID;
 #endif
-				return "";
 			}
 		}
-		
+
 		public string AlternateAdUnitID
 		{
 			get
@@ -106,8 +108,9 @@ namespace AK.CoreDomain.Ads
 				return AndroidAlternateAdUnitID;
 #elif UNITY_IOS
 				return IOSAlternateAdUnitID;
+#else
+				return AndroidAlternateAdUnitID;
 #endif
-				return "";
 			}
 		}
 
@@ -184,9 +187,16 @@ namespace AK.CoreDomain.Ads
 		/// <returns>The ad unit ID to use.</returns>
 		public string GetAdUnitID(bool useAlternate = false)
 		{
+#if UNITY_IOS
+			return useAlternate && !string.IsNullOrEmpty(IOSAlternateAdUnitID)
+				? IOSAlternateAdUnitID
+				: IOSAdUnitID;
+#else
+			// Android, and editor/standalone fallback.
 			return useAlternate && !string.IsNullOrEmpty(AndroidAlternateAdUnitID)
 				? AndroidAlternateAdUnitID
 				: AndroidAdUnitID;
+#endif
 		}
 
 		/// <summary>

@@ -422,7 +422,9 @@ namespace AK.Systems
 			if (HasChannel)
 			{
 				Channel.Canvas.overrideSorting = false;
-				Channel.Canvas.sortingOrder = (int)Channel.SortOrder;
+				// Do NOT reset Canvas.sortingOrder here - the UISystem owns it
+				// (base channel order + stack depth). Resetting to the flat channel
+				// order would re-layer this screen under screens it should sit above.
 			}
 		}
 
@@ -559,6 +561,17 @@ namespace AK.Systems
 		/// </summary>
 		internal async UniTask InternalHideAsync(bool immediate = false, CancellationToken ct = default)
 		{
+			// Never completed a show (e.g. show animation cancelled) - no hide hooks,
+			// just settle state. Firing OnPrepareHide/OnHide here would run hide logic
+			// on a view that was never shown.
+			if (!_isResourcesRegistered)
+			{
+				if (CanvasGroup != null) CanvasGroup.alpha = 0f;
+				gameObject.SetActive(false);
+				IsVisible = false;
+				return;
+			}
+
 			OnPrepareHide();
 
 			if (_showBackgroundOverlay) HideBackgroundOverlay();
@@ -813,16 +826,18 @@ namespace AK.Systems
 
 		public sealed override void SetContext(UIContext context)
 		{
-			if (context == null && Context == null)
+			if (context == null)
 			{
-				base.Context = new TContext();
+				// Null semantics: CLEAR any existing context (the system passes null on
+				// resume/reset paths and expects the stale context gone). If there is no
+				// context at all, provide a fresh default so views never see null after a show.
+				base.Context = Context == null ? new TContext() : null;
 			}
-
-			if (context is TContext typedContext)
+			else if (context is TContext typedContext)
 			{
 				base.Context = typedContext;
 			}
-			else if (context != null)
+			else
 			{
 				Debug.LogError(
 					$"Invalid context type for view '{gameObject.name}'. Expected {typeof(TContext).Name} but got {context.GetType().Name}.",

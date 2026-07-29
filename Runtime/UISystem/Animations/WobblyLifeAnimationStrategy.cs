@@ -173,18 +173,21 @@ namespace AK.Systems.Animations
             var breathingScale = Vector3.one * (1f + _breathingIntensity);
             _breathingTween = target.DOScale(breathingScale, 2f / _heartbeatRate)
                 .SetEase(Ease.InOutSine)
-                .SetLoops(-1, LoopType.Yoyo);
-            
+                .SetLoops(-1, LoopType.Yoyo)
+                .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
+
             // Heartbeat - pulsing life force
             var heartbeatScale = Vector3.one * (1f + _breathingIntensity * 0.3f);
             _heartbeatTween = target.DOScale(heartbeatScale, 0.3f / _heartbeatRate)
                 .SetEase(Ease.OutBack)
                 .SetLoops(-1, LoopType.Restart)
-                .SetDelay(1f / _heartbeatRate);
-            
-            // Base wobble - constant life movement
+                .SetDelay(1f / _heartbeatRate)
+                .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
+
+            // Base wobble - constant life movement (999s shake = effectively infinite)
             var wobbleIntensity = GetLifeFormWobble();
-            _lifeTween = target.DOShakeRotation(999f, new Vector3(0, 0, wobbleIntensity), (int)GetLifeFormSpeed(), 0, true);
+            _lifeTween = target.DOShakeRotation(999f, new Vector3(0, 0, wobbleIntensity), (int)GetLifeFormSpeed(), 0, true)
+                .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
             
             // Personality traits
             if (_addNervousTwitches) {
@@ -259,7 +262,8 @@ namespace AK.Systems.Animations
                 .Append(target.DOLocalRotate(new Vector3(0, 0, Random.Range(-5f, 5f)), 0.1f).SetEase(Ease.InOutSine))
                 .Append(target.DOLocalRotate(Vector3.zero, 0.1f).SetEase(Ease.InOutSine))
                 .SetLoops(-1, LoopType.Restart)
-                .SetDelay(Random.Range(0.5f, 2f) / _twitchFrequency);
+                .SetDelay(Random.Range(0.5f, 2f) / _twitchFrequency)
+                .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
         }
 
         private void StartIdleDancing(RectTransform target)
@@ -268,24 +272,29 @@ namespace AK.Systems.Animations
             
             switch (_danceStyle) {
                 case DanceStyle.GentleSway:
-                    target.DOShakePosition(999f, new Vector2(10, 0), 2, 0, true);
+                    target.DOShakePosition(999f, new Vector2(10, 0), 2, 0, true)
+                        .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
                     break;
                 case DanceStyle.BouncyBop:
-                    target.DOShakePosition(999f, new Vector2(0, 15), 3, 0, true);
+                    target.DOShakePosition(999f, new Vector2(0, 15), 3, 0, true)
+                        .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
                     break;
                 case DanceStyle.CircularSwirl:
                     DOTween.Sequence()
                         .Append(target.DOLocalRotate(new Vector3(0, 0, 5), 1f).SetEase(Ease.InOutSine))
                         .Append(target.DOLocalRotate(new Vector3(0, 0, -5), 1f).SetEase(Ease.InOutSine))
                         .SetLoops(-1, LoopType.Restart)
+                        .SetLink(target.gameObject, LinkBehaviour.KillOnDisable)
                         .Play();
                     break;
                 case DanceStyle.RandomTwitch:
-                    target.DOShakePosition(999f, new Vector2(20, 20), 5, 0, true);
+                    target.DOShakePosition(999f, new Vector2(20, 20), 5, 0, true)
+                        .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
                     break;
                 case DanceStyle.RhythmicPulse:
                     var pulseScale = Vector3.one * 1.1f;
-                    target.DOScale(pulseScale, 0.5f).SetEase(Ease.InOutSine).SetLoops(-1, LoopType.Yoyo);
+                    target.DOScale(pulseScale, 0.5f).SetEase(Ease.InOutSine).SetLoops(-1, LoopType.Yoyo)
+                        .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
                     break;
             }
         }
@@ -298,10 +307,13 @@ namespace AK.Systems.Animations
                 .AppendInterval(Random.Range(2f, 5f))
                 .AppendCallback(() => {
                     // Random emotional burst
-                    target.DOScale(Vector3.one * (1f + _excitementLevel), 0.2f).SetEase(Ease.OutBack);
-                    target.DOShakeRotation(0.3f, new Vector3(0, 0, 10 * _excitementLevel), 5, 0, true);
+                    target.DOScale(Vector3.one * (1f + _excitementLevel), 0.2f).SetEase(Ease.OutBack)
+                        .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
+                    target.DOShakeRotation(0.3f, new Vector3(0, 0, 10 * _excitementLevel), 5, 0, true)
+                        .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
                 })
                 .SetLoops(-1, LoopType.Restart)
+                .SetLink(target.gameObject, LinkBehaviour.KillOnDisable)
                 .Play();
         }
 
@@ -313,10 +325,13 @@ namespace AK.Systems.Animations
                 .AppendInterval(Random.Range(3f, 8f))
                 .AppendCallback(() => {
                     // Jump for attention
-                    target.DOAnchorPos(target.anchoredPosition + Vector2.up * 20, 0.2f).SetEase(Ease.OutQuad);
-                    target.DOAnchorPos(Vector2.zero, 0.2f).SetEase(Ease.InBounce).SetDelay(0.2f);
+                    target.DOAnchorPos(target.anchoredPosition + Vector2.up * 20, 0.2f).SetEase(Ease.OutQuad)
+                        .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
+                    target.DOAnchorPos(Vector2.zero, 0.2f).SetEase(Ease.InBounce).SetDelay(0.2f)
+                        .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
                 })
                 .SetLoops(-1, LoopType.Restart)
+                .SetLink(target.gameObject, LinkBehaviour.KillOnDisable)
                 .Play();
         }
 
@@ -324,7 +339,8 @@ namespace AK.Systems.Animations
         {
             if (!_addJigglePhysics) return;
             
-            target.DOShakeScale(999f, Vector3.one * _jiggleAmount * 0.1f, 10, 0, true);
+            target.DOShakeScale(999f, Vector3.one * _jiggleAmount * 0.1f, 10, 0, true)
+                .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
         }
 
         private void StartLifeSounds(RectTransform target)
@@ -337,6 +353,7 @@ namespace AK.Systems.Animations
                     Debug.Log("🔊 Life sound would play here");
                 })
                 .SetLoops(-1, LoopType.Restart)
+                .SetLink(target.gameObject, LinkBehaviour.KillOnDisable)
                 .Play();
         }
     }

@@ -25,6 +25,13 @@ namespace AK.Systems
         [ShowIf("_role", CameraRole.Overlay)]
         [SerializeField] private CameraType _baseCameraType;
 
+        [Header("Virtual Camera (Cinemachine)")]
+        [Tooltip("For Virtual cameras: priority while on standby. The live camera gets BasePriority + the system's active boost.")]
+        [SerializeField] private int _basePriority = 10;
+
+        [Tooltip("For Virtual cameras: the fallback the system activates when the live camera goes away.")]
+        [SerializeField] private bool _isDefault;
+
         [Tooltip("The camera prefab to instantiate.")]
         [SerializeField] private GameObject _prefab;
 
@@ -35,6 +42,8 @@ namespace AK.Systems
         public CameraRole Role => _role;
         public int LayerOrder => _layerOrder;
         public CameraType BaseCameraType => _baseCameraType;
+        public int BasePriority => _basePriority;
+        public bool IsDefault => _isDefault;
         public GameObject Prefab => _prefab;
         public bool SpawnOnStart => _spawnOnStart;
     }

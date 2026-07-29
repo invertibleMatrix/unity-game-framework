@@ -91,8 +91,9 @@ namespace AK.Services
 			_adService.SetUserConsent(_userCanTrack);
 			_adService.SetUserUnderAge(_userUnderAge);
 
-			// Add AdMob provider if enabled
-#if UNITY_ANDROID || UNITY_IOS
+			// Add AdMob provider if enabled and available (requires the ADMOB_ENABLED define,
+			// otherwise the provider would report "initialized" without the SDK present).
+#if ADMOB_ENABLED && (UNITY_ANDROID || UNITY_IOS)
 			if (_useAdMob)
 			{
 				_adService.AddProvider(new AdMobAdProvider());
@@ -100,10 +101,10 @@ namespace AK.Services
 #endif
 
 			// Add null provider for testing/fallback
-			// if (_useNullProviderAsFallback || Application.isEditor && _simulateAdsInEditor)
-			// {
-			// 	_adService.AddProvider(new NullAdProvider(_simulateAdsInEditor));
-			// }
+			if (_useNullProviderAsFallback || (Application.isEditor && _simulateAdsInEditor))
+			{
+				_adService.AddProvider(new NullAdProvider(_simulateAdsInEditor));
+			}
 
 			return _adService;
 		}

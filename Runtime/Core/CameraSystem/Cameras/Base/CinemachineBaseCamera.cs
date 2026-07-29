@@ -15,6 +15,9 @@ namespace AK.Systems
 
 		public virtual CinemachineCamera ActiveVirtualCam => _cinemachineBrain.ActiveVirtualCamera as CinemachineCamera;
 
+		/// <inheritdoc />
+		public CinemachineBrain Brain => _cinemachineBrain;
+
 		protected override void Awake()
 		{
 			base.Awake();

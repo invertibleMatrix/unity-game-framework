@@ -65,7 +65,7 @@ namespace AK.CoreDomain.Analytics
 			if (!IsActive) return false;
 			if (SamplingRate >= 1f) return true;
 			if (SamplingRate <= 0f) return false;
-			return false;
+			return UnityEngine.Random.value < SamplingRate;
 		}
 
 		/// <summary>

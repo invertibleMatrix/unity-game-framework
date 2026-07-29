@@ -19,7 +19,15 @@ namespace AK.Services
 		private readonly ICostService   _costService;
 		private readonly IRewardService _rewardService;
 
+		// Items purchased with immediateCredit: false, waiting to be granted later.
+		private readonly List<IPurchasable> _pendingCredit = new();
+
 		public IIAPService IAPService => _iapService;
+
+		/// <summary>
+		/// Number of purchased items whose rewards are still pending (immediateCredit was false).
+		/// </summary>
+		public int PendingCreditCount => _pendingCredit.Count;
 
 		/// <summary>
 		/// Create a PurchaseService.
@@ -52,8 +60,15 @@ namespace AK.Services
 			}
 
 			// IAP flow — when the item has a ProductID and IAP is available
-			if (!string.IsNullOrEmpty(item.ProductID) && _iapService != null)
+			if (!string.IsNullOrEmpty(item.ProductID))
 			{
+				if (_iapService == null)
+				{
+					// Never silently charge currency for a store product.
+					Debug.LogError($"[PurchaseService] Item '{item.DisplayName}' has a ProductID but no IIAPService was provided.");
+					return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.IAPNotInitialized };
+				}
+
 				return await HandleInAppPurchase(item, immediateCredit);
 			}
 
@@ -96,11 +111,39 @@ namespace AK.Services
 
 		/// <summary>
 		/// Grant rewards via the RewardService using the IPurchasable.CollectRewards interface method.
+		/// With immediateCredit=false the item is queued for a later <see cref="GrantPendingCredits"/>
+		/// instead of vanishing silently.
 		/// </summary>
 		private void GrantRewards(IPurchasable item, bool immediateCredit)
 		{
-			if (!immediateCredit) return;
+			if (!immediateCredit)
+			{
+				_pendingCredit.Add(item);
+				return;
+			}
 
+			GrantItemRewards(item);
+		}
+
+		/// <summary>
+		/// Grants all rewards that were deferred with immediateCredit=false. Returns the number of
+		/// items credited.
+		/// </summary>
+		public int GrantPendingCredits()
+		{
+			var count = _pendingCredit.Count;
+
+			foreach (var item in _pendingCredit)
+			{
+				GrantItemRewards(item);
+			}
+
+			_pendingCredit.Clear();
+			return count;
+		}
+
+		private void GrantItemRewards(IPurchasable item)
+		{
 			List<IReward> rewards = new();
 			item.CollectRewards(rewards);
 

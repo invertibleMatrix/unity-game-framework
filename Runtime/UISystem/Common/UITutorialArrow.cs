@@ -138,13 +138,23 @@ namespace AK.Systems
 				return;
 			}
 
+			// Capture the CURRENT arrow instance - ShowArrow() calls DismissArrow() and then
+			// reassigns the fields, so capturing the field in the closure would destroy the
+			// NEW arrow when the OLD arrow's dismiss tween completes.
+			var dismissedInstance = _arrowInstance;
+
 			_dismissTween = _arrowRect.DOScale(Vector3.zero, _dismissDuration)
 				.SetEase(Ease.InBack)
 				.OnComplete(() =>
 				{
-					if (_arrowInstance != null)
+					if (dismissedInstance != null)
 					{
-						Destroy(_arrowInstance);
+						Destroy(dismissedInstance);
+					}
+
+					// Only clear the fields if nobody replaced them meanwhile.
+					if (ReferenceEquals(_arrowInstance, dismissedInstance))
+					{
 						_arrowInstance = null;
 						_arrowRect = null;
 						_arrowImage = null;
