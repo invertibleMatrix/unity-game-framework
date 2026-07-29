@@ -163,9 +163,14 @@ namespace AK.Services
 			}
 			catch (TimeoutException)
 			{
-				Debug.LogError($"[UnityIAPService] Purchase timed out for: {productId}");
-				return IAPPurchaseResult.Failed(productId, IAPFailureType.StoreError,
-					"The store did not respond in time.");
+				// NOT a definite failure: the store may still confirm this purchase, in which
+				// case HandlePurchaseConfirmed finds no PurchaseAsync in flight and grants it
+				// via OnExternalPurchaseConfirmed. Report a distinct Timeout so callers can
+				// show "processing" instead of a false "purchase failed".
+				Debug.LogWarning($"[UnityIAPService] Purchase timed out for: {productId} - " +
+				                 "the store may still confirm it via OnExternalPurchaseConfirmed.");
+				return IAPPurchaseResult.Failed(productId, IAPFailureType.Timeout,
+					"The store did not respond in time. The purchase may still complete.");
 			}
 			finally
 			{

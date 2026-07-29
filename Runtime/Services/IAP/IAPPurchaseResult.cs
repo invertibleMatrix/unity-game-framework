@@ -85,8 +85,15 @@
 		/// <summary>IAP service is not initialized.</summary>
 		NotInitialized,
 
+		/// <summary>
+		/// The store did not respond in time. NOT a definite failure: the purchase may still
+		/// complete, in which case it is delivered via OnExternalPurchaseConfirmed.
+		/// Callers should present a "processing" state, not a "purchase failed" state.
+		/// </summary>
+		Timeout,
+
 		/// <summary>Unknown or unclassified failure.</summary>
 		Unknown
-	}
+}
 }
 

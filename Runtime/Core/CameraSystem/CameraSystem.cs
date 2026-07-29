@@ -666,6 +666,7 @@ namespace AK.Systems
 			// Pre-scan the scene once: a pre-placed scene camera with the same CameraType must
 			// suppress the startup spawn. Both bind in Start, so dictionary checks alone race.
 			BaseCamera[] sceneCameras = null;
+			VirtualGameCamera[] sceneVirtualCameras = null;
 
 			foreach (var def in _cameraRegistry.GetAllObjects())
 			{
@@ -677,27 +678,42 @@ namespace AK.Systems
 				if (hasType && _camerasByUID.ContainsKey(def.CameraType.Id)) continue;
 
 				// Pre-placed in the scene but not yet bound (Start order not guaranteed)?
-				if (hasType && SceneHasCameraWithType(def.CameraType, ref sceneCameras)) continue;
+				if (hasType && SceneHasCameraWithType(def.CameraType, ref sceneCameras, ref sceneVirtualCameras)) continue;
 
 				// Spawn THIS definition (a type-less definition must not resolve to "first in registry").
 				SpawnFromDefinition<IGameCamera>(def);
 			}
 		}
 
-		private static bool SceneHasCameraWithType(CameraType cameraType, ref BaseCamera[] sceneCameras)
+		private static bool SceneHasCameraWithType(CameraType cameraType, ref BaseCamera[] sceneCameras,
+			ref VirtualGameCamera[] sceneVirtualCameras)
 		{
 			sceneCameras ??= FindObjectsByType<BaseCamera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+			sceneVirtualCameras ??= FindObjectsByType<VirtualGameCamera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 
 			foreach (var cam in sceneCameras)
 			{
-				if (cam != null && cam.CameraTypeUID != null && !cam.CameraTypeUID.IsEmpty() &&
-				    cam.CameraTypeUID.Id == cameraType.Id)
+				if (cam != null && HasCameraType(cam.CameraTypeUID, cameraType))
+				{
+					return true;
+				}
+			}
+
+			foreach (var cam in sceneVirtualCameras)
+			{
+				if (cam != null && HasCameraType(cam.CameraTypeUID, cameraType))
 				{
 					return true;
 				}
 			}
 
 			return false;
+		}
+
+		private static bool HasCameraType(UID cameraTypeUID, CameraType cameraType)
+		{
+			return cameraTypeUID != null && !cameraTypeUID.IsEmpty() &&
+			       cameraTypeUID.Id == cameraType.Id;
 		}
 
 		private string GetBaseCameraKey(IGameCamera camera)

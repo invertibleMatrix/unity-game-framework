@@ -163,6 +163,7 @@ namespace AK.Services
 				IAPFailureType.PaymentDeclined         => PurchaseStatus.ErrorCode.IAPPaymentDeclined,
 				IAPFailureType.StoreError              => PurchaseStatus.ErrorCode.IAPStoreError,
 				IAPFailureType.DuplicateTransaction    => PurchaseStatus.ErrorCode.IAPDuplicateTransaction,
+				IAPFailureType.Timeout                 => PurchaseStatus.ErrorCode.IAPTimeout,
 				IAPFailureType.ExistingPurchasePending => PurchaseStatus.ErrorCode.IAPStoreError,
 				_                                      => PurchaseStatus.ErrorCode.IAPUnknownError
 			};

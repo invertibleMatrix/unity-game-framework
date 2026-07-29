@@ -94,6 +94,8 @@ namespace AK.Utilities
 
 		private Mode        _mode = Mode.None;
 		private int         _intervalRemainingCount;
+
+		private int         _intervalFiredCount;
 		private Action<int> _intervalOnInterval;
 		private Action      _intervalOnComplete;
 
@@ -196,6 +198,7 @@ namespace AK.Utilities
 			TickInterval = interval;
 			_mode = Mode.Interval;
 			_intervalRemainingCount = repeatCount;
+			_intervalFiredCount = 0;
 			_intervalOnInterval = onInterval;
 			_intervalOnComplete = onComplete;
 
@@ -401,11 +404,10 @@ namespace AK.Utilities
 		private async UniTask RunIntervalAsync(TimeSpan interval, CancellationToken token)
 		{
 			State = TimerState.Running;
-			int firedCount = 0;
 
 			try
 			{
-				while (_intervalRemainingCount < 0 || firedCount < _intervalRemainingCount)
+				while (_intervalRemainingCount < 0 || _intervalFiredCount < _intervalRemainingCount)
 				{
 					if (token.IsCancellationRequested)
 						return;
@@ -414,8 +416,8 @@ namespace AK.Utilities
 					await UniTask.Delay(interval, delayType, cancellationToken: token);
 					if (token.IsCancellationRequested) return;
 
-					firedCount++;
-					InvokeSafe(_intervalOnInterval, firedCount);
+					_intervalFiredCount++;
+					InvokeSafe(_intervalOnInterval, _intervalFiredCount);
 				}
 
 				// Consume the remaining count so a later Resume() starts fresh.
