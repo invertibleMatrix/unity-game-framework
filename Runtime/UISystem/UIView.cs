@@ -826,18 +826,25 @@ namespace AK.Systems
 
 		public sealed override void SetContext(UIContext context)
 		{
-			if (context == null)
+			// Null semantics:
+			//  - If the view already has a context, KEEP it. This is the parent -> child
+			//    sharing path: a parent passes its own context down to a child (static or
+			//    dynamic) by showing the child with no context of its own, and the child
+			//    retains whatever it was given. It is also the resume path: a paused
+			//    fragment resurfacing from under another view keeps its data.
+			//  - If the view has NO context yet, give it a fresh default so a typed view
+			//    never observes null after a show.
+			// Context is cleared on full teardown via NullifyContext(), not here.
+			if (context == null && Context == null)
 			{
-				// Null semantics: CLEAR any existing context (the system passes null on
-				// resume/reset paths and expects the stale context gone). If there is no
-				// context at all, provide a fresh default so views never see null after a show.
-				base.Context = Context == null ? new TContext() : null;
+				base.Context = new TContext();
 			}
-			else if (context is TContext typedContext)
+
+			if (context is TContext typedContext)
 			{
 				base.Context = typedContext;
 			}
-			else
+			else if (context != null)
 			{
 				Debug.LogError(
 					$"Invalid context type for view '{gameObject.name}'. Expected {typeof(TContext).Name} but got {context.GetType().Name}.",
