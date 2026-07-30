@@ -77,7 +77,7 @@ namespace AK.Systems
 		/// </summary>
 		private readonly HashSet<UIView> _closingViews = new();
 
-		private readonly ViewPool _viewPool = new();
+		private ViewPool _viewPool;
 
 		// =================================================================
 		// VIEW RECORD
@@ -116,6 +116,8 @@ namespace AK.Systems
 
 		private void Awake()
 		{
+			_viewPool = new ViewPool(_viewsContainer);
+
 			// Ensure the default channel stack always exists
 			_channelStacks[UIChannel.HUD] = new Stack<UIView>();
 

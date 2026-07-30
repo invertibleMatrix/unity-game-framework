@@ -5,17 +5,17 @@ using UnityEngine;
 
 namespace AK.Systems
 {
-	/// <summary>
-	/// Object pool for UIViews. Generalised from V1's FragmentPool — works for any UIView.
-	/// Released views are parked under a dedicated hidden root (not the scene root), have their
-	/// interaction state restored, and have leftover tweens killed - so a pooled view always
-	/// comes back sane.
-	/// </summary>
 	public class ViewPool
 	{
 		private readonly Dictionary<PoolKey, Stack<UIView>> _pools = new();
 
-		private Transform _poolRoot;
+		private readonly Transform _viewsContainer;
+		private          Transform _poolRoot;
+
+		public ViewPool(Transform viewsContainer)
+		{
+			_viewsContainer = viewsContainer;
+		}
 
 		private Transform PoolRoot
 		{
@@ -25,8 +25,9 @@ namespace AK.Systems
 				{
 					var go = new GameObject("[UIViewPool]");
 					go.SetActive(false);
-					UnityEngine.Object.DontDestroyOnLoad(go);
-					_poolRoot = go.transform;
+					var t = go.transform;
+					t.SetParent(_viewsContainer, false);
+					_poolRoot = t;
 				}
 
 				return _poolRoot;
