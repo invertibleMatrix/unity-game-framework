@@ -103,7 +103,10 @@ namespace AK.Services.Ads.Providers
 			}
 
 			Debug.Log($"{TAG} Simulated show success for {placementId} ({adType})");
-			return AdResult.Succeeded(placementId, adType, ProviderName);
+
+			// A simulated rewarded ad always plays to completion, so the reward is earned.
+			var isRewarded = adType == AdType.Rewarded || adType == AdType.RewardedInterstitial;
+			return AdResult.Succeeded(placementId, adType, ProviderName, rewardGranted: isRewarded);
 		}
 
 		public async UniTask<AdResult> ShowBannerAsync(string placementId, string adUnitId, BannerPosition position)

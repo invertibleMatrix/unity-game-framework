@@ -509,18 +509,7 @@ namespace AK.Services.Analytics.Providers
 		/// </summary>
 		private static string ToSnakeCase(string input)
 		{
-			if (string.IsNullOrEmpty(input))
-			{
-				return input;
-			}
-
-			var result = System.Text.RegularExpressions.Regex.Replace(
-				input,
-				"(?<!^)([A-Z][a-z]|[a-zA-Z])",
-				"_$1"
-			).ToLower();
-
-			return result.TrimStart('_');
+			return AnalyticsNameUtility.ToSnakeCase(input);
 		}
 	}
 }

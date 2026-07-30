@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -37,22 +38,26 @@ namespace AK.Utilities
 		/// <returns>Formatted string representation</returns>
 		public static string FormatAbbreviated(long number, int decimalPlaces = 1)
 		{
-			if (number < 1000)
-				return number.ToString();
+			// Math.Abs on the double (not the long) to survive long.MinValue.
+			double magnitude = Math.Abs((double)number);
 
-			// Determine the appropriate suffix
+			if (magnitude < 1000)
+				return number.ToString(CultureInfo.InvariantCulture);
+
+			// Determine the appropriate suffix on the magnitude, then reapply the sign.
 			int suffixIndex = 0;
-			double scaledNumber = number;
 
-			while (scaledNumber >= 1000 && suffixIndex < Suffixes.Length - 1)
+			while (magnitude >= 1000 && suffixIndex < Suffixes.Length - 1)
 			{
-				scaledNumber /= 1000;
+				magnitude /= 1000;
 				suffixIndex++;
 			}
 
-			// Format with specified decimal places
+			double scaledNumber = number / Math.Pow(1000, suffixIndex);
+
+			// Format with specified decimal places (invariant: keeps '.' and round-trips everywhere)
 			string format = $"0.{new string('0', decimalPlaces)}";
-			string formatted = scaledNumber.ToString(format);
+			string formatted = scaledNumber.ToString(format, CultureInfo.InvariantCulture);
 
 			// Remove trailing zeros and decimal point if not needed
 			formatted = formatted.TrimEnd('0').TrimEnd('.');
@@ -82,7 +87,7 @@ namespace AK.Utilities
 		public static string FormatAbbreviated(double number, int decimalPlaces = 1)
 		{
 			if (Math.Abs(number) < 1000)
-				return number.ToString($"F{decimalPlaces}").TrimEnd('0').TrimEnd('.');
+				return number.ToString($"F{decimalPlaces}", CultureInfo.InvariantCulture).TrimEnd('0').TrimEnd('.');
 
 			// Determine the appropriate suffix
 			int suffixIndex = 0;
@@ -97,9 +102,9 @@ namespace AK.Utilities
 			// Apply the scaling to the original number (preserving sign)
 			scaledNumber = number / Math.Pow(1000, suffixIndex);
 
-			// Format with specified decimal places
+			// Format with specified decimal places (invariant: keeps '.' and round-trips everywhere)
 			string format = $"0.{new string('0', decimalPlaces)}";
-			string formatted = scaledNumber.ToString(format);
+			string formatted = scaledNumber.ToString(format, CultureInfo.InvariantCulture);
 
 			// Remove trailing zeros and decimal point if not needed
 			formatted = formatted.TrimEnd('0').TrimEnd('.');
@@ -118,26 +123,27 @@ namespace AK.Utilities
 			if (string.IsNullOrEmpty(abbreviatedNumber))
 				return 0;
 
-			abbreviatedNumber = abbreviatedNumber.Trim().ToUpper();
+			abbreviatedNumber = abbreviatedNumber.Trim().ToUpperInvariant();
 
-			// Find the suffix
-			string suffix = "";
+			// Find the suffix. Iterate from the highest suffix down and SKIP the empty suffix:
+			// Suffixes[0] is "" and string.EndsWith("") is always true, which previously made
+			// every input "match" suffix-less parsing and return 0 for "1.5K".
+			int suffixIndex = 0;
 			string numberPart = abbreviatedNumber;
 
-			for (int i = 0; i < Suffixes.Length; i++)
+			for (int i = Suffixes.Length - 1; i >= 1; i--)
 			{
-				if (abbreviatedNumber.EndsWith(Suffixes[i]))
+				if (abbreviatedNumber.EndsWith(Suffixes[i], StringComparison.Ordinal))
 				{
-					suffix = Suffixes[i];
-					numberPart = abbreviatedNumber.Substring(0, abbreviatedNumber.Length - suffix.Length);
+					suffixIndex = i;
+					numberPart = abbreviatedNumber.Substring(0, abbreviatedNumber.Length - Suffixes[i].Length);
 					break;
 				}
 			}
 
-			if (!double.TryParse(numberPart, out double number))
+			if (!double.TryParse(numberPart, NumberStyles.Float, CultureInfo.InvariantCulture, out double number))
 				return 0;
 
-			int suffixIndex = Array.IndexOf(Suffixes, suffix);
 			return (long)(number * Math.Pow(1000, suffixIndex));
 		}
 
@@ -190,12 +196,12 @@ namespace AK.Utilities
 			if (d < 1000d)
 			{
 				d = roundDown ? Math.Floor(d) : Math.Ceiling(d); //If d is less than 1000 we can simply return it without a suffix
-				return $"{d}";
+				return d.ToString(CultureInfo.InvariantCulture);
 			}
 
 			double shortened = ShortenDouble(d, minDecimals, maxDecimals, roundDown);
 			int e = GetExponent(d);
-			return string.Format(format, shortened, GetSuffix(e));
+			return string.Format(CultureInfo.InvariantCulture, format, shortened, GetSuffix(e));
 		}
 
 		public static double ShortenDouble(double d, int minDecimals, int maxDecimals, bool roundDown = false)
@@ -222,15 +228,16 @@ namespace AK.Utilities
 		/// </summary>
 		/// <param name="s">The string value to parse</param>
 		/// <returns>The double value of the string</returns>
+		private static readonly Regex ParsePattern = new Regex("^(-?[0-9,.]+)([a-zA-Z]+)$", RegexOptions.Compiled);
+
 		public static double Parse(string s)
 		{
-			Regex pattern = new Regex("^(-?[0-9,.]+)([a-zA-Z]+)$");
-			Match match = pattern.Match(s);
+			Match match = ParsePattern.Match(s);
 			double d = 0;
 			int e = 0;
 			if (!match.Success)
 			{
-				if (!Double.TryParse(s, out d))
+				if (!Double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out d))
 					throw new NumberFormatterException(String.Format(NumberFormatterException.PARSE_NUMERIC_VALUE_INVALID_MESSAGE,
 						s));
 				else
@@ -239,7 +246,7 @@ namespace AK.Utilities
 
 			string numericString = match.Groups[1].Value;
 			string exponentString = match.Groups[2].Value;
-			if (!Double.TryParse(numericString, out d))
+			if (!Double.TryParse(numericString, NumberStyles.Float, CultureInfo.InvariantCulture, out d))
 				throw new NumberFormatterException(String.Format(NumberFormatterException.PARSE_NUMERIC_VALUE_INVALID_MESSAGE, s));
 			if (exponentString.Length == 1)
 			{
@@ -301,15 +308,15 @@ namespace AK.Utilities
 
 	public class NumberFormatterException : Exception
 	{
-		public static string FORMAT_VALUE_INVALID_MESSAGE = "Failed to format double, value {0} is invalid";
+		public const string FORMAT_VALUE_INVALID_MESSAGE = "Failed to format double, value {0} is invalid";
 
-		public static string FORMAT_DECIMALS_INVALID_MESSAGE =
+		public const string FORMAT_DECIMALS_INVALID_MESSAGE =
 			"Failed to format double, maxDecimals {0} is lower than minDecimals {1}";
 
-		public static string PARSE_NUMERIC_VALUE_INVALID_MESSAGE =
+		public const string PARSE_NUMERIC_VALUE_INVALID_MESSAGE =
 			"Failed to parse string \"{0}\", numeric value could not be parsed";
 
-		public static string PARSE_SUFFIX_VALUE_INVALID_MESSAGE = "Failed to parse string \"{0}\", suffix value is invalid";
+		public const string PARSE_SUFFIX_VALUE_INVALID_MESSAGE = "Failed to parse string \"{0}\", suffix value is invalid";
 
 		public NumberFormatterException(string message) : base(message) { }
 	}

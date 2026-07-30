@@ -1,15 +1,24 @@
-﻿namespace AK.Core
+﻿using System;
+
+namespace AK.Core
 {
 	/// <summary>
 	/// <see cref="PrefsProperty{TProp}"/> is a wrapper around <see cref="UniPrefs"/>'s API
-	/// which save/load operations over a property... 
+	/// which save/load operations over a property...
 	/// </summary>
+	/// <remarks>
+	/// Implements <see cref="IDisposable"/>: instances subscribe to the static
+	/// <see cref="UniPrefs.OnReset"/> event, so call <see cref="Dispose"/> when the property
+	/// is no longer needed (a finalizer cannot save you - the static event keeps the
+	/// instance alive forever).
+	/// </remarks>
 	/// <typeparam name="T">TypeOf property to wrap around, Make sure It's Serializable</typeparam>
-	public sealed class PrefsProperty<T>
+	public sealed class PrefsProperty<T> : IDisposable
 	{
 		private T _current = default;
 		private bool _isSyncWithPrefs = false;
-		
+		private bool _disposed;
+
 		private readonly T _default = default;
 		private readonly string _saveKey = default;
 
@@ -22,14 +31,23 @@
 		{
 			_saveKey = saveKey;
 			_default = @default;
-			
+
 			_current = @default;
 			_isSyncWithPrefs = false;
 
 			UniPrefs.OnReset += Reset;
 		}
 
-		~PrefsProperty() => UniPrefs.OnReset -= Reset;
+		/// <summary>
+		/// Unsubscribes from <see cref="UniPrefs.OnReset"/>. Without this the static event
+		/// roots the instance for the lifetime of the process.
+		/// </summary>
+		public void Dispose()
+		{
+			if (_disposed) return;
+			_disposed = true;
+			UniPrefs.OnReset -= Reset;
+		}
 
 		/// <summary>
 		/// <see cref="Save"/> is going to save the given data in <see cref="UniPrefs"/>
@@ -67,7 +85,7 @@
 			{
 				UniPrefs.Delete(_saveKey);
 			}
-			
+
 			_current = _default;
 			_isSyncWithPrefs = false;
 		}

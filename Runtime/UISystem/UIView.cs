@@ -422,7 +422,9 @@ namespace AK.Systems
 			if (HasChannel)
 			{
 				Channel.Canvas.overrideSorting = false;
-				Channel.Canvas.sortingOrder = (int)Channel.SortOrder;
+				// Do NOT reset Canvas.sortingOrder here - the UISystem owns it
+				// (base channel order + stack depth). Resetting to the flat channel
+				// order would re-layer this screen under screens it should sit above.
 			}
 		}
 
@@ -559,6 +561,17 @@ namespace AK.Systems
 		/// </summary>
 		internal async UniTask InternalHideAsync(bool immediate = false, CancellationToken ct = default)
 		{
+			// Never completed a show (e.g. show animation cancelled) - no hide hooks,
+			// just settle state. Firing OnPrepareHide/OnHide here would run hide logic
+			// on a view that was never shown.
+			if (!_isResourcesRegistered)
+			{
+				if (CanvasGroup != null) CanvasGroup.alpha = 0f;
+				gameObject.SetActive(false);
+				IsVisible = false;
+				return;
+			}
+
 			OnPrepareHide();
 
 			if (_showBackgroundOverlay) HideBackgroundOverlay();
@@ -813,6 +826,15 @@ namespace AK.Systems
 
 		public sealed override void SetContext(UIContext context)
 		{
+			// Null semantics:
+			//  - If the view already has a context, KEEP it. This is the parent -> child
+			//    sharing path: a parent passes its own context down to a child (static or
+			//    dynamic) by showing the child with no context of its own, and the child
+			//    retains whatever it was given. It is also the resume path: a paused
+			//    fragment resurfacing from under another view keeps its data.
+			//  - If the view has NO context yet, give it a fresh default so a typed view
+			//    never observes null after a show.
+			// Context is cleared on full teardown via NullifyContext(), not here.
 			if (context == null && Context == null)
 			{
 				base.Context = new TContext();

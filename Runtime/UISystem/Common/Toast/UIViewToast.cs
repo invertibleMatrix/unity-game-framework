@@ -55,6 +55,23 @@ namespace AK.Systems.UI
 			_floaterHideSequence.Play();
 		}
 
+		/// <summary>
+		/// The floater sequences target ContainerPanel/FloaterBg/FloaterText - none of which are
+		/// the view's own animation targets, so the base cleanup never kills them. A surviving
+		/// sequence on a pooled toast would later complete and call Close() on an unregistered
+		/// view. Kill them here (mirrors what UIViewBanner already does).
+		/// </summary>
+		public override void UnRegisterResources()
+		{
+			_floaterMoveSequence?.Kill();
+			_floaterMoveSequence = null;
+
+			_floaterHideSequence?.Kill();
+			_floaterHideSequence = null;
+
+			base.UnRegisterResources();
+		}
+
 		protected override void OnDestroy()
 		{
 			_isDestroying = true;

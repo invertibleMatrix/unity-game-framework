@@ -34,6 +34,9 @@ namespace AK.Services
 		/// </summary>
 		public event Action<string> OnStoreDisconnected;
 
+		/// <inheritdoc />
+		public event Action<IAPPurchaseResult> OnExternalPurchaseConfirmed;
+
 		// ─────────────────────────────────────────────
 		// Initialization
 		// ─────────────────────────────────────────────
@@ -153,10 +156,27 @@ namespace AK.Services
 			Debug.Log($"[UnityIAPService] Initiating purchase for: {productId}");
 			_storeController.PurchaseProduct(product);
 
-			var result = await _purchaseTcs.Task;
-			_purchaseTcs = null;
-			_pendingProductId = null;
-			return result;
+			try
+			{
+				// Timeout guard: if the store never delivers a callback, don't hang forever.
+				return await _purchaseTcs.Task.Timeout(TimeSpan.FromMinutes(2));
+			}
+			catch (TimeoutException)
+			{
+				// NOT a definite failure: the store may still confirm this purchase, in which
+				// case HandlePurchaseConfirmed finds no PurchaseAsync in flight and grants it
+				// via OnExternalPurchaseConfirmed. Report a distinct Timeout so callers can
+				// show "processing" instead of a false "purchase failed".
+				Debug.LogWarning($"[UnityIAPService] Purchase timed out for: {productId} - " +
+				                 "the store may still confirm it via OnExternalPurchaseConfirmed.");
+				return IAPPurchaseResult.Failed(productId, IAPFailureType.Timeout,
+					"The store did not respond in time. The purchase may still complete.");
+			}
+			finally
+			{
+				_purchaseTcs = null;
+				_pendingProductId = null;
+			}
 		}
 
 		// ─────────────────────────────────────────────
@@ -336,6 +356,14 @@ namespace AK.Services
 				if (_purchaseTcs != null && _pendingProductId == productId)
 				{
 					_purchaseTcs.TrySetResult(IAPPurchaseResult.Succeeded(productId, receipt, transactionId));
+				}
+				else
+				{
+					// Restored/deferred/promotional purchase with no PurchaseAsync in flight.
+					// It was already auto-confirmed in HandlePurchasePending, so this event is
+					// the only chance for the game to actually grant the product.
+					Debug.Log($"[UnityIAPService] External purchase confirmed for: {productId} - forwarding to OnExternalPurchaseConfirmed");
+					OnExternalPurchaseConfirmed?.Invoke(IAPPurchaseResult.Succeeded(productId, receipt, transactionId));
 				}
 			}
 			else if (order is FailedOrder failedOrder)

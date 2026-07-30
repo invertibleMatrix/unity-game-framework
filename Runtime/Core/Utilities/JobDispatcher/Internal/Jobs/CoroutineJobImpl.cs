@@ -10,6 +10,10 @@ namespace Utilities.Jobs
 
         internal ICoroutineJob Job;
 
+        // Set even when cancelled before the coroutine ever started, so the dispatcher
+        // skips (and drops) it instead of starting a dead job one frame late.
+        internal volatile bool IsCancelled;
+
         private JobDispatcher _jobDispatcher;
 
         public CoroutineJobImpl(JobDispatcher jobDispatcher, ICoroutineJob job)
@@ -33,12 +37,17 @@ namespace Utilities.Jobs
 
         public void CancelJob()
         {
-            if (CoroutineHandle != null && Job != null)
+            IsCancelled = true;
+
+            if (Job == null) return;
+
+            if (CoroutineHandle != null)
             {
                 _jobDispatcher.StopCoroutine(CoroutineHandle);
-                Job.OnStop();
-                Job = null; // CRITICAL: Release reference
             }
+
+            Job.OnStop();
+            Job = null; // CRITICAL: Release reference
         }
     }
 }

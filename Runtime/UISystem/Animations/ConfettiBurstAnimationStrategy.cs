@@ -278,11 +278,15 @@ namespace AK.Systems.Animations
             
             DOTween.Sequence()
                 .AppendCallback(() => {
-                    target.DOShakePosition(0.5f, new Vector2(20, 20), 10, 0, true);
-                    target.DOShakeRotation(0.5f, new Vector3(0, 0, 30), 8, 0, true);
+                    target.DOShakePosition(0.5f, new Vector2(20, 20), 10, 0, true)
+                        .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
+                    target.DOShakeRotation(0.5f, new Vector3(0, 0, 30), 8, 0, true)
+                        .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
                 })
                 .AppendInterval(_celebrationInterval)
                 .SetLoops(-1)
+                // Anonymous sequences have no target, so target.DOKill() can never kill them.
+                .SetLink(target.gameObject, LinkBehaviour.KillOnDisable)
                 .Play();
         }
 

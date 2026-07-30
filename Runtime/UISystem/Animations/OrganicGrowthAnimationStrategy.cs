@@ -154,12 +154,18 @@ namespace AK.Systems.Animations
                 sequence.AppendCallback(() => StartPersonalityTwitches(target));
             }
             
-            // Subtle rotation
+            // Subtle rotation. Must NOT be appended into the sequence: an infinite-loop child
+            // makes the sequence never complete (the show pipeline would await it forever).
+            // Start it as a standalone linked tween when the sequence reaches this point.
             if (_addSubtleRotation)
             {
-                sequence.Append(target.DOLocalRotate(new Vector3(0, 0, _subtleRotation), 1f).SetEase(Ease.InOutSine).SetLoops(-1, LoopType.Yoyo));
+                sequence.AppendCallback(() =>
+                    target.DOLocalRotate(new Vector3(0, 0, _subtleRotation), 1f)
+                        .SetEase(Ease.InOutSine)
+                        .SetLoops(-1, LoopType.Yoyo)
+                        .SetLink(target.gameObject, LinkBehaviour.KillOnDisable));
             }
-            
+
             return sequence.Play();
         }
 
@@ -239,7 +245,8 @@ namespace AK.Systems.Animations
             if (!_addFinalBreathing) return;
             
             var breatheScale = Vector3.one * (1f + _breathingGentleness);
-            target.DOScale(breatheScale, 3f).SetEase(Ease.InOutSine).SetLoops(-1, LoopType.Yoyo);
+            target.DOScale(breatheScale, 3f).SetEase(Ease.InOutSine).SetLoops(-1, LoopType.Yoyo)
+                .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
         }
 
         private void StopBreathing(RectTransform target)
@@ -258,6 +265,7 @@ namespace AK.Systems.Animations
                 .Append(target.DOLocalRotate(Vector3.zero, 0.1f).SetEase(Ease.InOutSine))
                 .SetLoops(-1, LoopType.Restart)
                 .SetDelay(Random.Range(1f, 3f))
+                .SetLink(target.gameObject, LinkBehaviour.KillOnDisable)
                 .Play();
         }
 

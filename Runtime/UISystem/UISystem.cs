@@ -77,7 +77,7 @@ namespace AK.Systems
 		/// </summary>
 		private readonly HashSet<UIView> _closingViews = new();
 
-		private readonly ViewPool _viewPool = new();
+		private ViewPool _viewPool;
 
 		// =================================================================
 		// VIEW RECORD
@@ -116,6 +116,8 @@ namespace AK.Systems
 
 		private void Awake()
 		{
+			_viewPool = new ViewPool(_viewsContainer);
+
 			// Ensure the default channel stack always exists
 			_channelStacks[UIChannel.HUD] = new Stack<UIView>();
 
@@ -196,7 +198,13 @@ namespace AK.Systems
 
 		public void Close(UIView view, CloseContext context = CloseContext.Normal, Action onClose = null)
 		{
-			CloseInternalAsync(view, context, false).ContinueWith(() => onClose?.Invoke()).Forget();
+			// Only fire the callback when the close will actually do something - a double-close
+			// or unregistered view early-returns inside CloseInternalAsync and "closed" nothing.
+			bool willClose = view != null && _viewRegistry.ContainsKey(view) && !_closingViews.Contains(view);
+			CloseInternalAsync(view, context, false).ContinueWith(() =>
+			{
+				if (willClose) onClose?.Invoke();
+			}).Forget();
 		}
 
 		public UniTask CloseAsync(UIView view, CloseContext context = CloseContext.Normal, CancellationToken ct = default)
@@ -206,7 +214,11 @@ namespace AK.Systems
 
 		public void CloseImmediate(UIView view, CloseContext context = CloseContext.Normal, Action onClose = null)
 		{
-			CloseInternalAsync(view, context, true).ContinueWith(() => onClose?.Invoke()).Forget();
+			bool willClose = view != null && _viewRegistry.ContainsKey(view) && !_closingViews.Contains(view);
+			CloseInternalAsync(view, context, true).ContinueWith(() =>
+			{
+				if (willClose) onClose?.Invoke();
+			}).Forget();
 		}
 
 		// =================================================================
@@ -442,9 +454,16 @@ namespace AK.Systems
 				&& !r.IsStatic
 				&& !_closingViews.Contains(r.Instance));
 
+			// When replacing an existing dynamic instance, the close must be sequenced BEFORE the
+			// new show pipeline: otherwise the old close's resume-of-previous can run after the new
+			// show paused that same view, leaving it visible/interactable on top of the new view.
+			UniTask replaceCloseTask = UniTask.CompletedTask;
+			bool    hasReplaceClose  = false;
+
 			if (existingRecord != null && !prefab.AllowMultipleInstances)
 			{
-				CloseInternalAsync(existingRecord.Instance, CloseContext.Normal, false).Forget();
+				replaceCloseTask = CloseInternalAsync(existingRecord.Instance, CloseContext.Normal, false);
+				hasReplaceClose  = true;
 			}
 
 			// --- Instantiate or get from pool ---
@@ -486,14 +505,36 @@ namespace AK.Systems
 			UniTask animTask;
 			if (isScreen)
 			{
-				animTask = RunScreenShowAsync(newView, channelOverride, immediate);
+				animTask = hasReplaceClose
+					? AwaitReplaceCloseThen(replaceCloseTask, () => RunScreenShowAsync(newView, channelOverride, immediate))
+					: RunScreenShowAsync(newView, channelOverride, immediate);
 			}
 			else
 			{
-				animTask = RunFragmentShowAsync(newView, parent, immediate);
+				animTask = hasReplaceClose
+					? AwaitReplaceCloseThen(replaceCloseTask, () => RunFragmentShowAsync(newView, parent, immediate))
+					: RunFragmentShowAsync(newView, parent, immediate);
 			}
 
 			return (newView, animTask);
+		}
+
+		/// <summary>
+		/// Awaits a replace-close before starting the show pipeline (see PrepareAndRegisterView).
+		/// Close failures are logged but never block the new show.
+		/// </summary>
+		private async UniTask AwaitReplaceCloseThen(UniTask closeTask, Func<UniTask> showPipeline)
+		{
+			try
+			{
+				await closeTask;
+			}
+			catch (Exception e)
+			{
+				Debug.LogException(e);
+			}
+
+			await showPipeline();
 		}
 
 		// =================================================================
@@ -826,7 +867,10 @@ namespace AK.Systems
 			if (stack.Count == 0 || stack.Peek() != view)
 			{
 				if (stack.Contains(view))
+				{
 					RemoveFromStack(view, stack);
+					RecomputeChannelSorting(stack);
+				}
 
 				await DestroyViewAsync(view, record, context, true, ct);
 				return;
@@ -834,6 +878,7 @@ namespace AK.Systems
 
 			// CASE 2: At the top — play close animation, then resume previous
 			stack.Pop();
+			RecomputeChannelSorting(stack);
 			_closingViews.Add(view);
 
 			UIView previousView = stack.Count > 0 ? stack.Peek() : null;
@@ -1197,7 +1242,13 @@ namespace AK.Systems
 			{
 				await view.InternalHideAsync(immediate || context != CloseContext.Normal, ct);
 			}
-			catch (Exception ex) when (ex is not OperationCanceledException)
+			catch (OperationCanceledException)
+			{
+				// External cancellation must NOT abort settlement: the view was already popped
+				// from its stack, so skipping the registry/pool cleanup below would leave a
+				// zombie (registered, active, off-stack). Settle it instead.
+			}
+			catch (Exception ex)
 			{
 				Debug.LogError($"Error hiding view '{view.name}': {ex.Message}");
 			}
@@ -1255,7 +1306,11 @@ namespace AK.Systems
 			{
 				await view.InternalHideAsync(immediate, ct);
 			}
-			catch (Exception ex) when (ex is not OperationCanceledException)
+			catch (OperationCanceledException)
+			{
+				// See HideAndDestroyAsync - cancellation must not skip settlement.
+			}
+			catch (Exception ex)
 			{
 				Debug.LogError($"Error hiding view '{view.name}': {ex.Message}");
 			}
@@ -1604,6 +1659,27 @@ namespace AK.Systems
 			foreach (var key in deadPendingKeys)
 			{
 				_pendingShowTasks.Remove(key);
+			}
+		}
+
+		/// <summary>
+		/// Recomputes canvas sorting orders for every screen in a channel stack after a
+		/// pop/mid-stack removal, keeping depths contiguous so a later push can't collide
+		/// with a survivor's baked-in order. Stack bottom is depth 1 (matches push-time
+		/// channel.Initialize(_uiCamera, stack.Count)).
+		/// </summary>
+		private static void RecomputeChannelSorting(Stack<UIView> stack)
+		{
+			if (stack == null || stack.Count == 0) return;
+
+			var arr = stack.ToArray(); // top-first
+			for (int i = arr.Length - 1, depth = 1; i >= 0; i--, depth++)
+			{
+				var v = arr[i];
+				if (v != null && v.HasChannel)
+				{
+					v.Channel.UpdateSortingOrder(depth);
+				}
 			}
 		}
 

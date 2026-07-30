@@ -72,9 +72,17 @@ namespace Utilities.Jobs
                         _frameCounter++;
                         if (!_isStopping)
                         {
-                            DispatchJobsForMainThread();
-                            DispatchJobsForWorkerThread();
-                            _instance._threadsBarrierJoinEvent.Signal();
+                            // If dispatch throws we must still signal - otherwise the main thread
+                            // blocks on the frame barrier forever (mutual-wait deadlock).
+                            try
+                            {
+                                DispatchJobsForMainThread();
+                                DispatchJobsForWorkerThread();
+                            }
+                            finally
+                            {
+                                _instance._threadsBarrierJoinEvent.Signal();
+                            }
                         }
 
                         _profilerSampler.End();
@@ -130,8 +138,8 @@ namespace Utilities.Jobs
                 PrepareFixedJobs(ref _unityThreadDispatcher.HandlerFrontBuffer.LateUpdateJobs,
                                  ref _unityThreadDispatcher.BackBuffer.LateUpdateJobs, ref _unityJobsBacklog.LateUpdateJobs);
 
-                // PrepareFixedJobs(ref _unityThreadDispatcher.HandlerFrontBuffer.FixedUpdateJobs,
-                //                  ref _unityThreadDispatcher.DispatchedBackBuffer.FixedUpdateJobs, ref _unityJobsBacklog.FixedUpdateJobs);
+                // FixedUpdate jobs bypass the handler: they live in persistent per-dispatcher
+                // lists (see ThreadDispatcherBase.ExecutePersistentFixedUpdateJobs).
 
                 ProcessFrameDelayedJobs(ref _unityThreadDispatcher.HandlerFrontBuffer.FrameDelayedJobs,
                                         ref _unityThreadDispatcher.BackBuffer.FrameDelayedJobs,
@@ -154,8 +162,7 @@ namespace Utilities.Jobs
                 PrepareFixedJobs(ref _workerThreadDispatcher.HandlerFrontBuffer.LateUpdateJobs,
                                  ref _workerThreadDispatcher.BackBuffer.LateUpdateJobs, ref _workerJobsBacklog.LateUpdateJobs);
 
-                // PrepareFixedJobs(ref _workerThreadDispatcher.HandlerFrontBuffer.FixedUpdateJobs,
-                //                  ref _workerThreadDispatcher.DispatchedBackBuffer.FixedUpdateJobs, ref _workerJobsBacklog.FixedUpdateJobs);
+                // FixedUpdate jobs bypass the handler (see DispatchJobsForMainThread note).
 
                 ProcessFrameDelayedJobs(ref _workerThreadDispatcher.HandlerFrontBuffer.FrameDelayedJobs,
                                         ref _workerThreadDispatcher.BackBuffer.FrameDelayedJobs,

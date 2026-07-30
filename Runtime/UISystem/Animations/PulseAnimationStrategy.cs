@@ -205,6 +205,9 @@ namespace AK.Systems.Animations
                 .Append(target.DOScale(pulseScale, pulseDuration * 0.5f).SetEase(Ease.InOutSine))
                 .Append(target.DOScale(Vector3.one, pulseDuration * 0.5f).SetEase(Ease.InOutSine))
                 .SetLoops(-1, LoopType.Restart)
+                // Dies with the view: this SO's OnDestroy only runs on asset unload, so without
+                // a link the loop outlives every view that plays it.
+                .SetLink(target.gameObject, LinkBehaviour.KillOnDisable)
                 .Play();
         }
 

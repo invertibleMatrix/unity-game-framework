@@ -30,9 +30,13 @@ namespace Utilities.Jobs
 
             private void StartThread()
             {
-                try
+                while (_isRunning)
                 {
-                    while (_isRunning)
+                    // Tracks whether this iteration owes the frame barrier a signal. If a user job
+                    // throws and we skip the signal, the main thread blocks on the barrier forever.
+                    bool oweBarrierSignal = false;
+
+                    try
                     {
                         // Wait for either frame start OR shutdown signal
                         int waitResult = WaitHandle.WaitAny(
@@ -50,22 +54,29 @@ namespace Utilities.Jobs
                             break;
                         }
 
+                        oweBarrierSignal = true;
                         _frameCounter++;
 
-                        if (!_isStopping)
+                        FrameStarted();
+                    }
+                    catch (ThreadAbortException)
+                    {
+                        Debug.LogWarning("WorkerThread: Thread abort requested");
+                        break;
+                    }
+                    catch (Exception e)
+                    {
+                        // Contain the failure: log and keep the thread alive. A dead worker
+                        // thread wedges the whole game on the frame barrier.
+                        Debug.LogError($"Exception in Worker thread: {e.Message}\n{e.StackTrace}");
+                    }
+                    finally
+                    {
+                        if (oweBarrierSignal)
                         {
-                            FrameStarted();
                             _instance._threadsBarrierJoinEvent.Signal();
                         }
                     }
-                }
-                catch (ThreadAbortException)
-                {
-                    Debug.LogWarning("WorkerThread: Thread abort requested");
-                }
-                catch (Exception e)
-                {
-                    Debug.LogError($"Exception in Worker thread: {e.Message}\n{e.StackTrace}");
                 }
 
                 Debug.Log("WorkerThread: Thread exiting");
@@ -105,8 +116,15 @@ namespace Utilities.Jobs
                 }
                 else
                 {
-                    job.Job.OnComplete();
+                    job.Job?.OnComplete();
                 }
+            }
+
+            protected override void OnFrameStarted()
+            {
+                // The worker thread has no real FixedUpdate tick; its "FixedUpdate" jobs run once
+                // per frame, after the regular frame work.
+                ExecutePersistentFixedUpdateJobs();
             }
 
             protected override void InjectFrameDelayedJobIntoBuffer(FrameDelayedJobImpl jobImpl)
@@ -162,8 +180,9 @@ namespace Utilities.Jobs
 
             protected override void InjectFixedUpdateJobIntoBuffer(FixedJobImpl fixedJobImpl)
             {
-                NextFrameJobs.FixedUpdateJobs.Add(fixedJobImpl);
-                HandlerBackBuffer.FixedUpdateJobs.Add(fixedJobImpl);
+                // FixedUpdate jobs live in a persistent list (see ThreadDispatcherBase) - the
+                // transient frame buffers are cleared at frame boundaries and can't represent them.
+                AddPersistentFixedUpdateJob(fixedJobImpl);
             }
 
             public void ExecuteJob(IDispatchableJob job, bool callCompleteOnMainThread = false)

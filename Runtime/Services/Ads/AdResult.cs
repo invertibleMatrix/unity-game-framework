@@ -34,8 +34,9 @@ namespace AK.Services
 		public AdErrorType ErrorType;
 
 		/// <summary>
-		/// For rewarded ads: whether the reward was granted.
-		/// Always true for successful rewarded ads, false otherwise.
+		/// For rewarded ads: whether the reward was actually granted (per the network's reward
+		/// callback). Never inferred from the ad type - providers must report the real outcome,
+		/// otherwise a user closing the ad early would still receive the reward.
 		/// </summary>
 		public bool RewardGranted;
 
@@ -49,14 +50,14 @@ namespace AK.Services
 		/// </summary>
 		public double Revenue;
 
-		public static AdResult Succeeded(string placementId, AdType adType, string networkName = null, double revenue = 0) => new()
+		public static AdResult Succeeded(string placementId, AdType adType, string networkName = null, double revenue = 0, bool rewardGranted = false) => new()
 		{
 			Success = true,
 			PlacementId = placementId,
 			AdType = adType,
 			FailureReason = null,
 			ErrorType = AdErrorType.None,
-			RewardGranted = adType == AdType.Rewarded || adType == AdType.RewardedInterstitial,
+			RewardGranted = rewardGranted,
 			NetworkName = networkName,
 			Revenue = revenue
 		};

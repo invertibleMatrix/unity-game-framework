@@ -101,9 +101,10 @@ namespace AK.Core
 		/// </summary>
 		public static T Load()
 		{
+			// Read directly via UniPrefs - allocating a PrefsProperty here would leak it
+			// (it subscribes to the static UniPrefs.OnReset event).
 			var instance = new T();
-			var prefs = new PrefsProperty<T>(instance.SaveKey);
-			return prefs.Read() ?? instance;
+			return UniPrefs.Get(instance.SaveKey, instance) ?? instance;
 		}
 
 		/// <summary>
@@ -112,8 +113,7 @@ namespace AK.Core
 		public static void DeleteSave()
 		{
 			var instance = new T();
-			var prefs = new PrefsProperty<T>(instance.SaveKey);
-			prefs.Reset();
+			UniPrefs.Delete(instance.SaveKey);
 		}
 
 		/// <summary>

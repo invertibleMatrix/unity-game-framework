@@ -16,6 +16,9 @@ namespace AK.Services.Analytics.Providers
 		public override void Initialize(AnalyticsMeta analyticsMeta, Dictionary<string, string> config)
 		{
 			base.Initialize(analyticsMeta, config);
+			// Without this, IsEnabled (base: _isEnabled && _isInitialized) is always false
+			// and the provider silently drops every event.
+			_isInitialized = true;
 			Debug.Log($"[{ProviderName}] Initialized");
 		}
 

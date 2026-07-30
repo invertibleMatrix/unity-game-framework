@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using Cysharp.Threading.Tasks;
+using UnityEngine;
 
 namespace AK.Utilities
 {
@@ -89,6 +90,15 @@ namespace AK.Utilities
 		private bool                    _isDisposed;
 		private TimeSpan                _pauseRemainingTime;
 
+		private enum Mode { None, Countdown, CountUp, Interval }
+
+		private Mode        _mode = Mode.None;
+		private int         _intervalRemainingCount;
+
+		private int         _intervalFiredCount;
+		private Action<int> _intervalOnInterval;
+		private Action      _intervalOnComplete;
+
 		#endregion
 
 		#region Public Methods
@@ -111,34 +121,28 @@ namespace AK.Utilities
 			if (_isDisposed)
 				throw new ObjectDisposedException(nameof(Timer));
 
-			// if (duration <= TimeSpan.Zero)
-			// {
-			// 	State = TimerState.Completed;
-			// 	OnComplete?.Invoke();
-			// 	Dispose();
-			// 	return;
-			// }
-
 			Stop();
 
 			Duration = duration;
 			RemainingTime = duration;
 			UseRealTime = useRealTime;
 			TickInterval = tickInterval ?? TimeSpan.FromMilliseconds(100);
+			_mode = Mode.Countdown;
 
-			if (onTick != null)
-				OnTick += onTick;
-			if (onComplete != null)
-				OnComplete += onComplete;
+			// Remove-before-add: restarting with the same handlers must not duplicate them.
+			if (onTick != null) { OnTick -= onTick; OnTick += onTick; }
+			if (onComplete != null) { OnComplete -= onComplete; OnComplete += onComplete; }
 
-			if (_cancellationToken != CancellationToken.None)
+			if (duration <= TimeSpan.Zero)
 			{
-				_cts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken);
+				// A zero/negative-duration countdown completes immediately.
+				RemainingTime = TimeSpan.Zero;
+				State = TimerState.Completed;
+				InvokeSafe(OnComplete);
+				return;
 			}
-			else
-			{
-				_cts = new CancellationTokenSource();
-			}
+
+			_cts = CreateCts();
 			_timerTask = RunCountdownAsync(_cts.Token);
 		}
 
@@ -161,21 +165,13 @@ namespace AK.Utilities
 			ElapsedTime = TimeSpan.Zero;
 			UseRealTime = useRealTime;
 			TickInterval = tickInterval ?? TimeSpan.FromMilliseconds(100);
+			_mode = Mode.CountUp;
 
-			if (onTick != null)
-				OnTick += onTick;
-			if (onComplete != null)
-				OnComplete += onComplete;
+			// Remove-before-add: restarting with the same handlers must not duplicate them.
+			if (onTick != null) { OnTick -= onTick; OnTick += onTick; }
+			if (onComplete != null) { OnComplete -= onComplete; OnComplete += onComplete; }
 
-			if (_cancellationToken != CancellationToken.None)
-			{
-				_cts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken);
-			}
-			else
-			{
-				_cts = new CancellationTokenSource();
-			}
-			
+			_cts = CreateCts();
 			_timerTask = RunCountUpAsync(_cts.Token);
 		}
 
@@ -200,17 +196,14 @@ namespace AK.Utilities
 			Duration = interval;
 			UseRealTime = useRealTime;
 			TickInterval = interval;
+			_mode = Mode.Interval;
+			_intervalRemainingCount = repeatCount;
+			_intervalFiredCount = 0;
+			_intervalOnInterval = onInterval;
+			_intervalOnComplete = onComplete;
 
-			if (_cancellationToken != CancellationToken.None)
-			{
-				_cts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken);
-			}
-			else
-			{
-				_cts = new CancellationTokenSource();
-			}
-			
-			_timerTask = RunIntervalAsync(interval, repeatCount, onInterval, onComplete, _cts.Token);
+			_cts = CreateCts();
+			_timerTask = RunIntervalAsync(interval, _cts.Token);
 		}
 
 		/// <summary>
@@ -228,7 +221,7 @@ namespace AK.Utilities
 		}
 
 		/// <summary>
-		/// Resumes a paused timer.
+		/// Resumes a paused timer, continuing whichever mode it was started in.
 		/// </summary>
 		public void Resume()
 		{
@@ -236,9 +229,16 @@ namespace AK.Utilities
 				return;
 
 			RemainingTime = _pauseRemainingTime;
-			_cts = new CancellationTokenSource();
-			_timerTask = RunCountdownAsync(_cts.Token);
-			OnResume?.Invoke();
+			_cts = CreateCts();
+
+			_timerTask = _mode switch
+			{
+				Mode.CountUp   => RunCountUpAsync(_cts.Token),
+				Mode.Interval  => RunIntervalAsync(Duration, _cts.Token),
+				_              => RunCountdownAsync(_cts.Token)
+			};
+
+			InvokeSafe(OnResume);
 		}
 
 		/// <summary>
@@ -296,7 +296,9 @@ namespace AK.Utilities
 		private async UniTask RunCountdownAsync(CancellationToken token)
 		{
 			State = TimerState.Running;
-			var startTime = UseRealTime ? DateTime.UtcNow : DateTime.MinValue;
+
+			// Resume-safe baseline: accounts for time already elapsed before this (re)start.
+			var startTime = UseRealTime ? DateTime.UtcNow - (Duration - RemainingTime) : DateTime.MinValue;
 
 			try
 			{
@@ -313,18 +315,20 @@ namespace AK.Utilities
 					}
 					else
 					{
-						// Use frame-based timing for game time
+						// Game time: UniTask.Delay is timeScale-scaled by default, so the delay
+						// itself already stretches with timeScale (and freezes at timeScale 0).
+						// Subtract the full tick interval - scaling it again would apply timeScale twice.
 						await UniTask.Delay(TickInterval, cancellationToken: token);
 						if (token.IsCancellationRequested) return;
 
-						RemainingTime -= TimeSpan.FromSeconds((float)TickInterval.TotalSeconds * UnityEngine.Time.timeScale);
+						RemainingTime -= TickInterval;
 					}
 
 					if (RemainingTime < TimeSpan.Zero)
 						RemainingTime = TimeSpan.Zero;
 
 					// Invoke tick
-					OnTick?.Invoke(RemainingTime, Progress);
+					InvokeSafe(OnTick, RemainingTime, Progress);
 
 					// Real-time delay
 					if (UseRealTime)
@@ -336,7 +340,7 @@ namespace AK.Utilities
 				if (!token.IsCancellationRequested && State == TimerState.Running)
 				{
 					State = TimerState.Completed;
-					OnComplete?.Invoke();
+					InvokeSafe(OnComplete);
 				}
 			}
 			catch (OperationCanceledException)
@@ -348,7 +352,9 @@ namespace AK.Utilities
 		private async UniTask RunCountUpAsync(CancellationToken token)
 		{
 			State = TimerState.Running;
-			var startTime = UseRealTime ? DateTime.UtcNow : DateTime.MinValue;
+
+			// Resume-safe baseline: accounts for time already elapsed before this (re)start.
+			var startTime = UseRealTime ? DateTime.UtcNow - ElapsedTime : DateTime.MinValue;
 
 			try
 			{
@@ -363,17 +369,19 @@ namespace AK.Utilities
 					}
 					else
 					{
+						// Game time: UniTask.Delay is timeScale-scaled by default - add the full
+						// tick interval (see RunCountdownAsync for why scaling twice is wrong).
 						await UniTask.Delay(TickInterval, cancellationToken: token);
 						if (token.IsCancellationRequested) return;
 
-						ElapsedTime += TimeSpan.FromSeconds((float)TickInterval.TotalSeconds * UnityEngine.Time.timeScale);
+						ElapsedTime += TickInterval;
 					}
 
 					var progress = Duration > TimeSpan.Zero
 						? (float)(ElapsedTime.TotalSeconds / Duration.TotalSeconds)
 						: 0f;
 
-					OnTick?.Invoke(ElapsedTime, progress);
+					InvokeSafe(OnTick, ElapsedTime, progress);
 
 					if (UseRealTime)
 					{
@@ -384,7 +392,7 @@ namespace AK.Utilities
 				if (!token.IsCancellationRequested && Duration > TimeSpan.Zero && State == TimerState.Running)
 				{
 					State = TimerState.Completed;
-					OnComplete?.Invoke();
+					InvokeSafe(OnComplete);
 				}
 			}
 			catch (OperationCanceledException)
@@ -393,40 +401,64 @@ namespace AK.Utilities
 			}
 		}
 
-		private async UniTask RunIntervalAsync(
-			TimeSpan interval,
-			int repeatCount,
-			Action<int> onInterval,
-			Action onComplete,
-			CancellationToken token)
+		private async UniTask RunIntervalAsync(TimeSpan interval, CancellationToken token)
 		{
 			State = TimerState.Running;
-			int currentCount = 0;
 
 			try
 			{
-				while (repeatCount < 0 || currentCount < repeatCount)
+				while (_intervalRemainingCount < 0 || _intervalFiredCount < _intervalRemainingCount)
 				{
 					if (token.IsCancellationRequested)
 						return;
 
-					await UniTask.Delay(interval, cancellationToken: token);
+					var delayType = UseRealTime ? DelayType.UnscaledDeltaTime : DelayType.DeltaTime;
+					await UniTask.Delay(interval, delayType, cancellationToken: token);
 					if (token.IsCancellationRequested) return;
 
-					currentCount++;
-					onInterval?.Invoke(currentCount);
+					_intervalFiredCount++;
+					InvokeSafe(_intervalOnInterval, _intervalFiredCount);
 				}
+
+				// Consume the remaining count so a later Resume() starts fresh.
+				if (_intervalRemainingCount > 0)
+					_intervalRemainingCount = 0;
 
 				if (!token.IsCancellationRequested)
 				{
 					State = TimerState.Completed;
-					onComplete?.Invoke();
+					InvokeSafe(_intervalOnComplete);
 				}
 			}
 			catch (OperationCanceledException)
 			{
 				// Expected
 			}
+		}
+
+		private CancellationTokenSource CreateCts()
+		{
+			return _cancellationToken != CancellationToken.None
+				? CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken)
+				: new CancellationTokenSource();
+		}
+
+		private static void InvokeSafe(Action handler)
+		{
+			try { handler?.Invoke(); }
+			catch (Exception e) { Debug.LogException(e); }
+		}
+
+		private static void InvokeSafe(Action<TimeSpan, float> handler, TimeSpan time, float progress)
+		{
+			try { handler?.Invoke(time, progress); }
+			catch (Exception e) { Debug.LogException(e); }
+		}
+
+		private static void InvokeSafe(Action<int> handler, int count)
+		{
+			try { handler?.Invoke(count); }
+			catch (Exception e) { Debug.LogException(e); }
 		}
 
 		#endregion

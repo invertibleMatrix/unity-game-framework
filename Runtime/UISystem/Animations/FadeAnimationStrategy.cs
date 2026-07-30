@@ -24,7 +24,9 @@ namespace AK.Systems.Animations
 
 		public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
 		{
-			canvasGroup.alpha = 1f;
+			// NOTE: do NOT set alpha here - the view pipeline already set it to 0 in
+			// PrepareForShowAnimation. Setting alpha=1 before DOFade(1, ...) makes the
+			// fade a no-op (1 -> 1) and the view pops in instantly.
 			var sequence = DOTween.Sequence();
 			sequence.Join(canvasGroup.DOFade(1, EntryDuration).SetEase(EntryEase));
 

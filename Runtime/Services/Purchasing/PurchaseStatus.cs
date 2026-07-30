@@ -13,6 +13,7 @@
 			IAPPaymentDeclined,
 			IAPStoreError,
 			IAPDuplicateTransaction,
+			IAPTimeout,
 			IAPUnknownError
 		}
 

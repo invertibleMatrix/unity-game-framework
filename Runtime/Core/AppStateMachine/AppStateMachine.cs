@@ -62,13 +62,28 @@ namespace AK.Core
 
 			_previousState = _currentState;
 
-			if (pauseCurrent)
+			// NOTE: self-transitions are INTENTIONALLY allowed - OnExit -> OnEnter on the same
+			// state is the standard way to restart it (e.g. GameState re-enter on level restart).
+
+			if (pauseCurrent && _previousState != null)
 			{
 				_previousState.OnPause();
-				_pausedStates.Add(_previousState);
+
+				// Guard against pause-stacking the same state twice: a duplicate entry would make
+				// TryGoBack "resume" a state that is already current.
+				if (!_pausedStates.Contains(_previousState))
+				{
+					_pausedStates.Add(_previousState);
+				}
+				else
+				{
+					Debug.LogWarning($"AppStateMachine: state '{_previousState.name}' is already paused - not stacking a duplicate.");
+				}
 			}
 			else
 			{
+				// Note: may be legitimately re-entered from the pause stack below; OnExit there
+				// is skipped by design (resume semantics).
 				_previousState?.OnExit();
 			}
 
@@ -81,8 +96,8 @@ namespace AK.Core
 			if (_pausedStates.Contains(_currentState))
 			{
 				_currentState.SetContext(context);
-				_currentState.OnResume();
 				_pausedStates.Remove(_currentState);
+				_currentState.OnResume();
 			}
 			else
 			{

@@ -11,22 +11,42 @@ namespace AK.Systems.Animations
 
         public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
         {
-            var sequence = DOTween.Sequence();
+            // Child strategies return already-playing tweens and DOTween cannot nest a started
+            // tween into a Sequence - so instead of Join() we play all children in parallel and
+            // return the longest one as the completion marker for the awaiting pipeline.
+            // (A child with infinite loops would never complete - don't compose those.)
+            Tween longest = null;
+
             foreach (var strategy in _strategies)
             {
-                sequence.Join(strategy.PlayShowAnimation(target, canvasGroup));
+                if (strategy == null) continue;
+
+                var tween = strategy.PlayShowAnimation(target, canvasGroup, entryPos);
+                if (tween != null && (longest == null || tween.Duration() > longest.Duration()))
+                {
+                    longest = tween;
+                }
             }
-            return sequence;
+
+            return longest ?? DOTween.Sequence();
         }
 
         public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
         {
-            var sequence = DOTween.Sequence();
+            Tween longest = null;
+
             foreach (var strategy in _strategies)
             {
-                sequence.Join(strategy.PlayHideAnimation(target, canvasGroup));
+                if (strategy == null) continue;
+
+                var tween = strategy.PlayHideAnimation(target, canvasGroup);
+                if (tween != null && (longest == null || tween.Duration() > longest.Duration()))
+                {
+                    longest = tween;
+                }
             }
-            return sequence;
+
+            return longest ?? DOTween.Sequence();
         }
     }
 }
