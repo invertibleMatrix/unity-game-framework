@@ -1,6 +1,7 @@
 using AK.Core;
 using AK.CoreDomain;
 using AK.CoreDomain.Ads;
+using AK.CoreDomain.Transactions;
 using AK.Examples.Costs;
 using AK.Examples.Currency;
 using AK.CoreDomain.Notifications;
@@ -12,6 +13,7 @@ using AK.Examples.Rewards;
 using AK.Services;
 using AK.Services.Costs;
 using AK.Services.Rewards;
+using AK.Services.Transactions;
 using Reflex.Core;
 using Reflex.Enums;
 using UnityEngine;
@@ -88,9 +90,12 @@ namespace AK.Examples
 			rewardService.RegisterProvider(_currencyRewardProvider);
 			builder.RegisterValue(rewardService, new[] { typeof(IRewardService) });
 
-			// Purchase Service — iapService is optional (null = no IAP)
-			var purchaseService = new PurchaseService(costService, rewardService, null);
-			builder.RegisterValue(purchaseService, new[] { typeof(IPurchaseService) });
+		// Purchase Service — iapService is optional (null = no IAP)
+		var transactionService = new TransactionService(rewardService, _metaDataRepository);
+		builder.RegisterValue(transactionService, new[] { typeof(ITransactionService) });
+
+		var purchaseService = new PurchaseService(costService, rewardService, null, transactionService);
+		builder.RegisterValue(purchaseService, new[] { typeof(IPurchaseService) });
 
 
 			builder.RegisterValue(_cameraSystem, new[] { typeof(ICameraSystem) });

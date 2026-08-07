@@ -1,7 +1,6 @@
-﻿using Reflex.Extensions;
+using Reflex.Extensions;
 using UnityEngine;
 using AK.Core;
-using Sirenix.OdinInspector;
 using UI;
 using Utilities.AudioSpawner;
 
@@ -18,7 +17,6 @@ namespace UI
 			_audioSpawner = gameObject.scene.GetSceneContainer().Resolve<IAudioSpawner>();
 		}
 
-		[Button]
 		public void Play()
 		{
 			if (AudioId == null)

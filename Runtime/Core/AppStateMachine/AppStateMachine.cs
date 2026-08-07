@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Reflex.Attributes;
 using Reflex.Core;
@@ -16,6 +17,8 @@ namespace AK.Core
 		private AppState _previousState;
 		private readonly List<AppState> _pausedStates = new();
 
+		public event Action<AppState> OnStateChange;
+		
 		public AppState CurrentState => _currentState;
 		public AppState PreviousState => _previousState;
 
@@ -103,6 +106,7 @@ namespace AK.Core
 			{
 				_currentState.SetContext(context);
 				_currentState.OnEnter();
+				OnStateChange?.Invoke(_currentState);
 			}
 		}
 

@@ -3,6 +3,7 @@ using AK.Core;
 using AK.CoreDomain;
 using AK.Services.Costs;
 using AK.Services.Rewards;
+using AK.Services.Transactions;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 
@@ -15,11 +16,13 @@ namespace AK.Services
 	/// </summary>
 	public class PurchaseService : IPurchaseService
 	{
-		private readonly IIAPService    _iapService;
-		private readonly ICostService   _costService;
-		private readonly IRewardService _rewardService;
+		private readonly IIAPService         _iapService;
+		private readonly ICostService        _costService;
+		private readonly IRewardService      _rewardService;
+		private readonly ITransactionService _transactionService;
 
 		// Items purchased with immediateCredit: false, waiting to be granted later.
+		// Used only on the legacy path (no ITransactionService provided).
 		private readonly List<IPurchasable> _pendingCredit = new();
 
 		public IIAPService IAPService => _iapService;
@@ -38,11 +41,13 @@ namespace AK.Services
 		public PurchaseService(
 			ICostService costService,
 			IRewardService rewardService,
-			IIAPService iapService = null)
+			IIAPService iapService = null,
+			ITransactionService transactionService = null)
 		{
-			_costService   = costService;
-			_rewardService = rewardService;
-			_iapService    = iapService;
+			_costService        = costService;
+			_rewardService      = rewardService;
+			_iapService         = iapService;
+			_transactionService = transactionService;
 		}
 
 		public async UniTask<PurchaseStatus> Purchase(IPurchasable item, bool immediateCredit)
@@ -84,6 +89,11 @@ namespace AK.Services
 				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InternalError };
 			}
 
+			if (_transactionService != null)
+			{
+				return await CreditWithTransaction(item, immediateCredit);
+			}
+
 			GrantRewards(item, immediateCredit);
 			return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.None };
 		}
@@ -105,7 +115,34 @@ namespace AK.Services
 			}
 
 			Debug.Log($"[PurchaseService] IAP purchase succeeded for '{item.ProductID}' (tx: {iapResult.TransactionId})");
+
+			if (_transactionService != null)
+			{
+				return await CreditWithTransaction(item, immediateCredit);
+			}
+
 			GrantRewards(item, immediateCredit);
+			return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.None };
+		}
+
+		// Purchases are ledgered as transactions: recorded pending with their reward
+		// payload, credited immediately or left for a later GrantPendingCredits.
+		private async UniTask<PurchaseStatus> CreditWithTransaction(IPurchasable item, bool immediateCredit)
+		{
+			var rewards = new List<IReward>();
+			item.CollectRewards(rewards);
+
+			var transaction = _transactionService.RecordPending(item.TransactionTypeUID, rewards, item.ProductID);
+
+			if (immediateCredit)
+			{
+				bool credited = await _transactionService.CreditAsync(transaction);
+				if (!credited)
+				{
+					return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InternalError };
+				}
+			}
+
 			return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.None };
 		}
 
@@ -127,10 +164,25 @@ namespace AK.Services
 
 		/// <summary>
 		/// Grants all rewards that were deferred with immediateCredit=false. Returns the number of
-		/// items credited.
+		/// items credited. On the transaction path this recovers pending transactions from
+		/// disk, so deferred purchases survive crashes.
 		/// </summary>
-		public int GrantPendingCredits()
+		public async UniTask<int> GrantPendingCredits()
 		{
+			if (_transactionService != null)
+			{
+				int credited = 0;
+				foreach (var transaction in _transactionService.GetPendingTransactions())
+				{
+					if (await _transactionService.CreditAsync(transaction))
+					{
+						credited++;
+					}
+				}
+
+				return credited;
+			}
+
 			var count = _pendingCredit.Count;
 
 			foreach (var item in _pendingCredit)

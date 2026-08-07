@@ -1,11 +1,10 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.UI;
 using DG.Tweening;
-using Sirenix.OdinInspector;
 
 namespace UI.Utilities
 {
@@ -266,7 +265,6 @@ namespace UI.Utilities
 			}
 		}
 
-		[Button]
 		public void RepositionIndicator()
 		{
 			TabItem currentTab = GetTabOrNull(_selectedIndex);

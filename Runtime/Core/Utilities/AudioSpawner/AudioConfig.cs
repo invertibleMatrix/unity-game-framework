@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using AK.Core;
 using Reflex.Extensions;
-using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.Audio;
 using UnityEngine.SceneManagement;
@@ -52,7 +51,6 @@ namespace Utilities.AudioSpawner
 		[Tooltip("If true, the sound will be played in 3D space. If false, it will be 2D and heard everywhere.")]
 		public bool IsSpatial = true;
 #if UNITY_EDITOR
-		[Button]
 		public void PlayDebug()
 		{
 			var audioSpawner = SceneManager.GetActiveScene().GetSceneContainer().Resolve<IAudioSpawner>();

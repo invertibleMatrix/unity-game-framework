@@ -12,8 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 274cef55c47df934392ed1e6043cc666, type: 3}
   m_Name: TopToTopSlideAnimationStrategy
   m_EditorClassIdentifier: AKMenuSystem::AKMenuSystem.Animations.SlideAnimationStrategy
-  Duration: 0.75
-  Ease: 15
+  EntryDuration: 0.3
+  EntryEase: 9
+  ExitDuration: 0.3
+  ExitEase: 8
   _entryDirection: 0
   _overrideExitDirection: 1
   _exitDirection: 0
+  _edgesOffset: {x: 250, y: 250}

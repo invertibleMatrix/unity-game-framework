@@ -1,7 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using Sirenix.OdinInspector;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -12,7 +11,7 @@ namespace AK.Core
 	[CreateAssetMenu(fileName = "UIDRegistry", menuName = "AK/Registries/UIDRegistry")]
 	public class UIDRegistry : ScriptableObject
 	{
-		[InlineEditor] [SerializeField]
+		[SerializeField]
 		private List<UID> _uids = new();
 
 		// Runtime lookups for performance
@@ -68,7 +67,6 @@ namespace AK.Core
 
 		// Editor helpers (same as before)
 #if UNITY_EDITOR
-		[Button("Refresh All UIDs In Project")]
 		[ContextMenu("Refresh All UIDs In Project")]
 		public void RefreshAllUIDs()
 		{
@@ -82,7 +80,6 @@ namespace AK.Core
 			EditorUtility.SetDirty(this);
 		}
 
-		[Button("Validate Registry")]
 		[ContextMenu("Validate Registry")]
 		private void ValidateRegistry()
 		{
@@ -104,7 +101,6 @@ namespace AK.Core
 			}
 		}
 
-		[Button]
 		public void PrintName(string uid)
 		{
 			if (_guidLookup == null)

@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using AK.Core;
 using AK.Examples.Costs;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.Examples.Store
@@ -37,7 +36,6 @@ namespace AK.Examples.Store
 		[Tooltip("Maximum level for this category (0 = no limit)")]
 		public int MaximumLevel;
 		
-		[InlineEditor]
 		public List<UID> ProductIDs;
 	}
 }

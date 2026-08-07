@@ -1,6 +1,5 @@
-﻿using System.Threading;
+using System.Threading;
 using Cysharp.Threading.Tasks;
-using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -9,9 +8,9 @@ namespace AK.Core.ResourceManagement
 	[RequireComponent(typeof(Image))]
 	public class ImageSpriteLoader : SpriteLoadingComponent
 	{
-		[SerializeField, BoxGroup] protected Image _image = default;
-		[SerializeField, BoxGroup] protected bool _setNativeSize = false;
-		[SerializeField, BoxGroup] protected bool _hideWhenLoading = true;
+		[SerializeField] protected Image _image = default;
+		[SerializeField] protected bool _setNativeSize = false;
+		[SerializeField] protected bool _hideWhenLoading = true;
 
 		public override Sprite Sprite => _image.sprite;
 

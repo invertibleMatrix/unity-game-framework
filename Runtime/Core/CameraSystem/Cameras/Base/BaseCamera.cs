@@ -1,9 +1,8 @@
-﻿using System;
+using System;
 using System.Collections;
 using AK.Core;
 using AK.StateMachine;
 using Reflex.Attributes;
-using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
 using Random = UnityEngine.Random;
@@ -25,7 +24,6 @@ namespace AK.Systems
         [SerializeField] protected CameraType _cameraType;
 
         [Tooltip("For Overlay cameras: the CameraType UID of the Base camera this overlay stacks on.")]
-        [ShowIf("_role", CameraRole.Overlay)]
         [SerializeField] protected CameraType _baseCameraType;
 
         [SerializeField] protected Camera _camera;

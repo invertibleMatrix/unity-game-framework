@@ -17,11 +17,13 @@ namespace AK.Systems
 		private float _duration;
 		private Tween _hideTween;
 
-		public const string DEFAULT_ID     = UIConstants.BANNER1;
-		public const string DEFAULT_TOP_ID = UIConstants.BANNER2;
-		public const string AFFIRMATION_ID = UIConstants.AFFIRMATION_BANNER_ID;
+		public const string DEFAULT_ID     = "banner1";
+		public const string DEFAULT_TOP_ID = "banner2";
+		public const string AFFIRMATION_ID = "affirmation";
 
-		public void Init(string text, float duration = UIConstants.DEFAULT_BANNER_DURATION)
+		public const float DEFAULT_BANNER_DURATION = 2f;
+
+		public void Init(string text, float duration = DEFAULT_BANNER_DURATION)
 		{
 			_text.text = text;
 			_duration = duration;
@@ -66,7 +68,7 @@ namespace AK.Systems
 		{
 			base.OnReset();
 			_text.text = "";
-			_duration = UIConstants.DEFAULT_BANNER_DURATION;
+			_duration = DEFAULT_BANNER_DURATION;
 
 			if (_animator != null)
 			{

@@ -1,7 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
-using Sirenix.OdinInspector;
 using AK.Core;
 using UnityEngine;
 
@@ -9,7 +8,7 @@ namespace Utilities.ParticleSpawner
 {
 	public class ParticleSpawner : GameEntity, IParticleSpawner
 	{
-		[InlineEditor, SerializeField]
+		[SerializeField]
 		private ParticlesRegistry _particlesRegistry;
 
 		private Dictionary<UID, Queue<ParticleComponent>> _pools;

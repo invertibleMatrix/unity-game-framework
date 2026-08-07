@@ -1,16 +1,15 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using AK.Core;
 using JetBrains.Annotations;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace Utilities.AudioSpawner
 {
 	public class AudioSpawner : GameEntity, IAudioSpawner
 	{
-		[InlineEditor] [SerializeField]
+		[SerializeField]
 		private AudioRegistry _audioRegistry;
 
 		// Pool by type - one pool per AudioComponent type, using max pool size across all configs
@@ -305,7 +304,6 @@ namespace Utilities.AudioSpawner
 		}
 
 #if UNITY_EDITOR
-		[Button("Log Pool Statistics")]
 		private void LogPoolStatistics()
 		{
 			if (_pools == null)

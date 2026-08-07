@@ -1,8 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using AK.Core;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 #if UNITY_EDITOR
@@ -182,7 +181,6 @@ namespace Utilities.AudioSpawner
 
 		// Editor helpers
 #if UNITY_EDITOR
-		[Button("Refresh All Objects")]
 		[ContextMenu("Refresh All Objects")]
 		public void RefreshAllObjects()
 		{
@@ -190,14 +188,12 @@ namespace Utilities.AudioSpawner
 			EditorUtility.SetDirty(this);
 		}
 
-		[Button("Validate Objects")]
 		[ContextMenu("Validate Objects")]
 		public void ValidateObjects()
 		{
 			_registry.ValidateObjects();
 		}
 
-		[Button("Log Registry Statistics")]
 		[ContextMenu("Log Registry Statistics")]
 		public void LogRegistryStatistics()
 		{

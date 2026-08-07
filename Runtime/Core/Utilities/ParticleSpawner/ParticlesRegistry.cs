@@ -1,8 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using AK.Core;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 #if UNITY_EDITOR
@@ -150,20 +149,17 @@ namespace Utilities.ParticleSpawner
 
         // Editor helpers
 #if UNITY_EDITOR
-        [Button("Refresh All Objects")]
         public void RefreshAllObjects()
         {
             _registry.RefreshAllObjects();
             EditorUtility.SetDirty(this);
         }
 
-        [Button("Validate Objects")]
         public void ValidateObjects()
         {
             _registry.ValidateObjects();
         }
 
-        [Button("Log Registry Statistics")]
         public void LogRegistryStatistics()
         {
             if (_typeToConfigs == null || _uidToConfig == null)

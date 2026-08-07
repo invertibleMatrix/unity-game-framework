@@ -1,5 +1,4 @@
-﻿using System.Collections.Generic;
-using Sirenix.OdinInspector;
+using System.Collections.Generic;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -17,7 +16,6 @@ namespace AK.Systems
 		public IReadOnlyList<UIView> Views => _views;
 
 #if UNITY_EDITOR
-		[Button("Refresh All Views In Project")]
 		[ContextMenu("Refresh All Views In Project")]
 		private void RefreshAllViews()
 		{

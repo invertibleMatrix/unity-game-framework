@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using AK.Core;
 
 namespace AK.CoreDomain
 {
@@ -23,6 +24,12 @@ namespace AK.CoreDomain
 		/// The cost to purchase this item. Null if free or misconfigured.
 		/// </summary>
 		ICostInfo Cost { get; }
+
+		/// <summary>
+		/// UID used to type this purchase in the transaction ledger (per-product
+		/// counting and queries). MetaData items can return their own UniqueID.
+		/// </summary>
+		UID TransactionTypeUID { get; }
 
 		/// <summary>
 		/// Collect all rewards from this item (flattens bundles recursively).

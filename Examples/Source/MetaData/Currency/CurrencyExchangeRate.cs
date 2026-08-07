@@ -1,5 +1,4 @@
 using System;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.Examples.Currency
@@ -33,11 +32,9 @@ namespace AK.Examples.Currency
 		public bool IsLimitedTime;
 
 		[Tooltip("Start time of availability (UTC).")]
-		[ShowIf("IsLimitedTime")]
 		public DateTime StartTime;
 
 		[Tooltip("End time of availability (UTC).")]
-		[ShowIf("IsLimitedTime")]
 		public DateTime EndTime;
 
 		/// <summary>

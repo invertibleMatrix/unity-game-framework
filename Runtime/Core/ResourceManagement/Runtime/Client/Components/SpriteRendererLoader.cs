@@ -1,4 +1,3 @@
-﻿using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.Core.ResourceManagement
@@ -6,7 +5,7 @@ namespace AK.Core.ResourceManagement
 	[RequireComponent(typeof(SpriteRenderer))]
 	public sealed class SpriteRendererLoader : SpriteLoadingComponent
 	{
-		[SerializeField, BoxGroup] private SpriteRenderer _renderer = default;
+		[SerializeField] private SpriteRenderer _renderer = default;
 
 		public override Sprite Sprite => _renderer.sprite;
 

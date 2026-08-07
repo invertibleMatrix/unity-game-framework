@@ -1,5 +1,4 @@
 using DG.Tweening;
-using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -21,7 +20,6 @@ namespace AK.Systems
 			Custom
 		}
 
-		[Title("Arrow Settings")]
 		[SerializeField, Tooltip("The root canvas for calculating screen positions. If null, will try to find the parent canvas.")]
 		private Canvas _rootCanvas;
 
@@ -31,10 +29,9 @@ namespace AK.Systems
 		[SerializeField, Tooltip("Predefined spawn position for the arrow (relative to screen)")]
 		private ArrowSpawnPosition _spawnPosition = ArrowSpawnPosition.Center;
 
-		[SerializeField, ShowIf("@_spawnPosition == ArrowSpawnPosition.Custom")]
+		[SerializeField]
 		private Vector2 _customSpawnOffset;
 
-		[Title("Animation Settings")]
 		[SerializeField, Tooltip("Target RectTransform to point the arrow at")]
 		private RectTransform _target;
 
@@ -53,6 +50,8 @@ namespace AK.Systems
 		[SerializeField, Tooltip("Size of the arrow in pixels")]
 		private Vector2 _arrowSize = new Vector2(128f, 128f);
 
+		private const float _defaultPivot = 0.5f;
+		
 		private GameObject _arrowInstance;
 		private RectTransform _arrowRect;
 		private Image _arrowImage;
@@ -71,7 +70,6 @@ namespace AK.Systems
 		/// Shows the tutorial arrow, spawning it and animating it toward the target.
 		/// The arrow will oscillate near the target until dismissed.
 		/// </summary>
-		[Button]
 		public void ShowArrow()
 		{
 			DismissArrow();
@@ -101,19 +99,19 @@ namespace AK.Systems
 
 			_arrowRect = _arrowInstance.GetComponent<RectTransform>();
 			_arrowRect.sizeDelta = _arrowSize;
-			_arrowRect.pivot = new Vector2(UIConstants.DEFAULT_PIVOT, UIConstants.DEFAULT_PIVOT);
-			_arrowRect.anchorMin = new Vector2(UIConstants.DEFAULT_PIVOT, UIConstants.DEFAULT_PIVOT);
-			_arrowRect.anchorMax = new Vector2(UIConstants.DEFAULT_PIVOT, UIConstants.DEFAULT_PIVOT);
+			_arrowRect.pivot = new Vector2(_defaultPivot, _defaultPivot);
+			_arrowRect.anchorMin = new Vector2(_defaultPivot, _defaultPivot);
+			_arrowRect.anchorMax = new Vector2(_defaultPivot, _defaultPivot);
 
 			// Set initial position (screen-relative, converted to local space)
 			SetSpawnPosition();
 
 			// Start with zero scale and fade in
 			_arrowRect.localScale = Vector3.zero;
-			_arrowImage.color = new Color(UIConstants.FULL_ALPHA, UIConstants.FULL_ALPHA, UIConstants.FULL_ALPHA, UIConstants.ZERO_ALPHA);
+			_arrowImage.color = new Color(1f, 1f, 1f, 1f);
 
 			_arrowRect.DOScale(Vector3.one, _moveToTargetDuration).SetEase(Ease.OutBack).Play();
-			_arrowImage.DOFade(UIConstants.FULL_ALPHA, _moveToTargetDuration).Play();
+			_arrowImage.DOFade(1f, _moveToTargetDuration).Play();
 
 			if (_target != null)
 			{
@@ -125,7 +123,6 @@ namespace AK.Systems
 		/// <summary>
 		/// Dismisses the arrow with a shrink animation.
 		/// </summary>
-		[Button]
 		public void DismissArrow()
 		{
 			_moveTween?.Kill();
@@ -165,7 +162,7 @@ namespace AK.Systems
 
 			if (_arrowImage != null)
 			{
-				_arrowImage.DOFade(UIConstants.ZERO_ALPHA, _dismissDuration).Play();
+				_arrowImage.DOFade(1f, _dismissDuration).Play();
 			}
 		}
 
@@ -211,16 +208,16 @@ namespace AK.Systems
 			switch (_spawnPosition)
 			{
 				case ArrowSpawnPosition.TopLeft:
-					spawnOffset = new Vector2(-_canvasRect.rect.width * UIConstants.DEFAULT_PIVOT, _canvasRect.rect.height * UIConstants.DEFAULT_PIVOT);
+					spawnOffset = new Vector2(-_canvasRect.rect.width * _defaultPivot, _canvasRect.rect.height * _defaultPivot);
 					break;
 				case ArrowSpawnPosition.TopRight:
-					spawnOffset = new Vector2(_canvasRect.rect.width * UIConstants.DEFAULT_PIVOT, _canvasRect.rect.height * UIConstants.DEFAULT_PIVOT);
+					spawnOffset = new Vector2(_canvasRect.rect.width * _defaultPivot, _canvasRect.rect.height * _defaultPivot);
 					break;
 				case ArrowSpawnPosition.BottomLeft:
-					spawnOffset = new Vector2(-_canvasRect.rect.width * UIConstants.DEFAULT_PIVOT, -_canvasRect.rect.height * UIConstants.DEFAULT_PIVOT);
+					spawnOffset = new Vector2(-_canvasRect.rect.width * _defaultPivot, -_canvasRect.rect.height * _defaultPivot);
 					break;
 				case ArrowSpawnPosition.BottomRight:
-					spawnOffset = new Vector2(_canvasRect.rect.width * UIConstants.DEFAULT_PIVOT, -_canvasRect.rect.height * UIConstants.DEFAULT_PIVOT);
+					spawnOffset = new Vector2(_canvasRect.rect.width * _defaultPivot, -_canvasRect.rect.height * _defaultPivot);
 					break;
 				case ArrowSpawnPosition.Center:
 					spawnOffset = Vector2.zero;
@@ -248,7 +245,7 @@ namespace AK.Systems
 			float targetAngle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
 			float finalAngle = targetAngle - 90f;
 
-			_rotationTween = _arrowRect.DORotate(new Vector3(UIConstants.ZERO_POSITION, UIConstants.ZERO_POSITION, finalAngle), _moveToTargetDuration)
+			_rotationTween = _arrowRect.DORotate(new Vector3(0, 0, finalAngle), _moveToTargetDuration)
 				.SetEase(Ease.OutQuad)
 				.Play();
 		}
@@ -285,13 +282,13 @@ namespace AK.Systems
 			Vector2 oscillationDir = (targetLocalPos - basePos).normalized;
 
 			_oscillationTween = DOTween.To(
-				() => UIConstants.ZERO_POSITION,
+				() => 0f,
 				t =>
 				{
-					float offset = Mathf.Sin(t * Mathf.PI * 2f) * (_oscillationDistance * UIConstants.DEFAULT_PIVOT);
+					float offset = Mathf.Sin(t * Mathf.PI * 2f) * (_oscillationDistance * _defaultPivot);
 					_arrowRect.anchoredPosition = basePos + (oscillationDir * offset);
 				},
-				UIConstants.FULL_ALPHA,
+				1f,
 				_oscillationDuration)
 				.SetLoops(-1, LoopType.Restart)
 				.SetEase(Ease.Linear)

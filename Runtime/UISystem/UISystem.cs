@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -6,7 +6,6 @@ using AK.Systems.UI;
 using Cysharp.Threading.Tasks;
 using Reflex.Attributes;
 using Reflex.Core;
-using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -30,7 +29,7 @@ namespace AK.Systems
 		// SERIALIZED
 		// =================================================================
 
-		[InlineEditor, SerializeField]
+		[SerializeField]
 		private UIViewRepository _repository;
 
 		[SerializeField] private Transform _viewsContainer;
@@ -316,7 +315,7 @@ namespace AK.Systems
 			}
 		}
 
-		internal void ShowExistingView(UIView view, string viewId = "", UIContext context = null,
+		internal void ShowExistingView(UIView view, UIContext context = null,
 		                               ViewStackBehaviour? stackBehaviour = null)
 		{
 			if (view == null || view.gameObject == null)
@@ -332,6 +331,63 @@ namespace AK.Systems
 			}
 
 			ShowRegisteredViewAsync(view, record.Parent, context, stackBehaviour).Forget();
+		}
+
+		internal UniTask ShowExistingViewAsync(UIView view, UIContext context = null,
+		                                       ViewStackBehaviour? stackBehaviour = null, CancellationToken ct = default)
+		{
+			if (view == null || view.gameObject == null)
+			{
+				Debug.LogError("Cannot show view: view or its GameObject is null.");
+				return UniTask.CompletedTask;
+			}
+
+			if (!_viewRegistry.TryGetValue(view, out var record))
+			{
+				Debug.LogError($"Cannot show view '{view.name}': not registered.", view);
+				return UniTask.CompletedTask;
+			}
+
+			return ShowRegisteredViewAsync(view, record.Parent, context, stackBehaviour, ct: ct);
+		}
+
+		/// <summary>
+		/// Shows a registered fragment without waiting for pending sibling shows, like
+		/// ShowStaticChildrenBatch does for ShowOnStart children. For independent sibling
+		/// pops with no stack behaviour between them — no context, fire-and-forget.
+		/// </summary>
+		internal void ShowExistingViewParallel(UIView view)
+		{
+			if (view == null || view.gameObject == null)
+			{
+				Debug.LogError("Cannot show view: view or its GameObject is null.");
+				return;
+			}
+
+			if (!_viewRegistry.TryGetValue(view, out var record))
+			{
+				Debug.LogError($"Cannot show view '{view.name}': not registered.", view);
+				return;
+			}
+
+			UIView parent = record.Parent;
+			if (parent == null)
+			{
+				ShowRegisteredViewAsync(view, null, null, null).Forget();
+				return;
+			}
+
+			if (!_historyStacks.TryGetValue(parent, out var history))
+			{
+				history = new Stack<UIView>();
+				_historyStacks[parent] = history;
+			}
+
+			view.PrepareForShowAnimation();
+			RemoveFromStack(view, history);
+			history.Push(view);
+
+			view.InternalShowAsync().Forget();
 		}
 
 		/// <summary>
@@ -1708,7 +1764,6 @@ namespace AK.Systems
 		}
 
 #if UNITY_EDITOR
-		[Button("Show View By Index")]
 		private void ShowViewByIndex(int index)
 		{
 			if (_repository == null || index < 0 || index >= _repository.Views.Count) return;

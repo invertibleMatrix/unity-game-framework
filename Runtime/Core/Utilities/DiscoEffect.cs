@@ -1,6 +1,5 @@
 using UnityEngine;
 using DG.Tweening;
-using Sirenix.OdinInspector;
 
 namespace AK.Utilities
 {
@@ -32,7 +31,6 @@ namespace AK.Utilities
 		private Tween _discoTween;
 		private Color _originalColor;
 
-		[Button]
 		public void PlayDiscoEffect()
 		{
 			if (_spriteRenderer == null) return;

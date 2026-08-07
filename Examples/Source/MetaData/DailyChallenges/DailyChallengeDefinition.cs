@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using AK.Core;
 using AK.Examples.Rewards;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.Examples.DailyChallenges
@@ -30,7 +29,6 @@ namespace AK.Examples.DailyChallenges
         public int TargetValue;
 
         [Tooltip("Current progress (for tracking)")]
-        [ReadOnly]
         public int CurrentProgress;
 
         [Tooltip("Is this challenge currently active?")]
@@ -57,7 +55,6 @@ namespace AK.Examples.DailyChallenges
         [Tooltip("Does this challenge have a time limit?")]
         public bool HasTimeLimit;
 
-        [ShowIf("HasTimeLimit")]
         [Tooltip("Time limit in seconds")]
         public float TimeLimit;
 
@@ -68,7 +65,6 @@ namespace AK.Examples.DailyChallenges
         [Tooltip("Is this a recurring challenge?")]
         public bool IsRecurring;
 
-        [ShowIf("IsRecurring")]
         [Tooltip("Recurrence interval in days")]
         public int RecurrenceInterval;
 
@@ -122,6 +118,6 @@ namespace AK.Examples.DailyChallenges
     {
         public int ProgressThreshold;
         public List<RewardDefinition> Rewards;
-        [ReadOnly] public bool Rewarded;
+        public bool Rewarded;
     }
 }

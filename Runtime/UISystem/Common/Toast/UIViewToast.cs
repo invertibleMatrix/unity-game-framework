@@ -12,6 +12,10 @@ namespace AK.Systems.UI
 		[SerializeField] private TextMeshProUGUI FloaterText;
 		[SerializeField] private RectTransform   ContainerPanel;
 
+		[SerializeField] private float _floatDistance   = 120f;
+		[SerializeField] private float _duration        = 2f;
+		[SerializeField] private float _fadeOutDuration = 0.5f;
+		
 		private Vector2  _initialPosition;
 		private int      _moveDirection = 1;
 		private string   _textToDisplay;
@@ -37,10 +41,10 @@ namespace AK.Systems.UI
 			ContainerPanel.anchoredPosition = _initialPosition;
 
 			_floaterMoveSequence
-				.Append(ContainerPanel.DOAnchorPosY(_initialPosition.y + (_moveDirection * UIConstants.TOAST_FLOAT_DISTANCE), UIConstants.TOAST_FLOAT_DURATION).SetEase(Ease.OutSine)
+				.Append(ContainerPanel.DOAnchorPosY(_initialPosition.y + (_moveDirection * _floatDistance), _duration).SetEase(Ease.OutSine)
 				                      .OnComplete(Hide))
-				.Join(FloaterBg.DOFade(UIConstants.FULL_ALPHA, UIConstants.ZERO_ALPHA))
-				.Join(FloaterText.DOFade(UIConstants.FULL_ALPHA, UIConstants.ZERO_ALPHA));
+				.Join(FloaterBg.DOFade(1f, 0f))
+				.Join(FloaterText.DOFade(1f, 0f));
 			_floaterMoveSequence.Play();
 		}
 
@@ -50,8 +54,8 @@ namespace AK.Systems.UI
 
 			_floaterHideSequence?.Kill();
 			_floaterHideSequence = DOTween.Sequence();
-			_floaterHideSequence.Append(FloaterBg.DOFade(UIConstants.ZERO_ALPHA, UIConstants.TOAST_FADE_OUT_DURATION))
-			                    .Join(FloaterText.DOFade(UIConstants.ZERO_ALPHA, UIConstants.TOAST_FADE_OUT_DURATION).OnComplete(() => Close()));
+			_floaterHideSequence.Append(FloaterBg.DOFade(0f, _fadeOutDuration))
+			                    .Join(FloaterText.DOFade(0f, _fadeOutDuration).OnComplete(() => Close()));
 			_floaterHideSequence.Play();
 		}
 

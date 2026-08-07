@@ -1,7 +1,7 @@
 {
     "name": "AK.Editor",
     "rootNamespace": "AK.Editor",
-    "references": [],
+    "references": ["GUID:2b4db0e06298628458c279ec9665624d"],
     "includePlatforms": [
         "Editor"
     ],

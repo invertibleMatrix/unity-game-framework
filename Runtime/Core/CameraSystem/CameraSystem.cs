@@ -1,9 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using AK.Core;
 using Cysharp.Threading.Tasks;
-using Sirenix.OdinInspector;
 using Unity.Cinemachine;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
@@ -12,7 +11,7 @@ namespace AK.Systems
 {
 	public class CameraSystem : GameEntity, ICameraSystem
 	{
-		[InlineEditor] [SerializeField]
+		[SerializeField]
 		private CameraRegistry _cameraRegistry;
 
 		[Tooltip("Added to a virtual camera's BasePriority while it is live. Higher than any standby priority wins the brain.")]
