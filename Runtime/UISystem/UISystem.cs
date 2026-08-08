@@ -144,17 +144,19 @@ namespace AK.Systems
 		// =================================================================
 
 		public TView Show<TView>(UIContext context = null, UIView parent = null, string viewId = "",
-		                         UIChannel? channelOverride = null, ViewStackBehaviour? stackBehaviour = null, Action<TView> onInit = null)
+		                         UIChannel? channelOverride = null, ViewStackBehaviour? stackBehaviour = null, Action<TView> onInit = null,
+		                         bool waitForPrevious = false)
 			where TView : UIView
 		{
-			return Show(typeof(TView), context, parent, viewId, channelOverride, stackBehaviour, onInit);
+			return Show(typeof(TView), context, parent, viewId, channelOverride, stackBehaviour, onInit, waitForPrevious);
 		}
 
 		public TView Show<TView>(Type type, UIContext context = null, UIView parent = null, string viewId = "",
-		                         UIChannel? channelOverride = null, ViewStackBehaviour? stackBehaviour = null, Action<TView> onInit = null)
+		                         UIChannel? channelOverride = null, ViewStackBehaviour? stackBehaviour = null, Action<TView> onInit = null,
+		                         bool waitForPrevious = false)
 			where TView : UIView
 		{
-			var (view, animationTask) = PrepareAndRegisterView(type, context, parent, viewId, channelOverride, stackBehaviour, onInit);
+			var (view, animationTask) = PrepareAndRegisterView(type, context, parent, viewId, channelOverride, stackBehaviour, onInit, waitForPrevious: waitForPrevious);
 			if (view != null)
 			{
 				animationTask.Forget();
@@ -170,19 +172,21 @@ namespace AK.Systems
 		public async UniTask<TView> ShowAsync<TView>(UIContext context = null, UIView parent = null, string viewId = "",
 		                                             UIChannel? channelOverride = null, ViewStackBehaviour? stackBehaviour = null,
 		                                             Action<TView> onInit = null,
+		                                             bool waitForPrevious = false,
 		                                             CancellationToken ct = default)
 			where TView : UIView
 		{
-			return await ShowAsync(typeof(TView), context, parent, viewId, channelOverride, stackBehaviour, onInit, ct);
+			return await ShowAsync(typeof(TView), context, parent, viewId, channelOverride, stackBehaviour, onInit, waitForPrevious, ct);
 		}
 
 		public async UniTask<TView> ShowAsync<TView>(Type type, UIContext context = null, UIView parent = null, string viewId = "",
 		                                             UIChannel? channelOverride = null, ViewStackBehaviour? stackBehaviour = null,
 		                                             Action<TView> onInit = null,
+		                                             bool waitForPrevious = false,
 		                                             CancellationToken ct = default)
 			where TView : UIView
 		{
-			var (view, animationTask) = PrepareAndRegisterView(type, context, parent, viewId, channelOverride, stackBehaviour, onInit);
+			var (view, animationTask) = PrepareAndRegisterView(type, context, parent, viewId, channelOverride, stackBehaviour, onInit, waitForPrevious: waitForPrevious);
 			if (view == null) return null;
 
 			// Await the full animation pipeline — this is the key UniTask advantage.
@@ -195,26 +199,26 @@ namespace AK.Systems
 		// IUIViewSystem — CLOSE
 		// =================================================================
 
-		public void Close(UIView view, CloseContext context = CloseContext.Normal, Action onClose = null)
+		public void Close(UIView view, Action onClose = null)
 		{
 			// Only fire the callback when the close will actually do something - a double-close
 			// or unregistered view early-returns inside CloseInternalAsync and "closed" nothing.
 			bool willClose = view != null && _viewRegistry.ContainsKey(view) && !_closingViews.Contains(view);
-			CloseInternalAsync(view, context, false).ContinueWith(() =>
+			CloseInternalAsync(view, CloseContext.Normal, false).ContinueWith(() =>
 			{
 				if (willClose) onClose?.Invoke();
 			}).Forget();
 		}
 
-		public UniTask CloseAsync(UIView view, CloseContext context = CloseContext.Normal, CancellationToken ct = default)
+		public UniTask CloseAsync(UIView view, CancellationToken ct = default)
 		{
-			return CloseInternalAsync(view, context, false, ct);
+			return CloseInternalAsync(view, CloseContext.Normal, false, ct);
 		}
 
-		public void CloseImmediate(UIView view, CloseContext context = CloseContext.Normal, Action onClose = null)
+		public void CloseImmediate(UIView view, Action onClose = null)
 		{
 			bool willClose = view != null && _viewRegistry.ContainsKey(view) && !_closingViews.Contains(view);
-			CloseInternalAsync(view, context, true).ContinueWith(() =>
+			CloseInternalAsync(view, CloseContext.Normal, true).ContinueWith(() =>
 			{
 				if (willClose) onClose?.Invoke();
 			}).Forget();
@@ -324,6 +328,12 @@ namespace AK.Systems
 				return;
 			}
 
+			if (view.IsTemplate)
+			{
+				Debug.LogWarning($"'{view.name}' is a template — call ShowFragment<{view.GetType().Name}>() to spawn a clone; the template itself never shows.", view);
+				return;
+			}
+
 			if (!_viewRegistry.TryGetValue(view, out var record))
 			{
 				Debug.LogError($"Cannot show view '{view.name}': not registered.", view);
@@ -342,6 +352,12 @@ namespace AK.Systems
 				return UniTask.CompletedTask;
 			}
 
+			if (view.IsTemplate)
+			{
+				Debug.LogWarning($"'{view.name}' is a template — call ShowFragment<{view.GetType().Name}>() to spawn a clone; the template itself never shows.", view);
+				return UniTask.CompletedTask;
+			}
+
 			if (!_viewRegistry.TryGetValue(view, out var record))
 			{
 				Debug.LogError($"Cannot show view '{view.name}': not registered.", view);
@@ -354,27 +370,33 @@ namespace AK.Systems
 		/// <summary>
 		/// Shows a registered fragment without waiting for pending sibling shows, like
 		/// ShowStaticChildrenBatch does for ShowOnStart children. For independent sibling
-		/// pops with no stack behaviour between them — no context, fire-and-forget.
+		/// pops with no stack behaviour between them — history is pushed synchronously,
+		/// then the animation runs. Returns the show task for awaiters.
 		/// </summary>
-		internal void ShowExistingViewParallel(UIView view)
+		internal UniTask ShowExistingViewParallel(UIView view, UIContext context = null, CancellationToken ct = default)
 		{
 			if (view == null || view.gameObject == null)
 			{
 				Debug.LogError("Cannot show view: view or its GameObject is null.");
-				return;
+				return UniTask.CompletedTask;
+			}
+
+			if (view.IsTemplate)
+			{
+				Debug.LogWarning($"'{view.name}' is a template — call ShowFragment<{view.GetType().Name}>() to spawn a clone; the template itself never shows.", view);
+				return UniTask.CompletedTask;
 			}
 
 			if (!_viewRegistry.TryGetValue(view, out var record))
 			{
 				Debug.LogError($"Cannot show view '{view.name}': not registered.", view);
-				return;
+				return UniTask.CompletedTask;
 			}
 
 			UIView parent = record.Parent;
 			if (parent == null)
 			{
-				ShowRegisteredViewAsync(view, null, null, null).Forget();
-				return;
+				return ShowRegisteredViewAsync(view, null, context, null, ct: ct);
 			}
 
 			if (!_historyStacks.TryGetValue(parent, out var history))
@@ -384,10 +406,11 @@ namespace AK.Systems
 			}
 
 			view.PrepareForShowAnimation();
+			view.SetContext(context);
 			RemoveFromStack(view, history);
 			history.Push(view);
 
-			view.InternalShowAsync().Forget();
+			return view.InternalShowAsync(ct);
 		}
 
 		/// <summary>
@@ -412,6 +435,7 @@ namespace AK.Systems
 			foreach (var entry in entries)
 			{
 				if (entry.View == null || !entry.ShowOnStart) continue;
+				if (entry.View.IsTemplate) continue;   // templates are clone sources, never presented
 				if (!_viewRegistry.TryGetValue(entry.View, out _)) continue;
 
 				// Prepare and push onto history stack synchronously (no stack behaviour between siblings)
@@ -445,7 +469,7 @@ namespace AK.Systems
 			Type type, UIContext context, UIView parent, string viewId,
 			UIChannel? channelOverride = null,
 			ViewStackBehaviour? stackBehaviour = null, Action<TView> onInit = null,
-			bool immediate = false)
+			bool immediate = false, bool waitForPrevious = false)
 			where TView : UIView
 		{
 			string id = viewId ?? string.Empty;
@@ -476,9 +500,18 @@ namespace AK.Systems
 
 			if (staticRecord != null && staticRecord.Instance is TView staticView)
 			{
+				// Templates never show or get reused themselves — they are clone sources.
+				if (staticView.IsTemplate)
+				{
+					return PrepareCloneFromTemplate(staticView, parent ?? staticRecord.Parent, context,
+					                                stackBehaviour, onInit, immediate, waitForPrevious);
+				}
+
 				UIView effectiveParent = parent ?? staticRecord.Parent;
 				onInit?.Invoke(staticView);
-				return (staticView, ShowRegisteredViewAsync(staticView, effectiveParent, context, stackBehaviour, immediate));
+				return (staticView, waitForPrevious
+					? ShowRegisteredViewAsync(staticView, effectiveParent, context, stackBehaviour, immediate)
+					: ShowExistingViewParallel(staticView, context));
 			}
 
 			// --- Find prefab (repository fallback) ---
@@ -568,11 +601,62 @@ namespace AK.Systems
 			else
 			{
 				animTask = hasReplaceClose
-					? AwaitReplaceCloseThen(replaceCloseTask, () => RunFragmentShowAsync(newView, parent, immediate))
-					: RunFragmentShowAsync(newView, parent, immediate);
+					? AwaitReplaceCloseThen(replaceCloseTask, () => RunFragmentShowAsync(newView, parent, immediate, waitForPrevious: waitForPrevious))
+					: RunFragmentShowAsync(newView, parent, immediate, waitForPrevious: waitForPrevious);
 			}
 
 			return (newView, animTask);
+		}
+
+		/// <summary>
+		/// Clones a template static fragment and prepares the clone exactly like a
+		/// prefab-spawned dynamic instance: injected, registered under the same parent,
+		/// shown through the standard fragment pipeline. Clones register as dynamic, so
+		/// every ShowFragment call re-finds the template — unlimited clones, and the
+		/// template itself never presents.
+		/// </summary>
+		private (TView view, UniTask animationTask) PrepareCloneFromTemplate<TView>(
+			TView template, UIView parent, UIContext context, ViewStackBehaviour? stackBehaviour,
+			Action<TView> onInit, bool immediate, bool waitForPrevious)
+			where TView : UIView
+		{
+			if (parent == null)
+			{
+				Debug.LogError($"Cannot clone template '{template.name}': no parent resolved.");
+				return (null, UniTask.CompletedTask);
+			}
+
+			if (template.ReturnToPoolOnClose)
+			{
+				Debug.LogWarning($"Template '{template.name}' has ReturnToPoolOnClose — pooling is prefab-based, so clones destroy on close instead.", template);
+			}
+
+			// The template sits in its own layout slot — clones spawn right there.
+			// Starts inactive like the template; the show pipeline activates it.
+			var cloneGo = Instantiate(template.gameObject, template.transform.parent);
+			cloneGo.name = template.name;
+			var clone = cloneGo.GetComponent<TView>();
+
+			clone._suppressPooling = true;
+			clone.Inject(_diContainer);
+			clone.InternalInitialize(this, parent);
+			clone._overriddenStackBehaviour = stackBehaviour;
+			clone.MoveContentOffScreen();
+
+			onInit?.Invoke(clone);
+			clone.SetContext(context);
+
+			var record = new ViewRecord(clone, parent, isStatic: false);
+			_viewRegistry.Add(clone, record);
+
+			if (_viewRegistry.TryGetValue(parent, out var parentRecord))
+			{
+				parentRecord.AddChild(clone);
+			}
+
+			clone.InitializeStaticChildren(_diContainer);
+
+			return (clone, RunFragmentShowAsync(clone, parent, immediate, waitForPrevious: waitForPrevious));
 		}
 
 		/// <summary>
@@ -684,8 +768,27 @@ namespace AK.Systems
 		/// handle previous fragment's stack behaviour, play show animation.
 		/// Serialized per-parent to prevent concurrent animation conflicts.
 		/// </summary>
-		private async UniTask RunFragmentShowAsync(UIView newView, UIView parent, bool immediate = false, CancellationToken ct = default)
+		private async UniTask RunFragmentShowAsync(UIView newView, UIView parent, bool immediate = false, CancellationToken ct = default,
+		                                           bool waitForPrevious = true)
 		{
+			if (!waitForPrevious)
+			{
+				// Independent sibling: push history synchronously and animate immediately,
+				// skipping the per-parent gate and stack-behaviour negotiation.
+				if (!_historyStacks.TryGetValue(parent, out var bypassHistory))
+				{
+					bypassHistory = new Stack<UIView>();
+					_historyStacks[parent] = bypassHistory;
+				}
+
+				newView.PrepareForShowAnimation();
+				RemoveFromStack(newView, bypassHistory);
+				bypassHistory.Push(newView);
+
+				await newView.InternalShowAsync(ct, immediate);
+				return;
+			}
+
 			// Wait for any pending show on this parent to complete first.
 			// This serializes rapid Show calls (e.g., double-tap) so they don't fight.
 			if (_pendingShowTasks.TryGetValue(parent, out var pending))
@@ -1291,9 +1394,63 @@ namespace AK.Systems
 		// DESTROY / CLEANUP
 		// =================================================================
 
+		/// <summary>
+		/// Drops all bookkeeping for a view destroyed outside the close pipeline (scene
+		/// unload, direct Destroy). The view settles its own resources in OnDestroy;
+		/// children do the same via their own OnDestroy — no cascade needed here.
+		/// Idempotent: system-driven closes have already removed everything.
+		/// </summary>
+		internal void HandleViewDestroyedExternally(UIView view)
+		{
+			if (_viewRegistry.TryGetValue(view, out var record))
+			{
+				if (record.Parent != null && _viewRegistry.TryGetValue(record.Parent, out var parentRecord))
+				{
+					parentRecord.RemoveChild(view);
+				}
+
+				_viewRegistry.Remove(view);
+			}
+
+			_closingViews.Remove(view);
+
+			foreach (var stack in _channelStacks.Values)
+			{
+				RemoveFromStack(view, stack);
+			}
+
+			foreach (var history in _historyStacks.Values)
+			{
+				RemoveFromStack(view, history);
+			}
+		}
+
 		private async UniTask HideAndDestroyAsync(UIView view, ViewRecord record, CloseContext context,
 		                                          bool immediate, CancellationToken ct = default)
 		{
+			// Children-first close policy: only on graceful, animated closes with children
+			// present. Teardown cascades (ParentDestroyed) always settle immediately.
+			bool childrenFirst = !immediate && context == CloseContext.Normal &&
+			                     record.Children.Count > 0 &&
+			                     view.ChildCloseOrder != ChildCloseOrder.ParentFirst;
+
+			if (childrenFirst)
+			{
+				try
+				{
+					await CloseChildrenAsync(view, view.ChildCloseOrder, immediate, ct);
+				}
+				catch (OperationCanceledException)
+				{
+					// Cancelled mid-cascade — each child self-settles in its own hide;
+					// fall through to the parent's hide/settle.
+				}
+				catch (Exception ex)
+				{
+					Debug.LogError($"Error closing children of '{view.name}': {ex.Message}");
+				}
+			}
+
 			try
 			{
 				await view.InternalHideAsync(immediate || context != CloseContext.Normal, ct);
@@ -1381,6 +1538,61 @@ namespace AK.Systems
 			_viewRegistry.Remove(view);
 			view.InternalCleanup();
 			Destroy(view.gameObject);
+		}
+
+		/// <summary>
+		/// Animated, awaited close of a view's children for the children-first policy.
+		/// Presentation only (InternalHideAsync per child) — final settle (registry,
+		/// pooling, destruction) still happens in the post-parent cascade, which is
+		/// idempotent against hooks the animated hide already ran.
+		/// </summary>
+		private async UniTask CloseChildrenAsync(UIView parent, ChildCloseOrder order, bool immediate, CancellationToken ct)
+		{
+			if (!_viewRegistry.TryGetValue(parent, out var record)) return;
+
+			// Snapshot — record.Children mutates as children settle during their closes.
+			var children = new List<UIView>(record.Children);
+
+			if (order == ChildCloseOrder.ChildrenFirstSequential)
+			{
+				for (int i = children.Count - 1; i >= 0; i--)
+				{
+					var child = children[i];
+					if (child != null)
+					{
+						await CloseChildRecursivelyAsync(child, immediate, ct);
+					}
+				}
+			}
+			else
+			{
+				var tasks = new List<UniTask>();
+				for (int i = children.Count - 1; i >= 0; i--)
+				{
+					var child = children[i];
+					if (child != null)
+					{
+						tasks.Add(CloseChildRecursivelyAsync(child, immediate, ct));
+					}
+				}
+
+				await UniTask.WhenAll(tasks);
+			}
+		}
+
+		private async UniTask CloseChildRecursivelyAsync(UIView child, bool immediate, CancellationToken ct)
+		{
+			if (!_viewRegistry.TryGetValue(child, out var childRecord)) return;
+
+			// A child that is itself children-first closes its own children first —
+			// deep hierarchies compose level by level through this recursion.
+			if (!immediate && childRecord.Children.Count > 0 &&
+			    child.ChildCloseOrder != ChildCloseOrder.ParentFirst)
+			{
+				await CloseChildrenAsync(child, child.ChildCloseOrder, immediate, ct);
+			}
+
+			await child.InternalHideAsync(immediate, ct);
 		}
 
 		private void CloseChildrenImmediate(UIView parent, CloseContext context)

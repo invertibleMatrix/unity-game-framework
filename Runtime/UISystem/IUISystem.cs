@@ -38,7 +38,8 @@ namespace AK.Systems
 		                  string viewId = "",
 		                  UIChannel? channelOverride = null,
 		                  ViewStackBehaviour? stackBehaviour = null,
-		                  Action<TView> onInit = null)
+		                  Action<TView> onInit = null,
+		                  bool waitForPrevious = false)
 			where TView : UIView;
 
 		/// <summary>
@@ -50,7 +51,8 @@ namespace AK.Systems
 		                  string viewId = "",
 		                  UIChannel? channelOverride = null,
 		                  ViewStackBehaviour? stackBehaviour = null,
-		                  Action<TView> onInit = null)
+		                  Action<TView> onInit = null,
+		                  bool waitForPrevious = false)
 			where TView : UIView;
 
 		// =====================================================================
@@ -67,6 +69,7 @@ namespace AK.Systems
 		                                UIChannel? channelOverride = null,
 		                                ViewStackBehaviour? stackBehaviour = null,
 		                                Action<TView> onInit = null,
+		                                bool waitForPrevious = false,
 		                                CancellationToken ct = default)
 			where TView : UIView;
 
@@ -80,6 +83,7 @@ namespace AK.Systems
 		                                UIChannel? channelOverride = null,
 		                                ViewStackBehaviour? stackBehaviour = null,
 		                                Action<TView> onInit = null,
+		                                bool waitForPrevious = false,
 		                                CancellationToken ct = default)
 			where TView : UIView;
 
@@ -89,13 +93,14 @@ namespace AK.Systems
 
 		/// <summary>
 		/// Closes a view. Fire-and-forget — animation runs in background.
+		/// Static children hide and survive; dynamic instances are destroyed.
 		/// </summary>
-		void Close(UIView view, CloseContext context = CloseContext.Normal, Action onClose = null);
+		void Close(UIView view, Action onClose = null);
 
 		/// <summary>
 		/// Closes a view and awaits until the close animation completes.
 		/// </summary>
-		UniTask CloseAsync(UIView view, CloseContext context = CloseContext.Normal, CancellationToken ct = default);
+		UniTask CloseAsync(UIView view, CancellationToken ct = default);
 
 		// =====================================================================
 		// NAVIGATION
@@ -140,7 +145,7 @@ namespace AK.Systems
 		/// Closes a view instantly without animation. Useful for tooltips that need to
 		/// relocate quickly. Skips animation but still runs lifecycle hooks.
 		/// </summary>
-		void CloseImmediate(UIView view, CloseContext context = CloseContext.Normal, Action onClose = null);
+		void CloseImmediate(UIView view, Action onClose = null);
 
 		void DisplayToast(string text);
 

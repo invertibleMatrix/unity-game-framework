@@ -61,11 +61,15 @@ namespace AK.Systems
 		[SerializeField, Tooltip("Transform where dynamically spawned fragments are placed. Falls back to this transform.")]
 		private Transform _fragmentContainer;
 
+		[Header("Dynamic Instances")]
 		[SerializeField, Tooltip("Return to pool on close instead of destroying. Ignored for static views.")]
 		private bool _returnToPoolOnClose;
 
 		[SerializeField, Tooltip("Allow multiple instances active simultaneously. Ignored for static views.")]
 		private bool _allowMultipleInstances;
+
+		[SerializeField, Tooltip("How children close relative to this view on a graceful close. Each level consults its own policy for its own children. ParentFirst = this view animates out first, children settle after (current default).")]
+		private ChildCloseOrder _childCloseOrder = ChildCloseOrder.ParentFirst;
 
 		[SerializeField]
 		private bool _showBackgroundOverlay;
@@ -73,8 +77,12 @@ namespace AK.Systems
 		[SerializeField, Tooltip("If checked, the view will animate to its current anchored position instead of zero.")]
 		private bool _lockEntryPosition;
 
+		[Header("Static Fragments")]
 		[SerializeField, Tooltip("Fragment views pre-placed in this view's hierarchy.")]
 		private List<StaticViewEntry> _staticViews = new();
+
+		[SerializeField, Tooltip("When this view is listed as a static fragment, treat it as a clone source: it never shows itself — ShowFragment spawns a live copy per call. Keep its GameObject inactive and ShowOnStart off.")]
+		private bool _isTemplate;
 
 		// --- Injected ---
 		[Inject] protected Container _diContainer;
@@ -85,6 +93,9 @@ namespace AK.Systems
 
 		private UISystem				_uiSystem;
 		private CancellationTokenSource _animationCts;
+
+		// Set on template clones — pool keys are prefab-based, so clones destroy on close.
+		internal bool                   _suppressPooling;
 		private CancellationTokenSource _destroyCts;
 		private Vector2                 _entryPosition = Vector2.zero;
 		private GameObject              _darkBg;
@@ -106,8 +117,10 @@ namespace AK.Systems
 		public IAnimationStrategy             AnimationStrategy      => _animationComponent != null ? _animationComponent : _animationStrategy;
 		public bool                           PlayInParallelWithPrevious => _playInParallelWithPrevious;
 		public bool                           NoAnimation            => AnimationStrategy == null;
-		public bool                           ReturnToPoolOnClose    => _returnToPoolOnClose;
+		public bool                           ReturnToPoolOnClose    => _returnToPoolOnClose && !_suppressPooling;
 		public bool                           AllowMultipleInstances => _allowMultipleInstances;
+		public ChildCloseOrder                ChildCloseOrder        => _childCloseOrder;
+		public bool                           IsTemplate             => _isTemplate;
 		public bool                           IsVisible              { get; private set; }
 		public CanvasGroup                    CanvasGroup            { get; private set; }
 		public RectTransform                  RectTransform          { get; private set; }
@@ -187,69 +200,101 @@ namespace AK.Systems
 		/// <summary>
 		/// Shows a fragment of the specified type within this view's container.
 		/// Fire-and-forget — the animation runs in the background.
+		/// Does NOT wait for pending sibling shows by default — pass waitForPrevious: true
+		/// for fragments that negotiate with siblings via stack behaviour.
 		/// </summary>
 		public TFragment ShowFragment<TFragment>(string viewId = "", UIContext context = null,
 		                                         ViewStackBehaviour? stackBehaviour = null,
-		                                         Action<TFragment> onInit = null)
+		                                         Action<TFragment> onInit = null,
+		                                         bool waitForPrevious = false)
 			where TFragment : UIView
 		{
-			return _uiSystem.Show<TFragment>(context, this, viewId, null, stackBehaviour, onInit);
+			WarnIfStackBehaviourWithoutWait(stackBehaviour, waitForPrevious);
+			return _uiSystem.Show<TFragment>(context, this, viewId, null, stackBehaviour, onInit, waitForPrevious);
 		}
 
 		/// <summary>
 		/// Shows a fragment and awaits until its show animation completes.
+		/// Does NOT wait for pending sibling shows by default — pass waitForPrevious: true
+		/// for fragments that negotiate with siblings via stack behaviour.
 		/// </summary>
 		public UniTask<TFragment> ShowFragmentAsync<TFragment>(string viewId = "", UIContext context = null,
 		                                                       ViewStackBehaviour? stackBehaviour = null,
 		                                                       Action<TFragment> onInit = null,
+		                                                       bool waitForPrevious = false,
 		                                                       CancellationToken ct = default)
 			where TFragment : UIView
 		{
-			return _uiSystem.ShowAsync<TFragment>(context, this, viewId, null, stackBehaviour, onInit, ct);
+			WarnIfStackBehaviourWithoutWait(stackBehaviour, waitForPrevious);
+			return _uiSystem.ShowAsync<TFragment>(context, this, viewId, null, stackBehaviour, onInit, waitForPrevious, ct);
+		}
+
+		private void WarnIfStackBehaviourWithoutWait(ViewStackBehaviour? stackBehaviour, bool waitForPrevious)
+		{
+			if (stackBehaviour != null && !waitForPrevious)
+			{
+				Debug.LogWarning($"[UIView] A stackBehaviour was passed with waitForPrevious: false — stack behaviour requires the serialized path and will be ignored.", this);
+			}
 		}
 
 		/// <summary>
 		/// Shows an already-registered fragment instance — no type/viewId matching involved.
 		/// The view must be registered (e.g. listed in Static Fragments with ShowOnStart off).
-		/// Fire-and-forget — the animation runs in the background.
+		/// Fire-and-forget. Does NOT wait for pending sibling shows by default — pass
+		/// waitForPrevious: true for fragments that negotiate with siblings via stack behaviour.
 		/// </summary>
-		public void ShowFragment(UIView view, UIContext context = null, ViewStackBehaviour? stackBehaviour = null)
+		public void ShowFragment(UIView view, UIContext context = null, ViewStackBehaviour? stackBehaviour = null,
+		                         bool waitForPrevious = false)
 		{
-			_uiSystem.ShowExistingView(view, context, stackBehaviour);
+			if (waitForPrevious)
+			{
+				_uiSystem.ShowExistingView(view, context, stackBehaviour);
+				return;
+			}
+
+			if (stackBehaviour != null)
+			{
+				Debug.LogWarning($"[UIView] ShowFragment on '{view?.name}' passed a stackBehaviour with waitForPrevious: false — stack behaviour requires the serialized path and will be ignored.", this);
+			}
+
+			_uiSystem.ShowExistingViewParallel(view, context).Forget();
 		}
 
 		/// <summary>
 		/// Shows an already-registered fragment instance and awaits until its show animation completes.
+		/// Does NOT wait for pending sibling shows by default — pass waitForPrevious: true
+		/// for fragments that negotiate with siblings via stack behaviour.
 		/// </summary>
 		public UniTask ShowFragmentAsync(UIView view, UIContext context = null, ViewStackBehaviour? stackBehaviour = null,
-		                                 CancellationToken ct = default)
+		                                 bool waitForPrevious = false, CancellationToken ct = default)
 		{
-			return _uiSystem.ShowExistingViewAsync(view, context, stackBehaviour, ct);
-		}
+			if (waitForPrevious)
+			{
+				return _uiSystem.ShowExistingViewAsync(view, context, stackBehaviour, ct);
+			}
 
-		/// <summary>
-		/// Shows an already-registered fragment instance without waiting for pending sibling
-		/// For independent siblings with no stack behaviour
-		/// </summary>
-		public void ShowFragmentParallel(UIView view)
-		{
-			_uiSystem.ShowExistingViewParallel(view);
+			if (stackBehaviour != null)
+			{
+				Debug.LogWarning($"[UIView] ShowFragmentAsync on '{view?.name}' passed a stackBehaviour with waitForPrevious: false — stack behaviour requires the serialized path and will be ignored.", this);
+			}
+
+			return _uiSystem.ShowExistingViewParallel(view, context, ct);
 		}
 
 		/// <summary>
 		/// Closes this view. Fire-and-forget — animation runs in the background.
 		/// </summary>
-		public void Close(CloseContext context = CloseContext.Normal, Action onClose = null)
+		public void Close(Action onClose = null)
 		{
-			_uiSystem?.Close(this, context, onClose);
+			_uiSystem?.Close(this, onClose);
 		}
 
 		/// <summary>
 		/// Closes this view and awaits until the close animation completes.
 		/// </summary>
-		public UniTask CloseAsync(CloseContext context = CloseContext.Normal, CancellationToken ct = default)
+		public UniTask CloseAsync(CancellationToken ct = default)
 		{
-			return _uiSystem?.CloseAsync(this, context, ct) ?? UniTask.CompletedTask;
+			return _uiSystem?.CloseAsync(this, ct) ?? UniTask.CompletedTask;
 		}
 
 		/// <summary>
@@ -868,6 +913,18 @@ namespace AK.Systems
 
 			CancelCurrentAnimation();
 			TeardownTutorialMode();
+
+			// Settle on unexpected destruction (scene unload, direct Destroy): release
+			// registered resources (bus subscriptions, listeners) and drop system
+			// bookkeeping. Children settle via their own OnDestroy — Unity's destroy
+			// cascade visits every descendant. InternalCleanup is idempotent; on
+			// system-driven closes it has already run and this is a no-op.
+			InternalCleanup();
+
+			if (_uiSystem != null)
+			{
+				_uiSystem.HandleViewDestroyedExternally(this);
+			}
 		}
 	}
 
