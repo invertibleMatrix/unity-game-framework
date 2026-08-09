@@ -7,6 +7,22 @@ using AK.Core.Extensions;
 
 namespace AK.Core
 {
+	public readonly struct StateTransitionInfo
+	{
+		public readonly AppState From;
+		public readonly AppState To;
+		public readonly bool     PreviousPaused;
+		public readonly bool     Resumed;
+
+		public StateTransitionInfo(AppState from, AppState to, bool previousPaused, bool resumed)
+		{
+			From = from;
+			To = to;
+			PreviousPaused = previousPaused;
+			Resumed = resumed;
+		}
+	}
+
 	public sealed class AppStateMachine : MonoBehaviour, IAppStateMachine
 	{
 		[SerializeField] private AppState _bootState;
@@ -18,9 +34,13 @@ namespace AK.Core
 		private readonly List<AppState> _pausedStates = new();
 
 		public event Action<AppState> OnStateChange;
-		
+
+		/// <summary>Debug/tooling hook — fires on every transition including boot and pause-stack resumes.</summary>
+		public event Action<StateTransitionInfo> OnTransition;
+
 		public AppState CurrentState => _currentState;
 		public AppState PreviousState => _previousState;
+		public IReadOnlyList<AppState> PausedStates => _pausedStates;
 
 		private void Awake()
 		{
@@ -45,6 +65,7 @@ namespace AK.Core
 			_bootState._appStateMachine = this;
 			_bootState.SetContext(new TransitionContext());
 			_bootState.OnEnter();
+			OnTransition?.Invoke(new StateTransitionInfo(null, _bootState, false, false));
 		}
 
 		private void Update()
@@ -96,7 +117,9 @@ namespace AK.Core
 
 			context ??= new TransitionContext();
 
-			if (_pausedStates.Contains(_currentState))
+			bool resumed = _pausedStates.Contains(_currentState);
+
+			if (resumed)
 			{
 				_currentState.SetContext(context);
 				_pausedStates.Remove(_currentState);
@@ -108,6 +131,8 @@ namespace AK.Core
 				_currentState.OnEnter();
 				OnStateChange?.Invoke(_currentState);
 			}
+
+			OnTransition?.Invoke(new StateTransitionInfo(_previousState, _currentState, pauseCurrent, resumed));
 		}
 
 		public void TryGoBack()

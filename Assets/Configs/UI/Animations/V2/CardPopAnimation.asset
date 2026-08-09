@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3674d7d18ad5186499283cc30c00f84f, type: 3}
   m_Name: CardPopAnimation
   m_EditorClassIdentifier: AK.UISystem::AK.Systems.UI.Animations.CardPopAnimationStrategy
-  EntryDuration: 0.3
+  EntryDuration: 1
   EntryEase: 9
   ExitDuration: 0.3
   ExitEase: 8
@@ -21,7 +21,7 @@ MonoBehaviour:
   _popEase: 27
   _addMovement: 1
   _movementDistance: 30
-  _popDirection: 0
+  _popDirection: 4
   _addRotation: 1
   _rotationAmount: 10
   _randomizeRotation: 1
@@ -29,4 +29,4 @@ MonoBehaviour:
   _popDelay: 0.1
   _addSettleWobble: 1
   _wobbleIntensity: 3
-  _wobbleDuration: 0.3
+  _wobbleDuration: 1
