@@ -1,6 +1,5 @@
 using AK.Core;
 using Reflex.Attributes;
-using Sirenix.OdinInspector;
 using Unity.Cinemachine;
 using UnityEngine;
 
@@ -30,7 +29,6 @@ namespace AK.Systems
 
 		[Tooltip("OPTIONAL. The brain (base) camera this virtual camera conceptually feeds. " +
 		         "Only needed to disambiguate between multiple brains - usually there is exactly one.")]
-		[ShowIf("@_cameraType != null")]
 		[SerializeField] protected CameraType _baseCameraType;
 
 		[Tooltip("Priority while this camera is NOT live. The live camera gets BasePriority + the system's active boost.")]

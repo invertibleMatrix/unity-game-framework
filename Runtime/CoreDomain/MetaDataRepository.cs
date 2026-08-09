@@ -1,7 +1,6 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using AK.Core;
-using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 
@@ -46,7 +45,14 @@ namespace AK.CoreDomain
 
 		public void InitializeRegistries()
 		{
-			_uidRegistry.Initialize();
+			if (_uidRegistry == null)
+			{
+				Debug.LogError("[MetaDataRepository] No UIDRegistry assigned — registry initialization skipped.", this);
+			}
+			else
+			{
+				_uidRegistry.Initialize();
+			}
 
 			foreach (var kvp in _metaRegistry)
 			{
@@ -58,11 +64,16 @@ namespace AK.CoreDomain
 		{
 			if (uid == null || uid.IsEmpty()) return null;
 
-			return null;
+			if (_uidRegistry == null)
+			{
+				Debug.LogError("[MetaDataRepository] GetObjectByUID called but no UIDRegistry is assigned.", this);
+				return null;
+			}
+
+			return _uidRegistry.GetUID(uid.Id) as T;
 		}
 
 #if UNITY_EDITOR
-		[Button]
 		public void PerformDataRegistration()
 		{
 			_uidRegistry.RefreshAllUIDs();

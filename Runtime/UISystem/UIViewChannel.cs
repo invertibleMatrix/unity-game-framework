@@ -1,4 +1,3 @@
-﻿using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.Systems
@@ -17,7 +16,6 @@ namespace AK.Systems
 	[RequireComponent(typeof(Canvas), typeof(CanvasGroup))]
 	public class UIViewChannel : MonoBehaviour
 	{
-		[Title("Channel Settings")]
 		[SerializeField, Tooltip("Base sorting order for this channel. Higher values render on top. " +
 		                         "Stack depth is added on top of this at runtime.")]
 		private UIChannel _sortOrder = UIChannel.HUD;

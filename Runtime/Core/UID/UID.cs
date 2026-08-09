@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.Core
@@ -8,7 +7,7 @@ namespace AK.Core
 	[CreateAssetMenu(fileName = "UID_", menuName = "AK/UID_")]
 	public class UID : ScriptableObject, IEquatable<UID>
 	{
-		[SerializeField, ReadOnly]
+		[SerializeField]
 		private string _id;
 
 		[SerializeField, TextArea(1, 2)]
@@ -25,6 +24,12 @@ namespace AK.Core
 			if (string.IsNullOrEmpty(_id))
 			{
 				GenerateNewGuid();
+#if UNITY_EDITOR
+				// OnValidate changes are in-memory only — without SetDirty the file keeps
+				// an empty _id and every editor session mints a new ephemeral GUID,
+				// silently breaking every stored link.
+				UnityEditor.EditorUtility.SetDirty(this);
+#endif
 			}
 
 			// Auto-generate description if empty (optional)
@@ -34,7 +39,6 @@ namespace AK.Core
 			}
 		}
 
-		[Button("Generate New ID")]
 		public void GenerateNewGuid()
 		{
 			_id = Guid.NewGuid().ToString();
@@ -133,6 +137,12 @@ namespace AK.Core
 		public static implicit operator string(UID uid)
 		{
 			return uid?.Id;
+		}
+
+		// Asset → link projection, for framework internals (persistence writes strings).
+		public static implicit operator UIDRef(UID uid)
+		{
+			return uid != null ? new UIDRef(uid) : null;
 		}
 
 		public static implicit operator Guid(UID uid)

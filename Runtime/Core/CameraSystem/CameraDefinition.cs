@@ -1,5 +1,4 @@
 using AK.Core;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.Systems
@@ -22,7 +21,6 @@ namespace AK.Systems
         [SerializeField] private int _layerOrder;
 
         [Tooltip("For Overlay cameras: which Base CameraType this overlay stacks on top of.")]
-        [ShowIf("_role", CameraRole.Overlay)]
         [SerializeField] private CameraType _baseCameraType;
 
         [Header("Virtual Camera (Cinemachine)")]

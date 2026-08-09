@@ -1,7 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using Sirenix.OdinInspector;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -12,11 +11,12 @@ namespace AK.Core
 	[Serializable]
 	public class TypedUIDRegistry<T> where T : UID
 	{
-		[InlineEditor] [SerializeField]
+		[SerializeField]
 		protected List<T> _objects = new();
 		
 		protected Dictionary<string, T> _uidToObject;
 		protected Dictionary<T, string> _objectToUid;
+		protected Dictionary<string, T> _nameToObject;
 
 		public IReadOnlyList<T> Objects => _objects;
 
@@ -29,6 +29,7 @@ namespace AK.Core
 		{
 			_uidToObject = new Dictionary<string, T>();
 			_objectToUid = new Dictionary<T, string>();
+			_nameToObject = new Dictionary<string, T>();
 
 			foreach (var obj in _objects)
 			{
@@ -36,8 +37,43 @@ namespace AK.Core
 				{
 					_uidToObject[obj.UniqueID.Id] = obj;
 					_objectToUid[obj] = obj.UniqueID.Id;
+
+					// Name is the fallback identity axis — collisions would make
+					// name-based healing ambiguous, so warn loudly on them.
+					if (!_nameToObject.TryAdd(obj.name, obj))
+					{
+						Debug.LogWarning($"{typeof(T).Name} registry: duplicate asset name '{obj.name}' — name-based fallback resolution will use the first one.");
+					}
 				}
 			}
+		}
+
+		public T GetObjectByName(string objName)
+		{
+			if (_nameToObject == null)
+				Initialize();
+
+			return !string.IsNullOrEmpty(objName) && _nameToObject.TryGetValue(objName, out var obj) ? obj : null;
+		}
+
+		public bool AddObject(T obj)
+		{
+			if (obj == null || _objects.Contains(obj)) return false;
+
+			_objects.Add(obj);
+			Initialize();
+			return true;
+		}
+
+		public int RemoveNullEntries()
+		{
+			int removed = _objects.RemoveAll(obj => obj == null);
+			if (removed > 0)
+			{
+				Initialize();
+			}
+
+			return removed;
 		}
 
 		public T GetObjectByUID(string guid)

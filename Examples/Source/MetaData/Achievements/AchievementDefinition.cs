@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using AK.Core;
 using AK.Examples.Rewards;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.Examples.Achievements
@@ -28,7 +27,6 @@ namespace AK.Examples.Achievements
         public int TargetValue;
 
         [Tooltip("Current progress (for tracking)")]
-        [ReadOnly]
         public int CurrentProgress;
 
         [Tooltip("Is this achievement currently active?")]
@@ -40,11 +38,9 @@ namespace AK.Examples.Achievements
         [Tooltip("Is this achievement repeatable?")]
         public bool IsRepeatable;
 
-        [ShowIf("IsRepeatable")]
         [Tooltip("How many times can this achievement be completed? 0 = unlimited")]
         public int MaxCompletions;
 
-        [ShowIf("IsRepeatable")]
         [Tooltip("Cooldown between completions in seconds")]
         public float CompletionCooldown;
 
@@ -60,7 +56,6 @@ namespace AK.Examples.Achievements
         public List<RewardDefinition> Rewards;
 
         [Tooltip("Bonus rewards for first completion")]
-        [ShowIf("IsRepeatable")]
         public List<RewardDefinition> FirstCompletionBonus;
 
         [Header("Progression")]
@@ -71,11 +66,9 @@ namespace AK.Examples.Achievements
         [Tooltip("Is there a time limit to complete this achievement?")]
         public bool HasTimeLimit;
 
-        [ShowIf("HasTimeLimit")]
         [Tooltip("Time limit in seconds")]
         public float TimeLimit;
 
-        [ShowIf("HasTimeLimit")]
         [Tooltip("Does the achievement expire after the time limit?")]
         public bool ExpiresAfterTimeLimit;
 
@@ -178,7 +171,6 @@ namespace AK.Examples.Achievements
         public List<RewardDefinition> Rewards;
 
         [Tooltip("Has this milestone been rewarded?")]
-        [ReadOnly]
         public bool Rewarded;
     }
 }

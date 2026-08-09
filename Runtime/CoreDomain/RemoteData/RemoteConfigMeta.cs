@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using AK.Core;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.CoreDomain.RemoteConfig
@@ -273,7 +272,6 @@ namespace AK.CoreDomain.RemoteConfig
 		#region Editor Helpers
 
 #if UNITY_EDITOR
-		[Button("Refresh Registry"), PropertyOrder(100)]
 		[ContextMenu("Refresh Registry")]
 		public void RefreshRegistry()
 		{
@@ -284,7 +282,6 @@ namespace AK.CoreDomain.RemoteConfig
 			}
 		}
 
-		[Button("Validate Variables"), PropertyOrder(101)]
 		[ContextMenu("Validate Variables")]
 		public void ValidateVariables()
 		{
@@ -325,7 +322,6 @@ namespace AK.CoreDomain.RemoteConfig
 			Debug.Log($"RemoteConfigMeta: Validation complete. {validCount} valid variables, {enabledCount} enabled.");
 		}
 
-		[Button("Print Defaults Dictionary"), PropertyOrder(102)]
 		[ContextMenu("Print Defaults Dictionary")]
 		public void PrintDefaultsDictionary()
 		{

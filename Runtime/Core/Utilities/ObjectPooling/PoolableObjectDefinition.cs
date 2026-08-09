@@ -1,5 +1,4 @@
 using AK.Core;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.Utilities

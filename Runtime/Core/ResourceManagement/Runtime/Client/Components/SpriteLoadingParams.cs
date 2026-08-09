@@ -1,4 +1,3 @@
-﻿using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.Core.ResourceManagement
@@ -12,18 +11,17 @@ namespace AK.Core.ResourceManagement
 		/// <summary>
 		/// The format string containing placeholders for prefix, primary key, and postfix.
 		/// </summary>
-		[Title(":- Set Up Format String To Process PrimaryKey, i.e: prefix_{0}_postfix, atlas_name[{0}], etc...")]
 		[SerializeField] private string _formatString;
 
 		/// <summary>
 		/// The primary key used for generating the sprite key.
 		/// </summary>
-		[SerializeField, BoxGroup] private string _primaryKey;
+		[SerializeField] private string _primaryKey;
 
 		/// <summary>
 		/// Gets the generated sprite key using the format string and primary key.
 		/// </summary>
-		[ShowInInspector] public string Key => GenerateKey(_primaryKey);
+		public string Key => GenerateKey(_primaryKey);
 
 		/// <summary>
 		/// <see cref="HasPrimaryKey"/> Returns Whether The Primary Key Is Authored Or Not...

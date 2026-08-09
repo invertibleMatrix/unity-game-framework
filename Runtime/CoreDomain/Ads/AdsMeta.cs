@@ -4,7 +4,6 @@ using System.Linq;
 using AK.Core;
 using AK.CoreDomain.Ads;
 using AK.CoreDomain.RemoteConfig;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.CoreDomain
@@ -463,7 +462,6 @@ namespace AK.CoreDomain
 		#region Editor Helpers
 
 #if UNITY_EDITOR
-		[Button("Refresh Registry"), PropertyOrder(100)]
 		public void RefreshRegistry()
 		{
 			if (_registry != null)
@@ -473,7 +471,6 @@ namespace AK.CoreDomain
 			}
 		}
 
-		[Button("Validate Placements"), PropertyOrder(101)]
 		public void ValidatePlacements()
 		{
 			if (Placements == null || Placements.Count == 0)
@@ -518,7 +515,6 @@ namespace AK.CoreDomain
 			Debug.Log($"AdsMeta: Validation complete. {validCount} valid placements, {enabledCount} enabled.");
 		}
 
-		[Button("List All Placements"), PropertyOrder(102)]
 		public void ListAllPlacements()
 		{
 			if (Placements == null || Placements.Count == 0)

@@ -1,7 +1,6 @@
 using System;
 using System.Globalization;
 using AK.Core;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.CoreDomain.RemoteConfig
@@ -16,8 +15,8 @@ namespace AK.CoreDomain.RemoteConfig
 		[Tooltip("The default value used when no remote value is available.")]
 		[SerializeField] protected T _defaultValue;
 
-		[ShowInInspector,ReadOnly,NonSerialized] protected T    _remoteValue;
-		[ShowInInspector,ReadOnly,NonSerialized] protected bool _hasRemoteValue;
+		[NonSerialized] protected T    _remoteValue;
+		[NonSerialized] protected bool _hasRemoteValue;
 
 		// Lazy-initialized PrefsProperty for caching
 		private PrefsProperty<T> _cachedValueProperty;

@@ -1,7 +1,6 @@
-﻿using System;
+using System;
 using System.Threading;
 using Cysharp.Threading.Tasks;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.Core.ResourceManagement
@@ -35,7 +34,6 @@ namespace AK.Core.ResourceManagement
 		/// <summary>
 		/// Initiates asynchronous sprite loading using the configured parameters and discards the task result.
 		/// </summary>
-		[Button]
 		public virtual void LoadSprite(string key = default, CancellationToken cToken = default)
 			=> LoadSpriteAsync(key, cToken).Forget();
 
@@ -78,7 +76,6 @@ namespace AK.Core.ResourceManagement
 		/// <summary>
 		/// Invoked when the sprite needs to be disposed.
 		/// </summary>
-		[Button]
 		public virtual void DisposeAsset()
 		{
 			if (_canDispose == false) return;
@@ -131,7 +128,6 @@ namespace AK.Core.ResourceManagement
 		}
 
 #if UNITY_EDITOR
-		[Button]
 		private void SetSpriteNameAsPrimaryKey()
 		{
 			if (Sprite == null) return;

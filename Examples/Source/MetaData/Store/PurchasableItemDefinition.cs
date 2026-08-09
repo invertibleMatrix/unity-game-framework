@@ -4,7 +4,6 @@ using AK.Core;
 using AK.Examples.Costs;
 using AK.Examples.Rewards;
 using AK.Examples.Store;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.CoreDomain
@@ -38,16 +37,16 @@ namespace AK.CoreDomain
 		[Tooltip("Is this item limited quantity?")]
 		public bool IsLimitedQuantity;
 
-		[ShowIf("IsLimitedQuantity")] [Tooltip("Maximum quantity available")]
+		[Tooltip("Maximum quantity available")]
 		public int MaxQuantity;
 
 		[Header("Time Limits")] [Tooltip("Does this item have a time limit?")]
 		public bool HasTimeLimit;
 
-		[ShowIf("HasTimeLimit")] [Tooltip("Start time (Unix timestamp)")]
+		[Tooltip("Start time (Unix timestamp)")]
 		public long StartTime;
 
-		[ShowIf("HasTimeLimit")] [Tooltip("End time (Unix timestamp)")]
+		[Tooltip("End time (Unix timestamp)")]
 		public long EndTime;
 
 		[Header("Special Offer")] [Tooltip("Is this a limited-time special offer?")]
@@ -56,10 +55,10 @@ namespace AK.CoreDomain
 		[Tooltip("Is this item featured?")]
 		public bool IsFeatured;
 
-		[Tooltip("Start time of special offer (UTC).")] [ShowIf("IsSpecialOffer")]
+		[Tooltip("Start time of special offer (UTC).")]
 		public DateTime SpecialOfferStartTime;
 
-		[Tooltip("End time of special offer (UTC).")] [ShowIf("IsSpecialOffer")]
+		[Tooltip("End time of special offer (UTC).")]
 		public DateTime SpecialOfferEndTime;
 
 		[Header("Requirements")] [Tooltip("Minimum level required to purchase.")]
@@ -75,7 +74,6 @@ namespace AK.CoreDomain
 		public string AnalyticsEventName;
 
 		[Header("Rewards")] [Tooltip("The rewards granted upon purchase.")] 
-		[InlineEditor]
 		public RewardDefinition Reward;
 
 		[Tooltip("List of rewards in this bundle.")]
@@ -85,7 +83,6 @@ namespace AK.CoreDomain
 		public RewardBundle BonusRewards;
 
 		[Tooltip("Optional gacha rewards that are probabilistic (e.g., 'Chance to get rare item').")] 
-		[InlineEditor]
 		public GachaBundle GachaRewards;
 
 		public UID AnalyticsEventDefId;
@@ -94,6 +91,7 @@ namespace AK.CoreDomain
 		string IPurchasable.DisplayName => DisplayName;
 		string IPurchasable.ProductID => ProductID;
 		ICostInfo IPurchasable.Cost => Cost;
+		UID IPurchasable.TransactionTypeUID => UniqueID;
 
 		/// <summary>
 		/// Collect all rewards from this item as IReward (interface-based, used by services).

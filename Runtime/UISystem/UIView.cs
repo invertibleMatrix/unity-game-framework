@@ -1,4 +1,4 @@
-﻿using AK.Systems.Animations;
+using AK.Systems.Animations;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,7 +8,6 @@ using DG.Tweening;
 using Reflex.Attributes;
 using Reflex.Core;
 using Reflex.Injectors;
-using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -41,42 +40,49 @@ namespace AK.Systems
 	{
 		// --- Serialized Configuration ---
 
-		[Title("Identifier")] [SerializeField, Tooltip("Unique ID for this view variant. Keep empty for default.")]
+		[SerializeField, Tooltip("Unique ID for this view variant. Keep empty for default.")]
 		private string _viewId = "";
 
-		[Title("Stack Behaviour")] [SerializeField]
+		[SerializeField]
 		private ViewStackBehaviour _stackBehaviour = ViewStackBehaviour.DoNothing;
 
-		[Title("Animation Strategy (direct)")]
 		[SerializeField, Tooltip("Animation strategy applied directly on this view. Migrated from _animationConfig via editor script.")]
 		private AnimationStrategy _animationStrategy;
 
-		[Title("Stack Orchestration")]
+		[SerializeField, Tooltip("Per-instance component animation strategy. Takes precedence over the SO strategy when both are assigned. Use when the animation needs scene references.")]
+		private AnimationStrategyComponent _animationComponent;
+
 		[SerializeField, Tooltip("If true, this view's hide animation runs in parallel with the next view's show animation. Migrated from _animationConfig.")]
 		private bool _playInParallelWithPrevious;
 
-		[Title("Animation Target")]
 		[SerializeField, Tooltip("The child containing all visual elements to animate. Falls back to this RectTransform.")]
 		private RectTransform _animatableContent;
 
-		[Title("Fragment Container")]
 		[SerializeField, Tooltip("Transform where dynamically spawned fragments are placed. Falls back to this transform.")]
 		private Transform _fragmentContainer;
 
-		[Title("Pooling (Dynamic Views Only)")] [SerializeField, Tooltip("Return to pool on close instead of destroying. Ignored for static views.")]
+		[Header("Dynamic Instances")]
+		[SerializeField, Tooltip("Return to pool on close instead of destroying. Ignored for static views.")]
 		private bool _returnToPoolOnClose;
 
 		[SerializeField, Tooltip("Allow multiple instances active simultaneously. Ignored for static views.")]
 		private bool _allowMultipleInstances;
 
-		[Title("Background Overlay")] [SerializeField]
+		[SerializeField, Tooltip("How children close relative to this view on a graceful close. Each level consults its own policy for its own children. ParentFirst = this view animates out first, children settle after (current default).")]
+		private ChildCloseOrder _childCloseOrder = ChildCloseOrder.ParentFirst;
+
+		[SerializeField]
 		private bool _showBackgroundOverlay;
 
-		[Title("Entry Position")] [SerializeField, Tooltip("If checked, the view will animate to its current anchored position instead of zero.")]
+		[SerializeField, Tooltip("If checked, the view will animate to its current anchored position instead of zero.")]
 		private bool _lockEntryPosition;
 
-		[Title("Static Fragments")] [SerializeField, Tooltip("Fragment views pre-placed in this view's hierarchy.")]
+		[Header("Static Fragments")]
+		[SerializeField, Tooltip("Fragment views pre-placed in this view's hierarchy.")]
 		private List<StaticViewEntry> _staticViews = new();
+
+		[SerializeField, Tooltip("When this view is listed as a static fragment, treat it as a clone source: it never shows itself — ShowFragment spawns a live copy per call. Keep its GameObject inactive and ShowOnStart off.")]
+		private bool _isTemplate;
 
 		// --- Injected ---
 		[Inject] protected Container _diContainer;
@@ -87,6 +93,9 @@ namespace AK.Systems
 
 		private UISystem				_uiSystem;
 		private CancellationTokenSource _animationCts;
+
+		// Set on template clones — pool keys are prefab-based, so clones destroy on close.
+		internal bool                   _suppressPooling;
 		private CancellationTokenSource _destroyCts;
 		private Vector2                 _entryPosition = Vector2.zero;
 		private GameObject              _darkBg;
@@ -94,6 +103,7 @@ namespace AK.Systems
 		private Sprite                  _bgSprite;
 		private Canvas                  _tutorialCanvas;
 		private GraphicRaycaster        _tutorialRaycaster;
+		private Tween                   _teardownTween;
 		private bool                    _isResourcesRegistered;
 		private bool                    _isCleanedUp;
 		private bool                    _isShowComplete;
@@ -104,11 +114,13 @@ namespace AK.Systems
 
 		public string                         ViewId                 => _viewId;
 		public ViewStackBehaviour             StackBehaviour         => _overriddenStackBehaviour ?? _stackBehaviour;
-		public IAnimationStrategy             AnimationStrategy      => _animationStrategy;
+		public IAnimationStrategy             AnimationStrategy      => _animationComponent != null ? _animationComponent : _animationStrategy;
 		public bool                           PlayInParallelWithPrevious => _playInParallelWithPrevious;
-		public bool                           NoAnimation            => _animationStrategy == null;
-		public bool                           ReturnToPoolOnClose    => _returnToPoolOnClose;
+		public bool                           NoAnimation            => AnimationStrategy == null;
+		public bool                           ReturnToPoolOnClose    => _returnToPoolOnClose && !_suppressPooling;
 		public bool                           AllowMultipleInstances => _allowMultipleInstances;
+		public ChildCloseOrder                ChildCloseOrder        => _childCloseOrder;
+		public bool                           IsTemplate             => _isTemplate;
 		public bool                           IsVisible              { get; private set; }
 		public CanvasGroup                    CanvasGroup            { get; private set; }
 		public RectTransform                  RectTransform          { get; private set; }
@@ -117,6 +129,12 @@ namespace AK.Systems
 		public UIView                         ParentView             => _parentView;
 		public IReadOnlyList<StaticViewEntry> StaticViews            => _staticViews;
 		public IUISystem                      UISystem               => _uiSystem;
+
+		/// <summary>
+		/// Fired after any view completes its full show lifecycle (immediate and animated
+		/// paths alike). Not fired on resume — resume is not a fresh show.
+		/// </summary>
+		public static event Action<UIView> Shown;
 
 		/// <summary>
 		/// Returns the UIChannel component if this view has one, null otherwise.
@@ -182,42 +200,101 @@ namespace AK.Systems
 		/// <summary>
 		/// Shows a fragment of the specified type within this view's container.
 		/// Fire-and-forget — the animation runs in the background.
+		/// Does NOT wait for pending sibling shows by default — pass waitForPrevious: true
+		/// for fragments that negotiate with siblings via stack behaviour.
 		/// </summary>
 		public TFragment ShowFragment<TFragment>(string viewId = "", UIContext context = null,
 		                                         ViewStackBehaviour? stackBehaviour = null,
-		                                         Action<TFragment> onInit = null)
+		                                         Action<TFragment> onInit = null,
+		                                         bool waitForPrevious = false)
 			where TFragment : UIView
 		{
-			return _uiSystem.Show<TFragment>(context, this, viewId, null, stackBehaviour, onInit);
+			WarnIfStackBehaviourWithoutWait(stackBehaviour, waitForPrevious);
+			return _uiSystem.Show<TFragment>(context, this, viewId, null, stackBehaviour, onInit, waitForPrevious);
 		}
 
 		/// <summary>
 		/// Shows a fragment and awaits until its show animation completes.
+		/// Does NOT wait for pending sibling shows by default — pass waitForPrevious: true
+		/// for fragments that negotiate with siblings via stack behaviour.
 		/// </summary>
 		public UniTask<TFragment> ShowFragmentAsync<TFragment>(string viewId = "", UIContext context = null,
 		                                                       ViewStackBehaviour? stackBehaviour = null,
 		                                                       Action<TFragment> onInit = null,
+		                                                       bool waitForPrevious = false,
 		                                                       CancellationToken ct = default)
 			where TFragment : UIView
 		{
-			return _uiSystem.ShowAsync<TFragment>(context, this, viewId, null, stackBehaviour, onInit, ct);
+			WarnIfStackBehaviourWithoutWait(stackBehaviour, waitForPrevious);
+			return _uiSystem.ShowAsync<TFragment>(context, this, viewId, null, stackBehaviour, onInit, waitForPrevious, ct);
+		}
+
+		private void WarnIfStackBehaviourWithoutWait(ViewStackBehaviour? stackBehaviour, bool waitForPrevious)
+		{
+			if (stackBehaviour != null && !waitForPrevious)
+			{
+				Debug.LogWarning($"[UIView] A stackBehaviour was passed with waitForPrevious: false — stack behaviour requires the serialized path and will be ignored.", this);
+			}
+		}
+
+		/// <summary>
+		/// Shows an already-registered fragment instance — no type/viewId matching involved.
+		/// The view must be registered (e.g. listed in Static Fragments with ShowOnStart off).
+		/// Fire-and-forget. Does NOT wait for pending sibling shows by default — pass
+		/// waitForPrevious: true for fragments that negotiate with siblings via stack behaviour.
+		/// </summary>
+		public void ShowFragment(UIView view, UIContext context = null, ViewStackBehaviour? stackBehaviour = null,
+		                         bool waitForPrevious = false)
+		{
+			if (waitForPrevious)
+			{
+				_uiSystem.ShowExistingView(view, context, stackBehaviour);
+				return;
+			}
+
+			if (stackBehaviour != null)
+			{
+				Debug.LogWarning($"[UIView] ShowFragment on '{view?.name}' passed a stackBehaviour with waitForPrevious: false — stack behaviour requires the serialized path and will be ignored.", this);
+			}
+
+			_uiSystem.ShowExistingViewParallel(view, context).Forget();
+		}
+
+		/// <summary>
+		/// Shows an already-registered fragment instance and awaits until its show animation completes.
+		/// Does NOT wait for pending sibling shows by default — pass waitForPrevious: true
+		/// for fragments that negotiate with siblings via stack behaviour.
+		/// </summary>
+		public UniTask ShowFragmentAsync(UIView view, UIContext context = null, ViewStackBehaviour? stackBehaviour = null,
+		                                 bool waitForPrevious = false, CancellationToken ct = default)
+		{
+			if (waitForPrevious)
+			{
+				return _uiSystem.ShowExistingViewAsync(view, context, stackBehaviour, ct);
+			}
+
+			if (stackBehaviour != null)
+			{
+				Debug.LogWarning($"[UIView] ShowFragmentAsync on '{view?.name}' passed a stackBehaviour with waitForPrevious: false — stack behaviour requires the serialized path and will be ignored.", this);
+			}
+
+			return _uiSystem.ShowExistingViewParallel(view, context, ct);
 		}
 
 		/// <summary>
 		/// Closes this view. Fire-and-forget — animation runs in the background.
 		/// </summary>
-		[Button]
-		public void Close(CloseContext context = CloseContext.Normal, Action onClose = null)
+		public void Close(Action onClose = null)
 		{
-			_uiSystem?.Close(this, context, onClose);
+			_uiSystem?.Close(this, onClose);
 		}
 
 		/// <summary>
 		/// Closes this view and awaits until the close animation completes.
 		/// </summary>
-		public UniTask CloseAsync(CloseContext context = CloseContext.Normal, CancellationToken ct = default)
+		public UniTask CloseAsync(CancellationToken ct = default)
 		{
-			return _uiSystem?.CloseAsync(this, context, ct) ?? UniTask.CompletedTask;
+			return _uiSystem?.CloseAsync(this, ct) ?? UniTask.CompletedTask;
 		}
 
 		/// <summary>
@@ -264,16 +341,17 @@ namespace AK.Systems
 		// BACKGROUND OVERLAY
 		// =====================================================================
 
-		[Button]
-		public virtual void ShowBackgroundOverlay(float alpha = UIConstants.DEFAULT_OVERLAY_ALPHA, bool blockRayCasts = true)
+		public virtual void ShowBackgroundOverlay(float alpha = 0.85f, bool blockRayCasts = true)
 		{
+			float fadeInDuration = 0.4f;
+			
 			if (_darkBg != null)
 			{
 				var img = _darkBg.GetComponent<Image>();
 				img.raycastTarget = blockRayCasts;
-				img.color = new Color(0f, 0f, 0f, alpha);
-				img.canvasRenderer.SetAlpha(0f);
-				img.CrossFadeAlpha(1f, UIConstants.OVERLAY_FADE_IN_DURATION, false);
+				img.DOKill();
+				img.color = new Color(0f, 0f, 0f, img.color.a);
+				img.DOFade(alpha, fadeInDuration);
 				return;
 			}
 
@@ -322,9 +400,8 @@ namespace AK.Systems
 			image.material.mainTexture = _bgTexture;
 			image.sprite = _bgSprite;
 
-			image.color = new Color(0f, 0f, 0f, alpha);
-			image.canvasRenderer.SetAlpha(0f);
-			image.CrossFadeAlpha(1f, UIConstants.OVERLAY_FADE_IN_DURATION, false);
+			image.color = new Color(0f, 0f, 0f, 0f);
+			image.DOFade(alpha, fadeInDuration);
 
 			_darkBg.transform.localScale = Vector3.one;
 		}
@@ -336,14 +413,16 @@ namespace AK.Systems
 			var image = _darkBg.GetComponent<Image>();
 			if (image == null) return;
 			image.raycastTarget = false;
-			image.CrossFadeAlpha(UIConstants.ZERO_ALPHA, UIConstants.OVERLAY_FADE_OUT_DURATION, false);
+			image.DOKill();
+			image.DOFade(0f, 0.1f);
 		}
 
 		public void DestroyBackgroundOverlay()
 		{
 			if (_darkBg != null)
 			{
-				Destroy(_darkBg);
+				if (Application.isPlaying) Destroy(_darkBg);
+				else DestroyImmediate(_darkBg);
 				_darkBg = null;
 			}
 
@@ -366,11 +445,11 @@ namespace AK.Systems
 		// TUTORIAL MODE
 		// =====================================================================
 
-		[Button]
+		[ContextMenu("SetupTutorialMode")]
 		public virtual void SetupTutorialMode()
 		{
-			CleanupTutorialMode();
-			ShowBackgroundOverlay(UIConstants.TUTORIAL_OVERLAY_ALPHA, true);
+			TeardownTutorialMode();
+			ShowBackgroundOverlay(0.95f, true);
 
 			if (HasChannel)
 			{
@@ -379,31 +458,51 @@ namespace AK.Systems
 			}
 			else
 			{
-				if (_parentView == null)
-				{
-					Debug.LogError(
-						$"Tutorial mode cannot be set up on view '{name}' because it has no parent view. " +
-						"Non-channel views must be children of a channel-owning screen.");
-				}
-				else if (!_parentView.HasChannel)
-				{
-					Debug.LogError(
-						$"Tutorial mode cannot be set up on view '{name}' because its parent '{_parentView.name}' has no UIChannel. " +
-						"Non-channel views must be children of a channel-owning screen.");
-				}
-
+				Canvas parentCanvas = GetComponentInParent<Canvas>();
 				_tutorialCanvas = gameObject.AddComponent<Canvas>();
 				_tutorialCanvas.overrideSorting = true;
-				Canvas parentCanvas = _parentView.Channel != null ? _parentView.Channel.Canvas : null;
 				_tutorialCanvas.sortingOrder = (parentCanvas != null ? parentCanvas.sortingOrder : 0) + 1;
 				_tutorialRaycaster = gameObject.AddComponent<GraphicRaycaster>();
 			}
 		}
 
-		[Button]
+		[ContextMenu("CleanupTutorialMode")]
 		public virtual void CleanupTutorialMode()
 		{
-			HideBackgroundOverlay();
+			if (!Application.isPlaying)
+			{
+				TeardownTutorialMode();
+				return;
+			}
+
+			var image = _darkBg != null ? _darkBg.GetComponent<Image>() : null;
+			if (image == null)
+			{
+				TeardownTutorialMode();
+				return;
+			}
+
+			image.raycastTarget = false;
+			image.DOKill();
+			// Teardown is deferred until the fade-out completes so the re-layering is
+			// masked by the fade. Killing the tween cancels the pending teardown.
+			_teardownTween = image.DOFade(0f, 0.4f)
+			                      .OnComplete(() =>
+			                      {
+				                      _teardownTween = null;
+				                      TeardownTutorialMode();
+			                      });
+		}
+
+		private void TeardownTutorialMode()
+		{
+			if (_teardownTween != null)
+			{
+				_teardownTween.Kill();
+				_teardownTween = null;
+			}
+
+			DestroyBackgroundOverlay();
 
 			if (_tutorialRaycaster != null)
 			{
@@ -527,6 +626,7 @@ namespace AK.Systems
 				IsVisible = true;
 				_isShowComplete = true;
 				OnShow();
+				Shown?.Invoke(this);
 				ShowStaticChildrenOnStart();
 				return;
 			}
@@ -552,6 +652,7 @@ namespace AK.Systems
 			IsVisible = true;
 			_isShowComplete = true;
 			OnShow();
+			Shown?.Invoke(this);
 			ShowStaticChildrenOnStart();
 		}
 
@@ -793,8 +894,7 @@ namespace AK.Systems
 				_animatableContent.anchoredPosition = Vector2.zero;
 			}
 
-			DestroyBackgroundOverlay();
-			CleanupTutorialMode();
+			TeardownTutorialMode();
 
 			if (_destroyCts == null || _destroyCts.IsCancellationRequested)
 			{
@@ -812,8 +912,19 @@ namespace AK.Systems
 			_destroyCts = null;
 
 			CancelCurrentAnimation();
-			DestroyBackgroundOverlay();
-			CleanupTutorialMode();
+			TeardownTutorialMode();
+
+			// Settle on unexpected destruction (scene unload, direct Destroy): release
+			// registered resources (bus subscriptions, listeners) and drop system
+			// bookkeeping. Children settle via their own OnDestroy — Unity's destroy
+			// cascade visits every descendant. InternalCleanup is idempotent; on
+			// system-driven closes it has already run and this is a no-op.
+			InternalCleanup();
+
+			if (_uiSystem != null)
+			{
+				_uiSystem.HandleViewDestroyedExternally(this);
+			}
 		}
 	}
 

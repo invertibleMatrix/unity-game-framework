@@ -5,7 +5,6 @@ using AK.Core;
 using AK.Examples.Costs;
 using AK.Examples.Currency;
 using AK.Examples.IAP;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.Examples.Store
@@ -21,7 +20,7 @@ namespace AK.Examples.Store
 		public IAPProductDefinition NoAdsProductDefinition;
 		public IAPProductDefinition VIPSubscriptionProductDefinition;
 
-		[InlineEditor, Header("Categories")] [Tooltip("Product categories for UI organization.")]
+		[Header("Categories")] [Tooltip("Product categories for UI organization.")]
 		public List<ShopCategoryDefinition> Categories;
 
 		public ShopRegistry Registry => _productsRegistry;

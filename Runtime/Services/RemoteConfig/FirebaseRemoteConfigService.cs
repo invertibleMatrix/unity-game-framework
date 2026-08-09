@@ -15,7 +15,7 @@ namespace AK.Services
 	{
 		private readonly RemoteConfigMeta _remoteConfigMeta;
 		private readonly IFirebaseInitializationService _firebaseInit;
-		private readonly TimeSpan _fetchTimeout;
+		private readonly TimeSpan _cacheExpiration;
 
 		private bool _isInitialized;
 
@@ -26,15 +26,20 @@ namespace AK.Services
 		/// </summary>
 		/// <param name="remoteConfigMeta">The meta data repository containing RemoteConfigMeta.</param>
 		/// <param name="firebaseInit">Firebase initialization service (must be initialized first).</param>
-		/// <param name="fetchTimeoutSeconds">Timeout for fetch operations. Default is 10 seconds.</param>
+		/// <param name="cacheExpirationSeconds">
+		/// Cache expiration passed to FetchAsync(TimeSpan): the SDK performs a real network
+		/// fetch only when the previously fetched values are older than this. NOT a network
+		/// timeout. The default of 10s means every app launch fetches fresh values (the SDK's
+		/// own default is 12 hours). Lower values risk Firebase fetch throttling, not freshness.
+		/// </param>
 		public FirebaseRemoteConfigService(
 			RemoteConfigMeta remoteConfigMeta,
 			IFirebaseInitializationService firebaseInit,
-			int fetchTimeoutSeconds = 10)
+			int cacheExpirationSeconds = 10)
 		{
 			_remoteConfigMeta = remoteConfigMeta;
 			_firebaseInit = firebaseInit;
-			_fetchTimeout = TimeSpan.FromSeconds(fetchTimeoutSeconds);
+			_cacheExpiration = TimeSpan.FromSeconds(cacheExpirationSeconds);
 		}
 
 		public async UniTask InitializeAsync()
@@ -103,7 +108,9 @@ namespace AK.Services
 			{
 #if FIREBASE_REMOTE_CONFIG && !UNITY_WEBGL
 				var remoteConfig = Firebase.RemoteConfig.FirebaseRemoteConfig.DefaultInstance;
-				await remoteConfig.FetchAsync(_fetchTimeout).AsUniTask();
+				// FetchAsync(TimeSpan) takes a cache expiration, not a timeout: the SDK
+				// skips the network call if values are younger than _cacheExpiration.
+				await remoteConfig.FetchAsync(_cacheExpiration).AsUniTask();
 				Debug.Log("[FirebaseRemoteConfigService] Fetch complete");
 #else
 				Debug.LogWarning("[FirebaseRemoteConfigService] Firebase Remote Config not available. Using defaults.");

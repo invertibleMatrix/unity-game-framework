@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using AK.Core;
 using AK.CoreDomain;
 using AK.Examples.Currency;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.Examples.Rewards
@@ -19,7 +18,7 @@ namespace AK.Examples.Rewards
 		[Header("Bundle Reward")] [Tooltip("Used only if Type is Bundle. Defines a fixed list of rewards inside.")]
 		public RewardBundle Bundle;
 
-		[Header("Gacha Bundle Reward")] [Tooltip("Used only if Type is Gacha Bundle. Defines a probabilistic list of rewards inside.")] [InlineEditor]
+		[Header("Gacha Bundle Reward")] [Tooltip("Used only if Type is Gacha Bundle. Defines a probabilistic list of rewards inside.")]
 		public GachaBundle GachaBundle;
 
 		[Header("Unlockable Reward")]

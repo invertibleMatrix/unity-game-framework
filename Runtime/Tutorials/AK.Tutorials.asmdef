@@ -1,0 +1,21 @@
+{
+    "name": "AK.Tutorials",
+    "rootNamespace": "AK.Tutorials",
+    "references": [
+        "AK.Core",
+        "AK.CoreDomain",
+        "AK.Services",
+        "AK.UISystem",
+        "UniTask",
+        "Reflex"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

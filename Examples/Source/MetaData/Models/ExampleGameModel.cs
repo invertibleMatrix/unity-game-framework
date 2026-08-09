@@ -4,9 +4,7 @@ using System.Linq;
 using AK.Core;
 using AK.CoreDomain;
 using AK.Examples.Currency;
-using AK.Examples.Rewards;
 using AK.Examples.Models;
-using AK.Services.Rewards;
 using UnityEngine;
 
 namespace AK.Examples
@@ -30,9 +28,6 @@ namespace AK.Examples
 
 		// Settings — universal framework building block
 		public GameSettingsModel GameSettingsModel = new();
-
-		// Transaction queues — keyed by TransactionType SO
-		public Dictionary<string, List<Transaction>> PendingTransactions = new();
 
 		// Currency management — common pattern most games need
 		[NonSerialized] private List<CurrencyModel> _currencies = new();
@@ -74,70 +69,6 @@ namespace AK.Examples
 		public void SetMetaDataRepository(IMetaDataRepository metaDataRepository)
 		{
 			_metaDataRepository = metaDataRepository;
-		}
-
-		/// <summary>
-		/// Appends transactions for a given TransactionType SO.
-		/// </summary>
-		public void AppendTransactions(TransactionType transactionType, List<UID> ids)
-		{
-			if (transactionType == null || ids == null || ids.Count == 0) return;
-
-			string key = transactionType.Id;
-			if (!PendingTransactions.ContainsKey(key))
-				PendingTransactions[key] = new List<Transaction>();
-
-			foreach (UID uid in ids)
-			{
-				if (uid == null || uid.IsEmpty())
-				{
-					Debug.LogWarning("Cannot append transaction with empty UID");
-					continue;
-				}
-
-				PendingTransactions[key].Add(new Transaction
-				{
-					UID = uid,
-					Time = GetFormattedTime(DateTime.UtcNow)
-				});
-			}
-
-			Commit();
-		}
-
-		/// <summary>
-		/// Credits all pending transactions for a given TransactionType SO.
-		/// </summary>
-		public void CreditPendingTransactions(TransactionType transactionType, IRewardService rewardService)
-		{
-			if (transactionType == null || _metaDataRepository == null) return;
-
-			string key = transactionType.Id;
-			if (!PendingTransactions.TryGetValue(key, out var transactions) || transactions.Count == 0) return;
-
-			foreach (var transaction in transactions.ToList())
-			{
-				transaction.ResolveUID(_metaDataRepository);
-
-				if (transaction.UID == null || transaction.UID.IsEmpty())
-				{
-					transactions.Remove(transaction);
-					continue;
-				}
-
-				var rewardsMeta = _metaDataRepository.GetMeta<RewardsMeta>();
-				var rewardDefinition = rewardsMeta?.Registry.GetObjectByUID(transaction.UID) as RewardDefinition;
-				if (rewardDefinition == null)
-				{
-					transactions.Remove(transaction);
-					Debug.LogWarning($"Orphaned transaction removed. UID '{transaction.UID.Id}' not found in Reward Registry.");
-					continue;
-				}
-				rewardService.TryGrantReward(rewardDefinition);
-				transactions.Remove(transaction);
-			}
-
-			Commit();
 		}
 
 		public override void OnInitialized(bool isFirstLaunch)

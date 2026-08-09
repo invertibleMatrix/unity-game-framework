@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using AK.Core;
-using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace AK.CoreDomain.Analytics
@@ -28,10 +27,10 @@ namespace AK.CoreDomain.Analytics
 		[Header("Batching")] [Tooltip("Should this event be batched with other events?")]
 		public bool ShouldBatch = false;
 
-		[Tooltip("Maximum batch size (0 = no limit).")] [ShowIf("ShouldBatch")]
+		[Tooltip("Maximum batch size (0 = no limit).")]
 		public int MaxBatchSize = 10;
 
-		[Tooltip("Batch timeout in seconds (0 = no timeout).")] [ShowIf("ShouldBatch")]
+		[Tooltip("Batch timeout in seconds (0 = no timeout).")]
 		public float BatchTimeoutSeconds = 5f;
 
 		[Header("Conditions")] [Tooltip("Is this event currently active?")]
