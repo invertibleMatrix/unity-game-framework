@@ -8,7 +8,7 @@ using UnityEngine.SceneManagement;
 namespace Utilities.AudioSpawner
 {
 	[CreateAssetMenu(fileName = "AudioConfig", menuName = "AK/Configs/AudioConfig")]
-	public class AudioConfig : UID
+	public class AudioConfig : MetaDataAsset
 	{
 		[Tooltip("The prefab for this audio type. All variants of the same type share this prefab.")]
 		public AudioComponent Prefab;
@@ -50,6 +50,20 @@ namespace Utilities.AudioSpawner
 
 		[Tooltip("If true, the sound will be played in 3D space. If false, it will be 2D and heard everywhere.")]
 		public bool IsSpatial = true;
+
+		[Header("Concurrency")]
+		[Tooltip("Max simultaneous voices of this sound. 0 = unlimited. Beyond the cap, the oldest voice is stopped early (steal-oldest).")]
+		public int MaxConcurrentVoices = 0;
+
+		[Tooltip("Minimum seconds between plays of this sound. 0 = no limit. Prevents machine-gun repetition.")]
+		public float MinIntervalBetweenPlays = 0f;
+
+		[Header("Ducking")]
+		[Tooltip("If > 0, playing this sound ducks the music channel by this many dB.")]
+		public float DuckMusicDb = 0f;
+
+		[Tooltip("Seconds before the music channel restores after a duck.")]
+		public float DuckDuration = 0.5f;
 #if UNITY_EDITOR
 		public void PlayDebug()
 		{

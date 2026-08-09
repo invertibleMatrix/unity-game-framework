@@ -4,18 +4,18 @@ using System.Linq;
 using AK.Core;
 using UnityEngine;
 
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
-
 namespace Utilities.ParticleSpawner
 {
+    /// <summary>
+    /// Catalog of all ParticleConfigBase assets. Inherits the TypedUIDRegistryAsset
+    /// machinery — self-initializing GUID lookups, auto-tracking of new/deleted configs,
+    /// inspector maintenance buttons, and build-gate validation — and adds the
+    /// particle-specific type+variant caches used by type-safe spawning.
+    /// </summary>
     [CreateAssetMenu(fileName = "ParticlesRegistry", menuName = "AK/Registries/ParticlesRegistry")]
-    public class ParticlesRegistry : ScriptableObject
+    public class ParticlesRegistry : TypedUIDRegistryAsset<ParticleConfigBase>
     {
-        [SerializeField] private TypedUIDRegistry<ParticleConfigBase> _registry = new();
-
-        // Runtime caches for fast lookups
+        // Particle-specific caches (built on demand by ParticleSpawner at startup)
         private Dictionary<Type, Dictionary<string, ParticleConfigBase>> _typeToConfigs;
         private Dictionary<string, ParticleConfigBase>                    _uidToConfig;
 
@@ -149,17 +149,7 @@ namespace Utilities.ParticleSpawner
 
         // Editor helpers
 #if UNITY_EDITOR
-        public void RefreshAllObjects()
-        {
-            _registry.RefreshAllObjects();
-            EditorUtility.SetDirty(this);
-        }
-
-        public void ValidateObjects()
-        {
-            _registry.ValidateObjects();
-        }
-
+        [ContextMenu("Log Registry Statistics")]
         public void LogRegistryStatistics()
         {
             if (_typeToConfigs == null || _uidToConfig == null)

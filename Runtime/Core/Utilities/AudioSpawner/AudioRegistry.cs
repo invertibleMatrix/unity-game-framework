@@ -4,18 +4,18 @@ using System.Linq;
 using AK.Core;
 using UnityEngine;
 
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
-
 namespace Utilities.AudioSpawner
 {
+	/// <summary>
+	/// Catalog of all AudioConfig assets. Inherits the TypedUIDRegistryAsset machinery —
+	/// self-initializing GUID lookups, auto-tracking of new/deleted configs, inspector
+	/// maintenance buttons, and build-gate validation — and adds the audio-specific
+	/// type+variant caches used by type-safe spawning.
+	/// </summary>
 	[CreateAssetMenu(fileName = "AudioRegistry", menuName = "AK/Registries/Audio Registry")]
-	public class AudioRegistry : ScriptableObject
+	public class AudioRegistry : TypedUIDRegistryAsset<AudioConfig>
 	{
-		[SerializeField] private TypedUIDRegistry<AudioConfig> _registry;
-
-		// Cache for fast lookups
+		// Audio-specific caches (built on demand by AudioSpawner at startup)
 		private Dictionary<Type, Dictionary<string, AudioConfig>> _typeToConfigs;
 		private Dictionary<string, AudioConfig>                   _uidToConfig;
 
@@ -181,19 +181,6 @@ namespace Utilities.AudioSpawner
 
 		// Editor helpers
 #if UNITY_EDITOR
-		[ContextMenu("Refresh All Objects")]
-		public void RefreshAllObjects()
-		{
-			_registry.RefreshAllObjects();
-			EditorUtility.SetDirty(this);
-		}
-
-		[ContextMenu("Validate Objects")]
-		public void ValidateObjects()
-		{
-			_registry.ValidateObjects();
-		}
-
 		[ContextMenu("Log Registry Statistics")]
 		public void LogRegistryStatistics()
 		{

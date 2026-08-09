@@ -21,6 +21,27 @@ namespace Utilities.AudioSpawner
 		AudioComponent PlayAudio(UID variantId, Vector3? position = null);
 
 		/// <summary>
+		/// Simple audio playback: Plays the given config's audio. Convenience overload
+		/// so call sites holding an AudioConfig never touch UniqueID by hand.
+		/// </summary>
+		AudioComponent PlayAudio(AudioConfig config, Vector3? position = null);
+
+		/// <summary>True while at least one voice of this config is active.</summary>
+		bool IsPlaying(AudioConfig config);
+
+		/// <summary>Stops (fade-out) all active voices, or only the given config's.</summary>
+		void StopAll(AudioConfig config = null);
+
+		/// <summary>Crossfades to a music track (one at a time). Replaying the current track is a no-op.</summary>
+		void PlayMusic(AudioConfig config, float crossfadeSeconds = 1f);
+
+		/// <summary>Fades out and stops the current music track.</summary>
+		void StopMusic(float fadeOutSeconds = 1f);
+
+		/// <summary>The currently playing music config, or null.</summary>
+		AudioConfig CurrentMusic { get; }
+
+		/// <summary>
 		/// Legacy method: Spawns and plays audio.
 		/// OBSOLETE: Use PlayAudio(uid, position) for simple playback.
 		/// </summary>
