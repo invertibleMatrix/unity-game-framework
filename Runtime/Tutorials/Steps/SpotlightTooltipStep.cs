@@ -29,9 +29,6 @@ namespace AK.Tutorials
 		[Tooltip("Extra offset in canvas units applied to the tooltip position.")]
 		public Vector2 Offset;
 
-		[Tooltip("Seconds to wait after this step's conditions are met before it presents.")]
-		public float StartDelay;
-
 		[Header("Spotlight")]
 		[Tooltip("Extra padding around the spotlight hole (screen pixels).")]
 		public float SpotlightPadding = 20f;
@@ -46,15 +43,11 @@ namespace AK.Tutorials
 
 		public override async UniTask PresentAsync(TutorialStepContext context, CancellationToken ct)
 		{
+			await base.PresentAsync(context, ct);
 			if (TargetId == null || !context.Targets.TryGet(TargetId, out var target) || target == null)
 			{
 				Debug.LogWarning($"[SpotlightTooltipStep] Target '{(TargetId != null ? TargetId.name : "null")}' is not registered — skipping presentation of '{name}'.");
 				return;
-			}
-
-			if (StartDelay > 0f)
-			{
-				await UniTask.WaitForSeconds(StartDelay, cancellationToken: ct);
 			}
 
 			var spotlight = context.UiSystem.Show<UIViewSpotlight>(

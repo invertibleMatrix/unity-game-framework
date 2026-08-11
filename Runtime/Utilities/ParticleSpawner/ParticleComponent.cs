@@ -17,6 +17,15 @@ namespace Utilities.ParticleSpawner
 		private Transform               _parent;
 		private CancellationTokenSource _playCts;
 
+		// Prefab-authored defaults captured once at Awake — ResetState restores them on
+		// recycle so the pool never holds an instance mutated by a spawn (scale, tint,
+		// preview layer, re-parenting).
+		private Vector3                                _defaultLocalPosition;
+		private Quaternion                             _defaultLocalRotation;
+		private Vector3                                _defaultLocalScale;
+		private List<KeyValuePair<Transform, int>>     _defaultLayers;
+		private ParticleSystem.MinMaxGradient[]        _defaultColors;
+
 		// Set while this instance is owned by the world (not the pool). Makes the
 		// recycle path idempotent — the stop callback and a direct Stop() can race.
 		private bool _active;
@@ -27,6 +36,61 @@ namespace Utilities.ParticleSpawner
 		private void Awake()
 		{
 			_parent = transform.parent;
+			CaptureDefaults();
+		}
+
+		private void CaptureDefaults()
+		{
+			_defaultLocalPosition = transform.localPosition;
+			_defaultLocalRotation = transform.localRotation;
+			_defaultLocalScale = transform.localScale;
+
+			_defaultLayers = new List<KeyValuePair<Transform, int>>();
+			foreach (Transform child in GetComponentsInChildren<Transform>(true))
+			{
+				_defaultLayers.Add(new KeyValuePair<Transform, int>(child, child.gameObject.layer));
+			}
+
+			if (_colorTargets != null)
+			{
+				_defaultColors = new ParticleSystem.MinMaxGradient[_colorTargets.Count];
+				for (int i = 0; i < _colorTargets.Count; i++)
+				{
+					_defaultColors[i] = _colorTargets[i] != null ? _colorTargets[i].main.startColor : default;
+				}
+			}
+		}
+
+		/// <summary>
+		/// Restores prefab-authored state — parent, local transform, per-child layers, and
+		/// start colors. Called on every recycle so a pooled instance goes back pristine.
+		/// </summary>
+		public void ResetState()
+		{
+			ResetParent();
+			transform.localPosition = _defaultLocalPosition;
+			transform.localRotation = _defaultLocalRotation;
+			transform.localScale = _defaultLocalScale;
+
+			foreach (KeyValuePair<Transform, int> pair in _defaultLayers)
+			{
+				if (pair.Key != null)
+				{
+					pair.Key.gameObject.layer = pair.Value;
+				}
+			}
+
+			if (_colorTargets != null && _defaultColors != null)
+			{
+				for (int i = 0; i < _colorTargets.Count; i++)
+				{
+					if (_colorTargets[i] != null)
+					{
+						var main = _colorTargets[i].main;
+						main.startColor = _defaultColors[i];
+					}
+				}
+			}
 		}
 
 		public virtual void Init(ParticleConfigBase configBase, Action onStop)
@@ -134,6 +198,7 @@ namespace Utilities.ParticleSpawner
 		{
 			if (!_active) return;
 			_active = false;
+			ResetState();
 			OnStop();
 		}
 

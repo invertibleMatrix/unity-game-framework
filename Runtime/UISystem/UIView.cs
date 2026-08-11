@@ -21,6 +21,8 @@ namespace AK.Systems
 	{
 		[SerializeField] public UIView View;
 		[SerializeField] public bool   ShowOnStart;
+		[SerializeField, Tooltip("Seconds to wait after the parent shows before this fragment starts its entrance. Use to stagger sibling animations. If the fragment closes before the delay elapses, the start is cancelled.")]
+		public float ShowOnStartDelay;
 		[SerializeField] public bool   SetActive;
 	}
 
@@ -107,6 +109,7 @@ namespace AK.Systems
 		private bool                    _isResourcesRegistered;
 		private bool                    _isCleanedUp;
 		private bool                    _isShowComplete;
+		private CancellationTokenSource _delayedStartCts;
 
 		protected UIView    _parentView;
 
@@ -662,6 +665,9 @@ namespace AK.Systems
 		/// </summary>
 		internal async UniTask InternalHideAsync(bool immediate = false, CancellationToken ct = default)
 		{
+			// Any hide means a pending delayed entrance must never fire.
+			CancelDelayedStart();
+
 			// Never completed a show (e.g. show animation cancelled) - no hide hooks,
 			// just settle state. Firing OnPrepareHide/OnHide here would run hide logic
 			// on a view that was never shown.
@@ -797,6 +803,7 @@ namespace AK.Systems
 			if (_isCleanedUp) return;
 			_isCleanedUp = true;
 
+			CancelDelayedStart();
 			CancelCurrentAnimation();
 			_animatableContent?.DOKill();
 			if (CanvasGroup != null) CanvasGroup.DOKill();
@@ -865,6 +872,29 @@ namespace AK.Systems
 		}
 
 		/// <summary>
+		/// Arms a pending ShowOnStart-delayed entrance and returns its token. A new arm
+		/// replaces any previous pending one, so re-shows can't stack duplicate starts.
+		/// </summary>
+		internal CancellationToken BeginDelayedStart()
+		{
+			CancelDelayedStart();
+			_delayedStartCts = new CancellationTokenSource();
+			return _delayedStartCts.Token;
+		}
+
+		/// <summary>
+		/// Cancels a pending delayed entrance. Called from every settle path (hide,
+		/// cleanup, state reset) so a fragment closed before its delay elapsed never shows.
+		/// </summary>
+		internal void CancelDelayedStart()
+		{
+			if (_delayedStartCts == null) return;
+			_delayedStartCts.Cancel();
+			_delayedStartCts.Dispose();
+			_delayedStartCts = null;
+		}
+
+		/// <summary>
 		/// Creates a new CTS linked to both the caller's token and the destroy token.
 		/// If the GameObject is destroyed, all in-flight animations auto-cancel.
 		/// </summary>
@@ -887,6 +917,7 @@ namespace AK.Systems
 			_isResourcesRegistered = false;
 			_isCleanedUp = false;
 			_isShowComplete = false;
+			CancelDelayedStart();
 			if (_animatableContent != null)
 			{
 				_animatableContent.localScale = Vector3.one;

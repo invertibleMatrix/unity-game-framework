@@ -438,6 +438,14 @@ namespace AK.Systems
 				if (entry.View.IsTemplate) continue;   // templates are clone sources, never presented
 				if (!_viewRegistry.TryGetValue(entry.View, out _)) continue;
 
+				if (entry.ShowOnStartDelay > 0f)
+				{
+					// Hide it for the wait so an active fragment doesn't flash before its entrance.
+					entry.View.MoveContentOffScreen();
+					ShowStaticChildDelayedAsync(parent, entry.View, entry.ShowOnStartDelay).Forget();
+					continue;
+				}
+
 				// Prepare and push onto history stack synchronously (no stack behaviour between siblings)
 				entry.View.PrepareForShowAnimation();
 				RemoveFromStack(entry.View, history);
@@ -449,6 +457,35 @@ namespace AK.Systems
 
 			// Fire-and-forget the parallel batch
 			UniTask.WhenAll(tasks).Forget();
+		}
+
+		/// <summary>
+		/// Waits out a ShowOnStart delay, then shows the fragment through the parallel path.
+		/// The token armed by BeginDelayedStart is cancelled by every close/hide/destroy
+		/// path on the view, and the post-delay guards catch a parent that went away or a
+		/// fragment someone else showed during the wait — so a delayed start never pops
+		/// a fragment back open after it was closed.
+		/// </summary>
+		private async UniTask ShowStaticChildDelayedAsync(UIView parent, UIView view, float delay)
+		{
+			CancellationToken ct = view.BeginDelayedStart();
+
+			try
+			{
+				await UniTask.Delay(TimeSpan.FromSeconds(delay), DelayType.DeltaTime, PlayerLoopTiming.Update, ct);
+			}
+			catch (OperationCanceledException)
+			{
+				return; // closed, hidden, or destroyed before the delay elapsed
+			}
+
+			// Re-validate after the wait — state may have changed mid-delay.
+			if (view == null || view.gameObject == null) return;
+			if (parent == null || parent.gameObject == null) return;
+			if (_closingViews.Contains(view) || _closingViews.Contains(parent)) return;
+			if (view.IsVisible) return;   // shown by someone else during the delay
+
+			await ShowExistingViewParallel(view, ct: ct);
 		}
 
 		internal bool IsViewRegistered(UIView view)
