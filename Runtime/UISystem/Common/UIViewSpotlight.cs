@@ -8,7 +8,7 @@ using UnityEngine.UI;
 namespace AK.Systems
 {
 	[RequireComponent(typeof(Image), typeof(GraphicRaycaster))]
-	public class UIViewSpotlight : UIView, ICanvasRaycastFilter, IPointerClickHandler
+	public class UIViewSpotlight : UIView<UIViewSpotlightContext>, ICanvasRaycastFilter, IPointerClickHandler
 	{
 		private const int MAX_HOLES = 8;
 
@@ -34,6 +34,12 @@ namespace AK.Systems
 		private bool     _introActive;
 
 		public RectTransform FurnitureRoot => _furnitureRoot;
+
+		// Serialized fields are the defaults; non-null context members win per show.
+		private float EffectivePadding       => Context?.Padding       ?? _padding;
+		private float EffectiveFeather       => Context?.Feather       ?? _feather;
+		private float EffectiveIntroDuration => Context?.IntroDuration ?? _introDuration;
+		private Ease  EffectiveIntroEase     => Context?.IntroEase     ?? _introEase;
 
 		public event Action BackgroundTapped;
 
@@ -73,8 +79,8 @@ namespace AK.Systems
 			{
 				_introActive = true;
 				_introT = 0f;
-				_introTween = DOTween.To(() => _introT, v => _introT = v, 1f, _introDuration)
-				                     .SetEase(_introEase)
+				_introTween = DOTween.To(() => _introT, v => _introT = v, 1f, EffectiveIntroDuration)
+				                     .SetEase(EffectiveIntroEase)
 				                     .SetTarget(this)
 				                     .OnComplete(() => _introActive = false)
 				                     .Play();
@@ -157,7 +163,7 @@ namespace AK.Systems
 				Vector2 center = (bottomLeft + topRight) * 0.5f;
 				float width = Vector2.Distance(topLeft, topRight);
 				float height = Vector2.Distance(bottomLeft, topLeft);
-				float radius = Mathf.Max(width, height) * 0.5f + _padding;
+				float radius = Mathf.Max(width, height) * 0.5f + EffectivePadding;
 
 				if (_introActive)
 				{
@@ -171,7 +177,7 @@ namespace AK.Systems
 			_holeCount = count;
 			_materialInstance.SetVectorArray(HolesProperty, _holes);
 			_materialInstance.SetFloat(HoleCountProperty, count);
-			_materialInstance.SetFloat(FeatherProperty, _feather);
+			_materialInstance.SetFloat(FeatherProperty, EffectiveFeather);
 		}
 
 		private static Camera GetTargetCamera(RectTransform target)
@@ -195,7 +201,7 @@ namespace AK.Systems
 			max = Mathf.Max(max, Vector2.Distance(center, new Vector2(0f, screen.y)));
 			max = Mathf.Max(max, Vector2.Distance(center, screen));
 
-			return max + _feather;
+			return max + EffectiveFeather;
 		}
 
 		private bool IsInsideAnyHole(Vector2 screenPos)
@@ -213,5 +219,17 @@ namespace AK.Systems
 
 			return false;
 		}
+	}
+
+	/// <summary>
+	/// Optional per-show overrides for the spotlight. Every member is nullable:
+	/// null means "not provided" — the view's serialized values apply instead.
+	/// </summary>
+	public class UIViewSpotlightContext : UIContext
+	{
+		public float? Padding;
+		public float? Feather;
+		public float? IntroDuration;
+		public Ease?  IntroEase;
 	}
 }

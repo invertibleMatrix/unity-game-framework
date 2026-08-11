@@ -1,6 +1,7 @@
 using System.Threading;
 using AK.Systems;
 using Cysharp.Threading.Tasks;
+using DG.Tweening;
 using UnityEngine;
 
 namespace AK.Tutorials
@@ -28,6 +29,21 @@ namespace AK.Tutorials
 		[Tooltip("Extra offset in canvas units applied to the tooltip position.")]
 		public Vector2 Offset;
 
+		[Tooltip("Seconds to wait after this step's conditions are met before it presents.")]
+		public float StartDelay;
+
+		[Header("Spotlight")]
+		[Tooltip("Extra padding around the spotlight hole (screen pixels).")]
+		public float SpotlightPadding = 20f;
+
+		[Tooltip("Feather/softness of the spotlight rim (screen pixels).")]
+		public float SpotlightFeather = 15f;
+
+		[Tooltip("Seconds for the spotlight iris-in. 0 = instant.")]
+		public float SpotlightIntroDuration = 0.6f;
+
+		public Ease SpotlightIntroEase = Ease.OutCubic;
+
 		public override async UniTask PresentAsync(TutorialStepContext context, CancellationToken ct)
 		{
 			if (TargetId == null || !context.Targets.TryGet(TargetId, out var target) || target == null)
@@ -36,8 +52,20 @@ namespace AK.Tutorials
 				return;
 			}
 
-			var spotlight = context.UiSystem.Show<UIViewSpotlight>(onInit: s =>
-				s.SetTargets(new[] { target }, animateSpotlight: true));
+			if (StartDelay > 0f)
+			{
+				await UniTask.WaitForSeconds(StartDelay, cancellationToken: ct);
+			}
+
+			var spotlight = context.UiSystem.Show<UIViewSpotlight>(
+				context: new UIViewSpotlightContext
+				{
+					Padding = SpotlightPadding,
+					Feather = SpotlightFeather,
+					IntroDuration = SpotlightIntroDuration,
+					IntroEase = SpotlightIntroEase
+				},
+				onInit: s => s.SetTargets(new[] { target }, animateSpotlight: true));
 
 			var tooltip = context.UiSystem.Show<UIViewTooltip>(new UIViewTooltipContext(Title, Description, target, Position)
 			{
