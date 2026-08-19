@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: AKMenuSystem::AKMenuSystem.Animations.RotateInAnimationStrategy
   EntryDuration: 0.3
   EntryEase: 9
-  ExitDuration: 0.3
+  ExitDuration: 0.5
   ExitEase: 8
   _startRotation: {x: 0, y: 90, z: 0}
   _startScale: {x: 0.7, y: 0.7, z: 0.7}

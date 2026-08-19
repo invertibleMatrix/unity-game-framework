@@ -16,7 +16,16 @@ namespace AK.Tutorials
 	{
 		[Tooltip("Facts that must have occurred before this step can present.")]
 		public List<FactCondition> Conditions = new();
+		
+		[Tooltip("Seconds to wait after this step's conditions are met before it presents.")]
+		public float StartDelay;
 
-		public abstract UniTask PresentAsync(TutorialStepContext context, CancellationToken ct);
+		public virtual async UniTask PresentAsync(TutorialStepContext context, CancellationToken ct)
+		{
+			if (StartDelay > 0f)
+			{
+				await UniTask.WaitForSeconds(StartDelay, cancellationToken: ct);
+			}
+		}
 	}
 }

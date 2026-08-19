@@ -29,6 +29,7 @@ namespace AK.Tutorials
 
 		public override async UniTask PresentAsync(TutorialStepContext context, CancellationToken ct)
 		{
+			await base.PresentAsync(context, ct);
 			if (TargetId == null || !context.Targets.TryGet(TargetId, out var target) || target == null)
 			{
 				Debug.LogWarning(
