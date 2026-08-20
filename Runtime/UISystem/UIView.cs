@@ -344,7 +344,7 @@ namespace AK.Systems
 		// BACKGROUND OVERLAY
 		// =====================================================================
 
-		public virtual void ShowBackgroundOverlay(float alpha = 0.85f, bool blockRayCasts = true)
+		public virtual void ShowBackgroundOverlay(float alpha = 0.95f, bool blockRayCasts = true)
 		{
 			float fadeInDuration = 0.4f;
 			

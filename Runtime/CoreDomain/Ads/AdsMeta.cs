@@ -15,14 +15,6 @@ namespace AK.CoreDomain
 	[CreateAssetMenu(fileName = "AdsMeta", menuName = "AK/MetaData/Ads/AdsMeta")]
 	public class AdsMeta : MetaDataAsset, IMeta
 	{
-		[Serializable]
-		public struct AdIds
-		{
-			public AdPlacementDefinition Rewarded;
-			public AdPlacementDefinition Interstitial;
-			public AdPlacementDefinition Banner;
-		}
-		
 		[SerializeField] private AdsRegistry _registry;
 
 		[Header("Ad Placements")]
@@ -32,11 +24,7 @@ namespace AK.CoreDomain
 		[Header("Categories")]
 		[Tooltip("Ad placement categories for UI organization.")]
 		public List<AdCategory> Categories;
-
-		[Header("Global Settings")]
-		[Tooltip("Default ad network to use.")]
-		public string DefaultNetwork = "AdMob";
-
+		
 		[Tooltip("Enable test mode for ads.")]
 		public bool TestMode;
 
@@ -74,8 +62,6 @@ namespace AK.CoreDomain
 
 		[Tooltip("Remote float for ad fill rate (for testing/simulation).")]
 		public RemoteFloat AdFillRate;
-
-		public AdIds Ids;
 		
 		[Serializable]
 		public class AdCategory
@@ -130,6 +116,14 @@ namespace AK.CoreDomain
 				if (RewardedAdsEnabled != null && RewardedAdsEnabled.HasRemoteValue)
 					return RewardedAdsEnabled.Value;
 				return true;
+			}
+		}
+
+		public override void InitializeMeta()
+		{
+			if (_registry != null)
+			{
+				_registry.Initialize();
 			}
 		}
 

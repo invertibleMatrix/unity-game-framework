@@ -26,7 +26,8 @@ namespace AK.Editor
 
         public static readonly DefineEntry[] Defines =
         {
-            new("ADMOB_ENABLED", "AdMob Ads", "Google Mobile Ads SDK (requires AdMob package)", "Ads"),
+            new("ADMOB_ENABLED", "AdMob Ads", "Google Mobile Ads SDK (requires AdMob package). Skipped when MAX is enabled.", "Ads"),
+            new("MAX_ENABLED", "AppLovin MAX Ads", "AppLovin MAX SDK (auto-defined when com.applovin.mediation.ads is installed)", "Ads"),
             new("FIREBASE_INITIALIZATION", "Firebase Core", "Firebase Core SDK — initialization and dependency checking", "Firebase"),
             new("FIREBASE_ANALYTICS", "Firebase Analytics", "Firebase Analytics SDK (requires Firebase Analytics package)", "Firebase"),
             new("FIREBASE_REMOTE_CONFIG", "Firebase Remote Config", "Firebase Remote Config SDK (requires Firebase Remote Config package)", "Firebase"),

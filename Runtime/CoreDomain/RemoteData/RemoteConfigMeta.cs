@@ -88,6 +88,26 @@ namespace AK.CoreDomain.RemoteConfig
 		}
 
 		/// <summary>
+		/// Gets a JSON remote variable by the ScriptableObject's serialized UID.
+		/// Parallel to <see cref="GetVariableByUID{T}"/> for <see cref="RemoteJson{T}"/> wrappers.
+		/// Pass the assigned asset (e.g. RemoteAdsConfig); the registry instance is the one RC writes into.
+		/// </summary>
+		public RemoteJson<T> GetJsonVariableByUID<T>(UID uid) where T : class, new()
+		{
+			return GetVariableByUID(uid) as RemoteJson<T>;
+		}
+
+		/// <summary>
+		/// Gets the deserialized JSON value by ScriptableObject UID.
+		/// Parallel to <see cref="GetValue{T}"/>.
+		/// </summary>
+		public T GetJsonValueByUID<T>(UID uid) where T : class, new()
+		{
+			var variable = GetJsonVariableByUID<T>(uid);
+			return variable != null ? variable.Value : default;
+		}
+
+		/// <summary>
 		/// Gets all enabled remote variables.
 		/// </summary>
 		public List<RemoteVariableBase> GetEnabledVariables()

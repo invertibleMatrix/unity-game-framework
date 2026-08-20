@@ -35,12 +35,18 @@ namespace AK.CoreDomain.RemoteConfig
 		{
 			get
 			{
-				// Priority: Remote > Cached > Default
+				// Priority: Remote > Cached > Default.
+				// Cache is keyed by VariableKey — skip it when the key is empty
+				// (CachedProperty stays null; SaveCachedValue already no-ops).
 				if (_hasRemoteValue)
 					return _remoteValue;
 
 				if (_cacheValue)
-					return CachedProperty.Read();
+				{
+					PrefsProperty<T> cached = CachedProperty;
+					if (cached != null)
+						return cached.Read();
+				}
 
 				return _defaultValue;
 			}

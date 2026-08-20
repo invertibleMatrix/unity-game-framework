@@ -4,7 +4,8 @@
     "references": [
         "AK.Core",
         "UniTask",
-        "AK.CoreDomain"
+        "AK.CoreDomain",
+        "MaxSdk.Scripts"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
@@ -23,6 +24,11 @@
             "name": "com.unity.purchasing",
             "expression": "",
             "define": "IAP"
+        },
+        {
+            "name": "com.applovin.mediation.ads",
+            "expression": "",
+            "define": "MAX_ENABLED"
         }
     ],
     "noEngineReferences": false

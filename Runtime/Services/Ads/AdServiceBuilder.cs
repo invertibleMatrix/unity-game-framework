@@ -12,8 +12,11 @@ namespace AK.Services
 	/// </summary>
 	public class AdServiceBuilder
 	{
+		private const string TAG = "[AdServiceBuilder]";
+
 		private readonly AdService _adService;
-		private bool _useAdMob = true;
+		private bool _useAdMob;
+		private bool _useMax;
 		private bool _useNullProviderAsFallback = false;
 		private bool _simulateAdsInEditor = true;
 		private bool _userCanTrack = true;
@@ -28,11 +31,21 @@ namespace AK.Services
 		}
 
 		/// <summary>
-		/// Enables or disables AdMob provider.
+		/// Opt in to the AdMob provider. Off unless this is called.
+		/// Ignored when MAX is also enabled — MAX already mediates Google demand.
 		/// </summary>
 		public AdServiceBuilder UseAdMob(bool useAdMob = true)
 		{
 			_useAdMob = useAdMob;
+			return this;
+		}
+
+		/// <summary>
+		/// Opt in to the AppLovin MAX provider. Off unless this is called.
+		/// </summary>
+		public AdServiceBuilder UseMax(bool useMax = true)
+		{
+			_useMax = useMax;
 			return this;
 		}
 
@@ -91,13 +104,31 @@ namespace AK.Services
 			_adService.SetUserConsent(_userCanTrack);
 			_adService.SetUserUnderAge(_userUnderAge);
 
-			// Add AdMob provider if enabled and available (requires the ADMOB_ENABLED define,
-			// otherwise the provider would report "initialized" without the SDK present).
+			if (_useMax && _useAdMob)
+				Debug.LogWarning($"{TAG} UseAdMob and UseMax were both requested; AdMob is skipped because MAX already mediates Google.");
+
+			bool maxAdded = false;
+
+#if MAX_ENABLED
+			if (_useMax)
+			{
+				_adService.AddProvider(new MaxAdProvider());
+				maxAdded = true;
+			}
+#else
+			if (_useMax)
+				Debug.LogWarning($"{TAG} UseMax() was requested but the AppLovin MAX package is not present (MAX_ENABLED).");
+#endif
+
+			// AdMob requires ADMOB_ENABLED; without it the provider would report initialized with no SDK.
 #if ADMOB_ENABLED && (UNITY_ANDROID || UNITY_IOS)
-			if (_useAdMob)
+			if (_useAdMob && !maxAdded)
 			{
 				_adService.AddProvider(new AdMobAdProvider());
 			}
+#elif !ADMOB_ENABLED
+			if (_useAdMob && !maxAdded)
+				Debug.LogWarning($"{TAG} UseAdMob() was requested but ADMOB_ENABLED is not defined.");
 #endif
 
 			// Add null provider for testing/fallback
@@ -110,9 +141,9 @@ namespace AK.Services
 		}
 
 		/// <summary>
-		/// Creates a default AdService with AdMob (on devices) and NullProvider (in editor/fallback).
+		/// Creates an AdService with no network providers. Call
+		/// <see cref="UseAdMob"/>, <see cref="UseMax"/>, or <see cref="AddProvider"/> on a builder instead.
 		/// </summary>
-		/// <returns>A configured AdService instance.</returns>
 		public static AdService CreateDefault()
 		{
 			return new AdServiceBuilder()
@@ -127,6 +158,7 @@ namespace AK.Services
 		{
 			return new AdServiceBuilder()
 				.UseAdMob(false)
+				.UseMax(false)
 				.UseNullProviderAsFallback(true)
 				.SimulateAdsInEditor(true)
 				.Build();
@@ -139,12 +171,10 @@ namespace AK.Services
 	public static class AdServiceExtensions
 	{
 		/// <summary>
-		/// Creates and configures an AdService with default settings.
+		/// Creates an AdService with consent flags only — no network provider is selected.
+		/// Use <see cref="AdServiceBuilder"/> and call <see cref="AdServiceBuilder.UseAdMob"/>,
+		/// <see cref="AdServiceBuilder.UseMax"/>, or <see cref="AdServiceBuilder.AddProvider"/>.
 		/// </summary>
-		/// <param name="metaDataRepository">The meta data repository.</param>
-		/// <param name="canTrack">Whether the user has consented to tracking.</param>
-		/// <param name="isUnderAge">Whether the user is under age.</param>
-		/// <returns>A configured AdService instance.</returns>
 		public static AdService CreateAdService(
 			bool canTrack = true,
 			bool isUnderAge = false)
