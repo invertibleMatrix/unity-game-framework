@@ -400,7 +400,9 @@ namespace AK.Systems
 
 			Rect rect = new Rect(0, 0, _bgTexture.width, _bgTexture.height);
 			_bgSprite = Sprite.Create(_bgTexture, rect, new Vector2(0.5f, 0.5f), 1f);
-			image.material.mainTexture = _bgTexture;
+			// Never assign image.material.mainTexture — Image.material returns the
+			// shared default UI material, so that would tint every other Image that
+			// uses m_Material: None (bank cards, etc.). The sprite is enough.
 			image.sprite = _bgSprite;
 
 			image.color = new Color(0f, 0f, 0f, 0f);
