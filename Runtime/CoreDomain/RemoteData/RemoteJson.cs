@@ -79,16 +79,43 @@ namespace AK.CoreDomain.RemoteConfig
 				trimmed = trimmed.Substring(1).TrimStart();
 			}
 
-			if (trimmed.Length >= 2 && trimmed[0] == '"')
+			// Not a quoted JSON string — already a bare object/array/primitive.
+			if (trimmed.Length < 2 || trimmed[0] != '"' || trimmed[trimmed.Length - 1] != '"')
 			{
-				RemoteJsonQuotedString box = JsonUtility.FromJson<RemoteJsonQuotedString>("{\"value\":" + trimmed + "}");
-				if (box != null && !string.IsNullOrEmpty(box.value))
-				{
-					return box.value;
-				}
+				return trimmed;
 			}
 
-			return trimmed;
+			// Strict path: re-wrap and let JsonUtility decode escapes for us.
+			RemoteJsonQuotedString box = null;
+			try
+			{
+				box = JsonUtility.FromJson<RemoteJsonQuotedString>("{\"value\":" + trimmed + "}");
+			}
+			catch (System.Exception)
+			{
+				// fall through to the tolerant path below
+			}
+
+			if (box != null && !string.IsNullOrEmpty(box.value))
+			{
+				return box.value;
+			}
+
+			// Tolerant fallback: the strict box parse failed (a stray unescaped
+			// quote in the payload breaks the re-wrapped object). Strip the outer
+			// quotes and unescape the common sequences by hand so we still recover,
+			// and log a warning that names the unwrap step — otherwise the caller's
+			// FromJsonOverwrite fails against a double-wrapped string with no clue.
+			string inner = trimmed.Substring(1, trimmed.Length - 2)
+				.Replace("\\\"", "\"")
+				.Replace("\\\\", "\\")
+				.Replace("\\/", "/")
+				.Replace("\\n", "\n")
+				.Replace("\\r", "\r")
+				.Replace("\\t", "\t");
+
+			Debug.LogWarning($"RemoteJson: strict quoted-JSON parse failed; used tolerant unwrap. Value begins '{trimmed.Substring(0, System.Math.Min(48, trimmed.Length))}…'");
+			return inner;
 		}
 
 		/// <summary>

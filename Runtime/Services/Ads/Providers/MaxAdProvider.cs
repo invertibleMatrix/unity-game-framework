@@ -15,6 +15,8 @@ namespace AK.Services.Ads.Providers
 	public class MaxAdProvider : IAdProvider
 	{
 		private const string TAG = "[MaxAdProvider]";
+		// Generous upper bound — a rewarded ad can run ~60s plus user dwell on the end card.
+		private static readonly TimeSpan ShowTimeout = TimeSpan.FromMinutes(3);
 
 		public string                ProviderName     => "AppLovin MAX";
 		public int                   Priority         => 100;
@@ -207,7 +209,19 @@ namespace AK.Services.Ads.Providers
 						return AdResult.Failed(placementId, adType, AdErrorType.UnsupportedAdType, $"Unsupported ad type: {adType}");
 				}
 
-				var result = await waiter.Tcs.Task;
+				AdResult result;
+				try
+				{
+					result = await waiter.Tcs.Task.Timeout(ShowTimeout);
+				}
+				catch (TimeoutException)
+				{
+					// Ad was shown but MAX never delivered Hidden/DisplayFailed (e.g. process
+					// suspended mid-ad). Without this the caller's busy-flag wedges forever.
+					_showWaiters.Remove(adUnitId);
+					return AdResult.Failed(placementId, adType, AdErrorType.InternalError, "Timed out waiting for ad result");
+				}
+
 				await UniTask.SwitchToMainThread();
 				return result;
 			}
