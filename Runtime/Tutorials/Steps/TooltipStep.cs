@@ -45,6 +45,10 @@ namespace AK.Tutorials
 				CloseTime = CloseTime
 			}, viewId: TooltipId);
 
+			// The tooltip doesn't govern input - open the gate so the player
+			// can act on what it points at.
+			context.InputGate.Release();
+
 			if (CloseTime > 0)
 			{
 				await UniTask.WaitForSeconds(CloseTime, cancellationToken: ct);

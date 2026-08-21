@@ -67,14 +67,18 @@ MonoBehaviour:
   m_EditorClassIdentifier: AK.UISystem::AK.UISystem.UIViewOverlay
   _viewId: 
   _stackBehaviour: 0
-  _animationConfig: {fileID: 0}
+  _animationStrategy: {fileID: 0}
+  _animationComponent: {fileID: 0}
+  _playInParallelWithPrevious: 0
   _animatableContent: {fileID: 0}
   _fragmentContainer: {fileID: 0}
   _returnToPoolOnClose: 0
   _allowMultipleInstances: 0
+  _childCloseOrder: 0
   _showBackgroundOverlay: 0
   _lockEntryPosition: 0
   _staticViews: []
+  _isTemplate: 0
 --- !u!223 &3058292335437077940
 Canvas:
   m_ObjectHideFlags: 0

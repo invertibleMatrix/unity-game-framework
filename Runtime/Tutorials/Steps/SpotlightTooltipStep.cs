@@ -70,6 +70,11 @@ namespace AK.Tutorials
 
 			spotlight.AttachFurniture(tooltip.RectTransform);
 
+			// Presentation is live: the spotlight now governs input (dim blocks,
+			// hole passes clicks to the target), so the gate opens and the
+			// spotlighted control is clickable.
+			context.InputGate.Release();
+
 			await WaitForAdvanceAsync(context, spotlight, ct);
 
 			if (tooltip != null) tooltip.Close();

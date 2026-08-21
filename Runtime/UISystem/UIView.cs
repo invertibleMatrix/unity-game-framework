@@ -9,6 +9,7 @@ using Reflex.Attributes;
 using Reflex.Core;
 using Reflex.Injectors;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace AK.Systems
@@ -370,6 +371,7 @@ namespace AK.Systems
 			_bgTexture.Apply();
 
 			_darkBg = new GameObject("ViewBackground");
+			_darkBg.AddComponent<TutorialDragConsumer>();
 			Image image = _darkBg.AddComponent<Image>();
 			image.raycastTarget = blockRayCasts;
 			RectTransform bgRect = image.rectTransform;
@@ -466,6 +468,9 @@ namespace AK.Systems
 				Canvas parentCanvas = GetComponentInParent<Canvas>();
 				_tutorialCanvas = gameObject.AddComponent<Canvas>();
 				_tutorialCanvas.overrideSorting = true;
+				// Sort just above the parent canvas so the dim covers the parent
+				// but stays below Overlay (200) — the tooltip/spotlight canvas
+				// lives there and must render above the dim.
 				_tutorialCanvas.sortingOrder = (parentCanvas != null ? parentCanvas.sortingOrder : 0) + 1;
 				_tutorialRaycaster = gameObject.AddComponent<GraphicRaycaster>();
 			}
@@ -1002,5 +1007,21 @@ namespace AK.Systems
 		{
 			base.Context = null;
 		}
+	}
+
+	/// <summary>
+	/// Eats pointer click, drag, and scroll events so they don't propagate up
+	/// the transform hierarchy to a ScrollRect or a Button below during tutorial
+	/// mode. Empty handlers — the sole purpose is to be the first component
+	/// that ExecuteHierarchy finds walking up from the raycast hit target.
+	/// Added onto the ViewBackground GameObject by SetupTutorialMode.
+	/// </summary>
+	internal sealed class TutorialDragConsumer : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHandler, IScrollHandler, IPointerClickHandler
+	{
+		public void OnDrag(PointerEventData eventData) { }
+		public void OnBeginDrag(PointerEventData eventData) { }
+		public void OnEndDrag(PointerEventData eventData) { }
+		public void OnScroll(PointerEventData eventData) { }
+		public void OnPointerClick(PointerEventData eventData) { }
 	}
 }

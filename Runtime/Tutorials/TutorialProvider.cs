@@ -33,12 +33,14 @@ namespace AK.Tutorials
 
 		private IFactService        _facts;
 		private TutorialStepContext _stepContext;
+		private UIInputGate         _inputGate;
 		private bool                _isRunning;
 
 		public void Init(IFactService facts, IUISystem uiSystem, IUITargetRegistry targets)
 		{
 			_facts = facts;
-			_stepContext = new TutorialStepContext(uiSystem, targets, facts);
+			_inputGate = new UIInputGate();
+			_stepContext = new TutorialStepContext(uiSystem, targets, facts, _inputGate);
 		}
 
 		public bool IsComplete => ProgressFact != null && _facts != null &&
@@ -74,7 +76,14 @@ namespace AK.Tutorials
 					}
 
 					await WaitForConditionsAsync(step.Conditions, ct);
-					await step.PresentAsync(_stepContext, ct);
+					try
+					{
+						await step.PresentAsync(_stepContext, ct);
+					}
+					finally
+					{
+						_inputGate.Release();
+					}
 
 					_facts.Record(ProgressFact);
 				}

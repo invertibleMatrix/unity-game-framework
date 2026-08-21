@@ -33,6 +33,11 @@ namespace AK.Tutorials
 
 		public override async UniTask PresentAsync(TutorialStepContext context, CancellationToken ct)
 		{
+			if (BlockInputUntilPresented)
+			{
+				context.InputGate.Hold();
+			}
+
 			System.Type fragmentType = FragmentType != null ? FragmentType.Value : null;
 			if (fragmentType == null)
 			{
@@ -48,6 +53,10 @@ namespace AK.Tutorials
 				Debug.LogWarning($"[FragmentStep] Failed to show fragment of type '{fragmentType.Name}'.");
 				return;
 			}
+
+			// The fragment is up and owns its interaction contract - open the
+			// gate so its controls are clickable.
+			context.InputGate.Release();
 
 			if (view is ITutorialStepView stepView)
 			{
