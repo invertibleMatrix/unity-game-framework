@@ -1,29 +1,56 @@
-using System;
 using System.Collections.Generic;
 using AK.Core;
 using AK.CoreDomain;
 using AK.CoreDomain.Analytics;
+using AK.Services.Analytics;
 
 namespace AK.Services.Analytics.Providers
 {
-	/// <summary>
-	/// Base class for analytics providers with common functionality.
-	/// </summary>
 	public abstract class BaseAnalyticsProvider : IAnalyticsProvider
 	{
-		protected bool                _isEnabled     = true;
-		protected bool                _isInitialized = false;
+		protected bool _isEnabled = true;
+		protected bool _isInitialized;
 		protected AnalyticsMeta _metaDataRepository;
+		protected AnalyticsInitOptions _options;
+		protected string _pendingUserId;
 
 		public abstract string ProviderName { get; }
-		public          bool   IsEnabled    => _isEnabled && _isInitialized;
+		public bool IsEnabled => _isEnabled && _isInitialized;
+
+		public virtual void Configure(AnalyticsInitOptions options)
+		{
+			_options = options;
+			if (options != null && !string.IsNullOrEmpty(options.UserId))
+			{
+				_pendingUserId = options.UserId;
+			}
+		}
 
 		public virtual void Initialize(AnalyticsMeta analyticsMeta, Dictionary<string, string> config)
 		{
 			_metaDataRepository = analyticsMeta;
+			if (config != null && config.TryGetValue("userId", out string userId) && !string.IsNullOrEmpty(userId))
+			{
+				_pendingUserId = userId;
+			}
 		}
 
-		public virtual void TrackEvent(UID eventId, Dictionary<ParameterName, object> parameters) { }
+		public virtual void Track(AnalyticsEvent evt)
+		{
+			if (evt == null)
+			{
+				return;
+			}
+
+			TrackEvent(evt.Id, evt.Parameters);
+		}
+
+		public virtual void TrackEvent(UID eventId, Dictionary<ParameterName, object> parameters)
+		{
+			var eventDefinition = _metaDataRepository?.GetEventByID(eventId);
+			var eventName = eventDefinition?.EventID ?? eventId.ToString();
+			TrackEvent(eventName, StringifyParameters(parameters));
+		}
 
 		public abstract void TrackEvent(string eventName, Dictionary<string, object> parameters);
 
@@ -39,6 +66,11 @@ namespace AK.Services.Analytics.Providers
 
 		public abstract void SetUserID(string userID);
 
+		public virtual void SetCustomDimension(int index, string value)
+		{
+			SetUserProperty("custom_0" + index, value);
+		}
+
 		public abstract void Flush();
 
 		public virtual void SetEnabled(bool enabled)
@@ -46,9 +78,6 @@ namespace AK.Services.Analytics.Providers
 			_isEnabled = enabled;
 		}
 
-		/// <summary>
-		/// Helper method to convert parameters to a string for logging.
-		/// </summary>
 		protected string ParametersToString(Dictionary<string, object> parameters)
 		{
 			if (parameters == null || parameters.Count == 0)
@@ -65,15 +94,14 @@ namespace AK.Services.Analytics.Providers
 			return $"{{{string.Join(", ", pairs)}}}";
 		}
 
-		public virtual Dictionary<string, object> StringifyParameters(Dictionary<ParameterName, object> parametere)
+		public virtual Dictionary<string, object> StringifyParameters(Dictionary<ParameterName, object> parameters)
 		{
-			Dictionary<string, object> content = new();
-			foreach (var kvp in parametere)
-			{
-				content.Add(kvp.Key.ToString(), kvp.Value);
-			}
+			return AnalyticsEventResolver.Stringify(parameters);
+		}
 
-			return content;
+		protected bool CanTrack()
+		{
+			return _isEnabled && _isInitialized;
 		}
 	}
 }

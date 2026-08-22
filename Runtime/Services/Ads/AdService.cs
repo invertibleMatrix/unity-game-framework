@@ -58,6 +58,7 @@ namespace AK.Services
 		public event Action OnAdsDisabled;
 		public event Action<AdPlacementDefinition> OnAdShown;
 		public event Action<AdPlacementDefinition, AdErrorType, string> OnAdFailed;
+		public event Action<AdPlacementDefinition, AdResult> OnAdShowFinished;
 		public event Action<AdPlacementDefinition> OnAdRewardGranted;
 
 		/// <summary>
@@ -359,6 +360,7 @@ namespace AK.Services
 				{
 					RecordAdShown(placement);
 					OnAdShown?.Invoke(placement);
+					OnAdShowFinished?.Invoke(placement, result);
 
 					if (result.RewardGranted)
 					{
@@ -997,6 +999,8 @@ namespace AK.Services
 		private void FireAdFailedEvent(AdPlacementDefinition placement, AdErrorType errorType, string reason)
 		{
 			OnAdFailed?.Invoke(placement, errorType, reason);
+			var result = AdResult.Failed(placement?.PlacementID, placement?.AdType ?? AdType.Rewarded, errorType, reason);
+			OnAdShowFinished?.Invoke(placement, result);
 		}
 
 		/// <summary>

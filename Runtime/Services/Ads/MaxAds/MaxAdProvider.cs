@@ -11,12 +11,21 @@ namespace AK.Services.Ads.Providers
 	/// Supports Rewarded, Interstitial, Banner, and App Open ads.
 	/// Rewarded Interstitial is not a MAX format — those placements return UnsupportedAdType.
 	/// SDK key is read from the AppLovin Integration Manager; do not pass it here.
+	/// Lives in AK.Services.MaxAds so AK.Services does not reference MaxSdk.Scripts.
+	/// This assembly is compiled only when com.applovin.mediation.ads is installed
+	/// (versionDefine MAX_SDK).
 	/// </summary>
 	public class MaxAdProvider : IAdProvider
 	{
 		private const string TAG = "[MaxAdProvider]";
 		// Generous upper bound — a rewarded ad can run ~60s plus user dwell on the end card.
 		private static readonly TimeSpan ShowTimeout = TimeSpan.FromMinutes(3);
+
+		[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+		private static void RegisterFactory()
+		{
+			AdsProviderFactory.Max = static () => new MaxAdProvider();
+		}
 
 		public string                ProviderName     => "AppLovin MAX";
 		public int                   Priority         => 100;
@@ -62,12 +71,7 @@ namespace AK.Services.Ads.Providers
 				return UniTask.FromResult(false);
 			}
 
-#if MAX_ENABLED
 			return InitializeMaxAsync(placements);
-#else
-			Debug.LogWarning($"{TAG} MAX package not present - provider stays uninitialized");
-			return UniTask.FromResult(false);
-#endif
 		}
 
 		public bool IsAdReady(string placementId, AdType adType)
@@ -78,7 +82,6 @@ namespace AK.Services.Ads.Providers
 			if (!_adUnitByPlacement.TryGetValue(placementId, out var adUnitId) || string.IsNullOrEmpty(adUnitId))
 				return false;
 
-#if MAX_ENABLED
 			return adType switch
 			{
 				AdType.Rewarded     => MaxSdk.IsRewardedAdReady(adUnitId),
@@ -87,9 +90,6 @@ namespace AK.Services.Ads.Providers
 				AdType.Banner       => _bannerReady && adUnitId == _currentBannerAdUnitId,
 				_                   => false
 			};
-#else
-			return false;
-#endif
 		}
 
 		public async UniTask<AdLoadResult> LoadAdAsync(string placementId, AdType adType, string adUnitId)
@@ -111,7 +111,6 @@ namespace AK.Services.Ads.Providers
 			if (IsAdReady(placementId, adType))
 				return AdLoadResult.Succeeded(placementId, adType);
 
-#if MAX_ENABLED
 			_loadingAdUnits.Add(adUnitId);
 			var tcs = new UniTaskCompletionSource<AdLoadResult>();
 			_loadWaiters[adUnitId] = tcs;
@@ -153,10 +152,6 @@ namespace AK.Services.Ads.Providers
 				Debug.LogError($"{TAG} LoadAdAsync exception: {e.Message}");
 				return AdLoadResult.Failed(placementId, adType, AdErrorType.InternalError, e.Message);
 			}
-#else
-			await UniTask.CompletedTask;
-			return AdLoadResult.Failed(placementId, adType, AdErrorType.UnsupportedAdType, "MAX not available");
-#endif
 		}
 
 		public async UniTask<AdResult> ShowAdAsync(string placementId, AdType adType, string adUnitId)
@@ -172,7 +167,6 @@ namespace AK.Services.Ads.Providers
 
 			BindPlacement(placementId, adUnitId);
 
-#if MAX_ENABLED
 			try
 			{
 				if (!IsAdReady(placementId, adType))
@@ -232,10 +226,6 @@ namespace AK.Services.Ads.Providers
 				Debug.LogError($"{TAG} ShowAdAsync exception: {e.Message}");
 				return AdResult.Failed(placementId, adType, AdErrorType.InternalError, e.Message);
 			}
-#else
-			await UniTask.CompletedTask;
-			return AdResult.Failed(placementId, adType, AdErrorType.UnsupportedAdType, "MAX not available");
-#endif
 		}
 
 		public async UniTask<AdResult> ShowBannerAsync(string placementId, string adUnitId, BannerPosition position)
@@ -248,7 +238,6 @@ namespace AK.Services.Ads.Providers
 
 			BindPlacement(placementId, adUnitId);
 
-#if MAX_ENABLED
 			try
 			{
 				if (_bannerCreated && _currentBannerAdUnitId != adUnitId)
@@ -277,27 +266,19 @@ namespace AK.Services.Ads.Providers
 				Debug.LogError($"{TAG} ShowBannerAsync exception: {e.Message}");
 				return AdResult.Failed(placementId, AdType.Banner, AdErrorType.InternalError, e.Message);
 			}
-#else
-			await UniTask.CompletedTask;
-			return AdResult.Failed(placementId, AdType.Banner, AdErrorType.UnsupportedAdType, "MAX not available");
-#endif
 		}
 
 		public void HideBanner()
 		{
 			_bannerHidden = true;
-#if MAX_ENABLED
 			if (!string.IsNullOrEmpty(_currentBannerAdUnitId))
 				MaxSdk.HideBanner(_currentBannerAdUnitId);
-#endif
 		}
 
 		public void DestroyBanner()
 		{
-#if MAX_ENABLED
 			if (!string.IsNullOrEmpty(_currentBannerAdUnitId))
 				MaxSdk.DestroyBanner(_currentBannerAdUnitId);
-#endif
 			_currentBannerPlacementId = null;
 			_currentBannerAdUnitId = null;
 			_bannerHidden = false;
@@ -308,10 +289,8 @@ namespace AK.Services.Ads.Providers
 		public void SetUserConsent(bool canTrack)
 		{
 			_userCanTrack = canTrack;
-#if MAX_ENABLED
 			if (_isInitialized || MaxSdk.IsInitialized())
 				MaxSdk.SetHasUserConsent(canTrack);
-#endif
 		}
 
 		public void SetUserUnderAge(bool isUnderAge)
@@ -330,7 +309,6 @@ namespace AK.Services.Ads.Providers
 				_adUnitByPlacement[placementId] = adUnitId;
 		}
 
-#if MAX_ENABLED
 		private async UniTask<bool> InitializeMaxAsync(IEnumerable<AdPlacementRegistration> placements)
 		{
 			try
@@ -602,7 +580,6 @@ namespace AK.Services.Ads.Providers
 				_                          => MaxSdkBase.AdViewPosition.BottomCenter
 			};
 		}
-#endif
 
 		private class ShowWaiter
 		{

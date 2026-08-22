@@ -28,7 +28,7 @@ namespace AK.CoreDomain
 		}
 
 		/// <summary>
-		/// Gets an event by its EventID.
+		/// Gets an event by its asset UID.
 		/// </summary>
 		public AnalyticsEventDefinition GetEventByID(UID eventID)
 		{
@@ -37,7 +37,41 @@ namespace AK.CoreDomain
 				return null;
 			}
 
-			return _registry.GetObjectByUID(eventID);
+			AnalyticsEventDefinition byUid = _registry != null ? _registry.GetObjectByUID(eventID) : null;
+			if (byUid != null)
+			{
+				return byUid;
+			}
+
+			return GetEventByName(eventID);
+		}
+
+		/// <summary>
+		/// Looks up a definition by its EventID string (or ProviderEventName).
+		/// Used by the fail-open string API so games do not have to pass asset UIDs.
+		/// </summary>
+		public AnalyticsEventDefinition GetEventByName(string eventName)
+		{
+			if (string.IsNullOrEmpty(eventName) || Events == null)
+			{
+				return null;
+			}
+
+			for (int i = 0; i < Events.Count; i++)
+			{
+				AnalyticsEventDefinition def = Events[i];
+				if (def == null)
+				{
+					continue;
+				}
+
+				if (def.EventID == eventName || def.ProviderEventName == eventName || def.DesignEventId == eventName)
+				{
+					return def;
+				}
+			}
+
+			return null;
 		}
 
 		/// <summary>

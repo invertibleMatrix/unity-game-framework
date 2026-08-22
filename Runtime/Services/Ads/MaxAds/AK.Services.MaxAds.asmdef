@@ -1,28 +1,27 @@
 {
-    "name": "AK.Services",
+    "name": "AK.Services.MaxAds",
     "rootNamespace": "AK.Services",
     "references": [
         "AK.Core",
+        "AK.CoreDomain",
+        "AK.Services",
         "UniTask",
-        "AK.CoreDomain"
+        "MaxSdk.Scripts"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,
     "precompiledReferences": [],
-    "autoReferenced": true,
-    "defineConstraints": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "MAX_SDK"
+    ],
     "versionDefines": [
         {
-            "name": "com.unity.notifications",
+            "name": "com.applovin.mediation.ads",
             "expression": "",
-            "define": "UNITY_NOTIFICATIONS"
-        },
-        {
-            "name": "com.unity.purchasing",
-            "expression": "",
-            "define": "IAP"
+            "define": "MAX_SDK"
         }
     ],
     "noEngineReferences": false

@@ -1,28 +1,26 @@
 {
-    "name": "AK.Services",
+    "name": "AK.Services.GameAnalytics",
     "rootNamespace": "AK.Services",
     "references": [
         "AK.Core",
-        "UniTask",
-        "AK.CoreDomain"
+        "AK.CoreDomain",
+        "AK.Services",
+        "GameAnalyticsSDK"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,
     "precompiledReferences": [],
-    "autoReferenced": true,
-    "defineConstraints": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "GAME_ANALYTICS_SDK"
+    ],
     "versionDefines": [
         {
-            "name": "com.unity.notifications",
+            "name": "com.gameanalytics.sdk",
             "expression": "",
-            "define": "UNITY_NOTIFICATIONS"
-        },
-        {
-            "name": "com.unity.purchasing",
-            "expression": "",
-            "define": "IAP"
+            "define": "GAME_ANALYTICS_SDK"
         }
     ],
     "noEngineReferences": false

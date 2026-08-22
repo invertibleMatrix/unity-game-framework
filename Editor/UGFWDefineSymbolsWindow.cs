@@ -27,11 +27,9 @@ namespace AK.Editor
         public static readonly DefineEntry[] Defines =
         {
             new("ADMOB_ENABLED", "AdMob Ads", "Google Mobile Ads SDK (requires AdMob package). Skipped when MAX is enabled.", "Ads"),
-            new("MAX_ENABLED", "AppLovin MAX Ads", "AppLovin MAX SDK (auto-defined when com.applovin.mediation.ads is installed)", "Ads"),
             new("FIREBASE_INITIALIZATION", "Firebase Core", "Firebase Core SDK — initialization and dependency checking", "Firebase"),
             new("FIREBASE_ANALYTICS", "Firebase Analytics", "Firebase Analytics SDK (requires Firebase Analytics package)", "Firebase"),
             new("FIREBASE_REMOTE_CONFIG", "Firebase Remote Config", "Firebase Remote Config SDK (requires Firebase Remote Config package)", "Firebase"),
-            new("GAME_ANALYTICS", "GameAnalytics", "GameAnalytics SDK (requires GameAnalytics package)", "Analytics"),
             new("IAP", "Unity IAP", "Unity In-App Purchasing (requires Unity Purchasing package)", "Monetization"),
             new("UNITY_NOTIFICATIONS", "Unity Notifications", "Unity Mobile Notifications package (requires com.unity.notifications)", "Notifications"),
         };
@@ -99,7 +97,8 @@ namespace AK.Editor
             EditorGUILayout.LabelField("UGFW Service Toggles", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "Toggle scripting define symbols for UGFW services. " +
-                "Make sure you have installed the corresponding SDK/package before enabling a symbol.",
+                "Make sure you have installed the corresponding SDK/package before enabling a symbol. " +
+                "GameAnalytics and AppLovin MAX are not Player defines — install the package and reference AK.Services.GameAnalytics / AK.Services.MaxAds from the game assembly.",
                 MessageType.Info);
             EditorGUILayout.Space(4);
 

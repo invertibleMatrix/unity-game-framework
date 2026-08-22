@@ -55,6 +55,25 @@ namespace AK.Services.Analytics.Providers
 			}
 		}
 
+		public override void Track(AnalyticsEvent evt)
+		{
+			if (!_isEnabled || !_isInitialized || evt == null)
+			{
+				return;
+			}
+
+			Dictionary<string, object> parameters = evt.Parameters != null
+				? new Dictionary<string, object>(evt.Parameters)
+				: new Dictionary<string, object>();
+			parameters["kind"] = evt.Kind.ToString();
+			if (evt.Value.HasValue)
+			{
+				parameters["value"] = evt.Value.Value;
+			}
+
+			TrackEvent(string.IsNullOrEmpty(evt.Id) ? "event" : evt.Id, parameters);
+		}
+
 		public override void TrackEvent(UID eventId, Dictionary<ParameterName, object> parameters)
 		{
 			if (!_isEnabled || !_isInitialized)
@@ -80,7 +99,7 @@ namespace AK.Services.Analytics.Providers
 			try
 			{
 				var firebaseParams = ConvertToFirebaseParameters(parameters);
-				Firebase.Analytics.FirebaseAnalytics.LogEvent(eventName, firebaseParams);
+				Firebase.Analytics.FirebaseAnalytics.LogEvent(SanitizeFirebaseEventName(eventName), firebaseParams);
 
 				if (Debug.isDebugBuild)
 				{
@@ -329,6 +348,31 @@ namespace AK.Services.Analytics.Providers
 		}
 
 #if FIREBASE_ANALYTICS && !UNITY_WEBGL
+		private static string SanitizeFirebaseEventName(string eventName)
+		{
+			if (string.IsNullOrEmpty(eventName))
+			{
+				return "event";
+			}
+
+			var chars = eventName.ToCharArray();
+			for (int i = 0; i < chars.Length; i++)
+			{
+				if (!char.IsLetterOrDigit(chars[i]) && chars[i] != '_')
+				{
+					chars[i] = '_';
+				}
+			}
+
+			string sanitized = new string(chars);
+			if (!char.IsLetter(sanitized[0]))
+			{
+				sanitized = "e_" + sanitized;
+			}
+
+			return sanitized.Length > 40 ? sanitized.Substring(0, 40) : sanitized;
+		}
+
 		/// <summary>
 		/// Converts Dictionary{string, object} to Firebase Parameter array.
 		/// Only available when Firebase SDK is integrated.

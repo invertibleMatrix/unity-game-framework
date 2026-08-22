@@ -1,4 +1,5 @@
 using System;
+using AK.Services.Ads;
 using AK.Services.Ads.Providers;
 using AK.CoreDomain;
 using AK.CoreDomain.RemoteConfig;
@@ -42,6 +43,7 @@ namespace AK.Services
 
 		/// <summary>
 		/// Opt in to the AppLovin MAX provider. Off unless this is called.
+		/// Requires the game assembly to reference AK.Services.MaxAds (and the MAX package).
 		/// </summary>
 		public AdServiceBuilder UseMax(bool useMax = true)
 		{
@@ -109,16 +111,19 @@ namespace AK.Services
 
 			bool maxAdded = false;
 
-#if MAX_ENABLED
 			if (_useMax)
 			{
-				_adService.AddProvider(new MaxAdProvider());
-				maxAdded = true;
+				IAdProvider max = AdsProviderFactory.TryCreateMax();
+				if (max != null)
+				{
+					_adService.AddProvider(max);
+					maxAdded = true;
+				}
+				else
+				{
+					Debug.LogWarning($"{TAG} UseMax() requested but AK.Services.MaxAds is not loaded. Install com.applovin.mediation.ads and reference AK.Services.MaxAds from the game assembly.");
+				}
 			}
-#else
-			if (_useMax)
-				Debug.LogWarning($"{TAG} UseMax() was requested but the AppLovin MAX package is not present (MAX_ENABLED).");
-#endif
 
 			// AdMob requires ADMOB_ENABLED; without it the provider would report initialized with no SDK.
 #if ADMOB_ENABLED && (UNITY_ANDROID || UNITY_IOS)
