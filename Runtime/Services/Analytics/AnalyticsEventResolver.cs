@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using AK.CoreDomain;
 using AK.CoreDomain.Analytics;
@@ -362,6 +363,62 @@ namespace AK.Services.Analytics
 			}
 
 			return age > 10 ? "age_10plus" : "age_" + age;
+		}
+
+		/// <summary>
+		/// Street vs family for ambient chat. Roster proto has no kind field;
+		/// birth-family walkers carry a family role, promoted street people do not.
+		/// </summary>
+		public static string AmbientKindDimension(string role)
+		{
+			if (string.IsNullOrEmpty(role))
+			{
+				return "street";
+			}
+
+			switch (role.Trim().ToLowerInvariant())
+			{
+				case "mother":
+				case "father":
+				case "sibling":
+				case "aunt":
+				case "uncle":
+				case "cousin":
+				case "grandmother":
+				case "grandfather":
+					return "family";
+				default:
+					return "street";
+			}
+		}
+
+		/// <summary>
+		/// Dashboard archetype rows are UUIDs; local/tests use slugs like bus-driver.
+		/// Prefer a readable slug or label in the Design id — never a unique person name.
+		/// </summary>
+		public static string AmbientArchetypeDimension(string archetypeId, string archetypeLabel)
+		{
+			if (!string.IsNullOrEmpty(archetypeId) && !LooksLikeUuid(archetypeId))
+			{
+				return SanitizeSegment(archetypeId.ToLowerInvariant());
+			}
+
+			if (!string.IsNullOrEmpty(archetypeLabel))
+			{
+				return SanitizeSegment(archetypeLabel.ToLowerInvariant());
+			}
+
+			if (!string.IsNullOrEmpty(archetypeId))
+			{
+				return SanitizeSegment(archetypeId.ToLowerInvariant());
+			}
+
+			return "unknown";
+		}
+
+		private static bool LooksLikeUuid(string value)
+		{
+			return Guid.TryParse(value, out _);
 		}
 
 		public static string AgeProgressionPart(int age)
