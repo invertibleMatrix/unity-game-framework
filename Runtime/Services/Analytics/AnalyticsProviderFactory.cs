@@ -11,9 +11,16 @@ namespace AK.Services.Analytics
 	{
 		public static Func<IAnalyticsProvider> GameAnalytics { get; set; }
 
+		public static Func<IAnalyticsProvider> Mixpanel { get; set; }
+
 		public static IAnalyticsProvider TryCreateGameAnalytics()
 		{
 			return GameAnalytics?.Invoke();
+		}
+
+		public static IAnalyticsProvider TryCreateMixpanel()
+		{
+			return Mixpanel?.Invoke();
 		}
 	}
 }

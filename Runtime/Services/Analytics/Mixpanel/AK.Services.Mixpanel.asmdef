@@ -1,0 +1,27 @@
+{
+    "name": "AK.Services.Mixpanel",
+    "rootNamespace": "AK.Services",
+    "references": [
+        "AK.Core",
+        "AK.CoreDomain",
+        "AK.Services",
+        "Mixpanel"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "MIXPANEL_SDK"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.mixpanel.unity",
+            "expression": "",
+            "define": "MIXPANEL_SDK"
+        }
+    ],
+    "noEngineReferences": false
+}

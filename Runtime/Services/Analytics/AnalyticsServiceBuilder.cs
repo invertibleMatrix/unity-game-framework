@@ -9,6 +9,7 @@ namespace AK.Services
 	{
 		private readonly AnalyticsService _service = new();
 		private bool _useGameAnalytics;
+		private bool _useMixpanel;
 		private bool _useFirebase;
 		private bool _useDebug;
 		private AnalyticsMeta _meta;
@@ -17,6 +18,12 @@ namespace AK.Services
 		public AnalyticsServiceBuilder UseGameAnalytics(bool use = true)
 		{
 			_useGameAnalytics = use;
+			return this;
+		}
+
+		public AnalyticsServiceBuilder UseMixpanel(bool use = true)
+		{
+			_useMixpanel = use;
 			return this;
 		}
 
@@ -70,12 +77,25 @@ namespace AK.Services
 				}
 			}
 
+			if (_useMixpanel)
+			{
+				IAnalyticsProvider mixpanel = AnalyticsProviderFactory.TryCreateMixpanel();
+				if (mixpanel != null)
+				{
+					_service.RegisterProvider(mixpanel);
+				}
+				else
+				{
+					Debug.LogWarning("[AnalyticsServiceBuilder] UseMixpanel() requested but AK.Services.Mixpanel is not loaded. Install com.mixpanel.unity and reference AK.Services.Mixpanel from the game assembly.");
+				}
+			}
+
 			if (_useFirebase)
 			{
 				_service.RegisterProvider(new FirebaseAnalyticsProvider());
 			}
 
-			if (_useDebug || (Application.isEditor && !_useGameAnalytics && !_useFirebase))
+			if (_useDebug || (Application.isEditor && !_useGameAnalytics && !_useMixpanel && !_useFirebase))
 			{
 				_service.RegisterProvider(new DebugAnalyticsProvider());
 			}
