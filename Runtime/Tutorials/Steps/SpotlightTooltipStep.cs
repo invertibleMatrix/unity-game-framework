@@ -75,10 +75,17 @@ namespace AK.Tutorials
 			// spotlighted control is clickable.
 			context.InputGate.Release();
 
-			await WaitForAdvanceAsync(context, spotlight, ct);
-
-			if (tooltip != null) tooltip.Close();
-			if (spotlight != null) spotlight.Close();
+			try
+			{
+				await WaitForAdvanceAsync(context, spotlight, ct);
+			}
+			finally
+			{
+				// Cancellation (view destroyed mid-step) must not leak the dim —
+				// a stray full-screen raycast view soft-locks the game.
+				if (tooltip != null) tooltip.Close();
+				if (spotlight != null) spotlight.Close();
+			}
 		}
 
 		// The advance seam: base completes on dim-tap; game subclasses override to

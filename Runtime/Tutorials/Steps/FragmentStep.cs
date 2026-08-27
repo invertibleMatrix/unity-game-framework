@@ -58,23 +58,29 @@ namespace AK.Tutorials
 			// gate so its controls are clickable.
 			context.InputGate.Release();
 
-			if (view is ITutorialStepView stepView)
+			try
 			{
-				await stepView.WaitUntilFinish().AttachExternalCancellation(ct);
-			}
-			else
-			{
-				Debug.LogWarning($"[FragmentStep] '{view.name}' does not implement ITutorialStepView — the step completes immediately.");
-			}
+				if (view is ITutorialStepView stepView)
+				{
+					await stepView.WaitUntilFinish().AttachExternalCancellation(ct);
+				}
+				else
+				{
+					Debug.LogWarning($"[FragmentStep] '{view.name}' does not implement ITutorialStepView — the step completes immediately.");
+				}
 
-			if (CloseOnFinish && view != null)
-			{
-				if (CloseDelay > 0f)
+				if (CloseOnFinish && CloseDelay > 0f)
 				{
 					await UniTask.WaitForSeconds(CloseDelay, cancellationToken: ct);
 				}
-
-				view.Close();
+			}
+			finally
+			{
+				// Cancellation (view destroyed mid-step) must not leak the fragment.
+				if (CloseOnFinish)
+				{
+					view.Close();
+				}
 			}
 		}
 

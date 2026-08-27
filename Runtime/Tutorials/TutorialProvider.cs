@@ -12,10 +12,10 @@ namespace AK.Tutorials
 {
 	/// <summary>
 	/// One tutorial: an ordered list of TutorialStep assets plus the progress fact the
-	/// runner mutates. The runner waits for each step's conditions, delegates
-	/// presentation to the step itself, and records ProgressFact once per finished
-	/// step — the count is the furthest completed step, so tutorials resume correctly
-	/// after a restart. Holds no presentation logic.
+	/// runner mutates. The runner is checkpoint-driven — at each checkpoint it runs
+	/// only the steps whose conditions are met and returns; the next checkpoint
+	/// resumes from the progress count, so tutorials resume correctly after a
+	/// restart and never hold long-lived waits. Holds no presentation logic.
 	/// MetaDataAsset base: UID identity, so references can be GUID links resolved
 	/// through the provider registry instead of hard asset references.
 	/// </summary>
@@ -46,7 +46,20 @@ namespace AK.Tutorials
 		public bool IsComplete => ProgressFact != null && _facts != null &&
 		                          _facts.Count(ProgressFact) >= Steps.Count;
 
-		public async UniTask RunAsync(CancellationToken ct = default)
+		/// <summary>True when the current step's conditions are met — this tutorial has work that can run right now.</summary>
+		public bool HasDueSteps
+		{
+			get
+			{
+				if (_facts == null || _isRunning || IsComplete || Steps.Count == 0 || ProgressFact == null) return false;
+				if (EnabledGate != null && !EnabledGate.Value) return false;
+
+				var step = Steps[_facts.Count(ProgressFact)];
+				return step != null && _facts.AreMet(step.Conditions);
+			}
+		}
+
+		public async UniTask RunDueAsync(CancellationToken ct = default)
 		{
 			if (_isRunning || IsComplete) return;
 
@@ -75,7 +88,11 @@ namespace AK.Tutorials
 						continue;
 					}
 
-					await WaitForConditionsAsync(step.Conditions, ct);
+					if (!_facts.AreMet(step.Conditions))
+					{
+						return;
+					}
+
 					try
 					{
 						await step.PresentAsync(_stepContext, ct);
@@ -91,34 +108,6 @@ namespace AK.Tutorials
 			finally
 			{
 				_isRunning = false;
-			}
-		}
-
-		private async UniTask WaitForConditionsAsync(List<FactCondition> conditions, CancellationToken ct)
-		{
-			if (conditions == null || conditions.Count == 0 || _facts.AreMet(conditions)) return;
-
-			var completion = new UniTaskCompletionSource();
-
-			void Handler(FactType _)
-			{
-				if (_facts.AreMet(conditions))
-				{
-					completion.TrySetResult();
-				}
-			}
-
-			_facts.Changed += Handler;
-
-			try
-			{
-				// Re-check after subscribing to close the check/subscribe race.
-				if (_facts.AreMet(conditions)) return;
-				await completion.Task.AttachExternalCancellation(ct);
-			}
-			finally
-			{
-				_facts.Changed -= Handler;
 			}
 		}
 	}

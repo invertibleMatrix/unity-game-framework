@@ -49,11 +49,18 @@ namespace AK.Tutorials
 			// can act on what it points at.
 			context.InputGate.Release();
 
-			if (CloseTime > 0)
+			try
 			{
-				await UniTask.WaitForSeconds(CloseTime, cancellationToken: ct);
-				await tooltip.CloseAsync(ct: ct);
+				if (CloseTime > 0)
+				{
+					await UniTask.WaitForSeconds(CloseTime, cancellationToken: ct);
+				}
+			}
+			finally
+			{
+				// Cancellation (view destroyed mid-step) must not leak the tooltip.
+				if (tooltip != null) tooltip.Close();
 			}
 		}
 	}
-}
+}
