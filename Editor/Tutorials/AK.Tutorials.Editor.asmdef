@@ -1,0 +1,20 @@
+{
+    "name": "AK.Tutorials.Editor",
+    "rootNamespace": "AK.Editor",
+    "references": [
+        "GUID:0fcb739a1386fa641b52e57ebb10fdcc",
+        "GUID:2b4db0e06298628458c279ec9665624d",
+        "GUID:f5374c43059b972408fa65268b87b915"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

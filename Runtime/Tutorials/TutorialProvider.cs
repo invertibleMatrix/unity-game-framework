@@ -59,6 +59,11 @@ namespace AK.Tutorials
 			}
 		}
 
+		/// <summary>
+		/// Checkpoint semantics: runs steps whose conditions are met and returns when
+		/// the next step isn't due. The caller's chain re-evaluates at the next
+		/// checkpoint — providers hold no long-lived waits.
+		/// </summary>
 		public async UniTask RunDueAsync(CancellationToken ct = default)
 		{
 			if (_isRunning || IsComplete) return;

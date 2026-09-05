@@ -93,6 +93,21 @@ namespace AK.Services.Analytics
 				return new MixpanelMappedEvent("content_cap", props);
 			}
 
+			// Push lifecycle: the push id rides parts[2] on the GA id but must stay a
+			// property here — folding it into the event name would mint one Mixpanel
+			// event per push sent.
+			if (StartsWith(parts, "push", "received"))
+			{
+				Put(props, "push_id", Part(parts, 2), overwrite: false);
+				return new MixpanelMappedEvent("push_received", props);
+			}
+
+			if (StartsWith(parts, "push", "opened"))
+			{
+				Put(props, "push_id", Part(parts, 2), overwrite: false);
+				return new MixpanelMappedEvent("push_opened", props);
+			}
+
 			if (StartsWith(parts, "funnel", "onboarding"))
 			{
 				Put(props, "step", Part(parts, 2));

@@ -53,6 +53,44 @@ namespace AK.Services.Facts
 			Changed?.Invoke(fact);
 		}
 
+		/// <summary>
+		/// Debug tooling — overwrite instead of increment, so the tutorial inspector can
+		/// rewind a ProgressFact pointer. Persists like Record, so a rewind survives
+		/// play-mode restarts.
+		/// </summary>
+		public void SetCount(FactType fact, int count)
+		{
+			if (fact == null)
+			{
+				Debug.LogError("[FactService] Cannot set the count of a null fact.");
+				return;
+			}
+
+			string id = fact.Id;
+			if (count <= 0)
+			{
+				_counts.Remove(id);
+				_state.Counts.RemoveAll(entry => entry.FactId == id);
+			}
+			else
+			{
+				_counts[id] = count;
+
+				var entry = _state.Counts.Find(e => e.FactId == id);
+				if (entry != null)
+				{
+					entry.Count = count;
+				}
+				else
+				{
+					_state.Counts.Add(new FactCountEntry { FactId = id, Count = count });
+				}
+			}
+
+			_state.Commit();
+			Changed?.Invoke(fact);
+		}
+
 		public void ResetAll()
 		{
 			Debug.Log("Facts Service Resetting");

@@ -20,6 +20,10 @@ namespace AK.Services.Facts
 		/// <summary>Records one occurrence. Facts are born counted — there is no pending state.</summary>
 		void Record(FactType fact);
 
+		/// <summary>[Editor/debug tooling] Overwrites a fact's count in place — how the tutorial
+		/// inspector rewinds ProgressFact pointers. Persists exactly like Record.</summary>
+		void SetCount(FactType fact, int count);
+
 		/// <summary>Clears all fact counts (e.g. a fresh life restarts tutorials).</summary>
 		void ResetAll();
 
