@@ -63,7 +63,7 @@ namespace AK.CoreDomain.RemoteConfig
 			var allVariables = _registry.GetAllObjects();
 			foreach (var variable in allVariables)
 			{
-				if (variable.VariableKey == variableKey)
+				if (variable != null && variable.VariableKey == variableKey)
 					return variable;
 			}
 
