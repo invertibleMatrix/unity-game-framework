@@ -44,9 +44,11 @@ namespace AK.Tutorials
 		public override async UniTask PresentAsync(TutorialStepContext context, CancellationToken ct)
 		{
 			await base.PresentAsync(context, ct);
-			if (TargetId == null || !context.Targets.TryGet(TargetId, out var target) || target == null)
+
+			var target = await WaitForTargetAsync(context, TargetId, ct);
+			if (target == null)
 			{
-				Debug.LogWarning($"[SpotlightTooltipStep] Target '{(TargetId != null ? TargetId.name : "null")}' is not registered — skipping presentation of '{name}'.");
+				Debug.LogError($"[SpotlightTooltipStep] Target '{(TargetId != null ? TargetId.name : "null")}' not registered within {TargetWaitTimeout:0.#}s — skipping presentation of '{name}'.");
 				return;
 			}
 
@@ -85,6 +87,38 @@ namespace AK.Tutorials
 				// a stray full-screen raycast view soft-locks the game.
 				if (tooltip != null) tooltip.Close();
 				if (spotlight != null) spotlight.Close();
+			}
+		}
+
+		// UITarget registers in Start(), which Unity runs before the next Update — a
+		// step presenting in the same frame its host view activates (checkpoint
+		// chains hop surfaces like this) must poll briefly instead of failing on
+		// the first lookup. Bounded: the input gate is held until presentation, so
+		// an unregistered target must never hang the game.
+		protected const float TargetWaitTimeout   = 3f;
+		protected const float TargetPollInterval  = 0.1f;
+
+		protected async UniTask<RectTransform> WaitForTargetAsync(TutorialStepContext context, UITargetId id, CancellationToken ct)
+		{
+			if (id == null)
+			{
+				return null;
+			}
+
+			float deadline = Time.realtimeSinceStartup + TargetWaitTimeout;
+			while (true)
+			{
+				if (context.Targets.TryGet(id, out var target) && target != null)
+				{
+					return target;
+				}
+
+				if (Time.realtimeSinceStartup >= deadline)
+				{
+					return null;
+				}
+
+				await UniTask.WaitForSeconds(TargetPollInterval, cancellationToken: ct);
 			}
 		}
 
