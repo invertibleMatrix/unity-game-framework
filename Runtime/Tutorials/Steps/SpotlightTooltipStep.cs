@@ -48,8 +48,8 @@ namespace AK.Tutorials
 			var target = await WaitForTargetAsync(context, TargetId, ct);
 			if (target == null)
 			{
-				Debug.LogError($"[SpotlightTooltipStep] Target '{(TargetId != null ? TargetId.name : "null")}' not registered within {TargetWaitTimeout:0.#}s — skipping presentation of '{name}'.");
-				return;
+				Debug.LogError($"[SpotlightTooltipStep] Target '{(TargetId != null ? TargetId.name : "null")}' not registered within {TargetWaitTimeout:0.#}s — declining presentation of '{name}'.");
+				throw new TutorialStepDeclinedException($"Step '{name}': target '{(TargetId != null ? TargetId.name : "null")}' not registered.");
 			}
 
 			var spotlight = context.UiSystem.Show<UIViewSpotlight>(

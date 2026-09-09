@@ -41,6 +41,10 @@ namespace AK.Tutorials
 			_facts = facts;
 			_inputGate = new UIInputGate();
 			_stepContext = new TutorialStepContext(uiSystem, targets, facts, _inputGate);
+			// Assets outlive play sessions when domain reload is disabled — a step
+			// that was mid-flight when Play stopped never runs its finally, so
+			// _isRunning can arrive stale and permanently gate HasDueSteps.
+			_isRunning = false;
 		}
 
 		public bool IsComplete => ProgressFact != null && _facts != null &&
@@ -101,6 +105,13 @@ namespace AK.Tutorials
 					try
 					{
 						await step.PresentAsync(_stepContext, ct);
+					}
+					catch (TutorialStepDeclinedException)
+					{
+						// The step's surface never appeared — leave the progress counter
+						// untouched so the next checkpoint retries instead of killing
+						// the tutorial.
+						return;
 					}
 					finally
 					{
