@@ -1,6 +1,6 @@
 {
     "name": "AK.UISystem",
-    "rootNamespace": "AK.UISystem",
+    "rootNamespace": "AK.Systems",
     "references": [
         "AK.Core",
         "DOTween",

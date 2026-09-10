@@ -297,7 +297,7 @@ Higher channels always render on top. Multiple screens on the same channel stack
 The system answers three questions on every `Show`/`Close`/`GetView`: *is a static of this kind already registered?*, *is a dynamic of this kind already open on this parent?*, *which view sits below this one in its stack?* None of them scan the whole registry or copy a stack.
 
 - **`ViewKey`** — `(Type, ViewId)` identity of a view kind. Keys the prefab cache, the `ViewPool`, and the registry index.
-- **Registry index** — every registered view is threaded onto a per-kind singly linked list (`ViewRecord.NextOfKind`, head in `_recordsByKind`). Finding a static or a dynamic instance of `UIViewCloseBar` walks the two or three close bars that exist, not the ~50 registered views. Register/unregister maintain the chain; `CountOfKind` exposes it for diagnostics.
+- **`ViewRegistry`** — every registered view is threaded onto a per-kind singly linked list (`ViewRecord.NextOfKind`, one head per `ViewKey`). Finding a static or a dynamic instance of `UIViewCloseBar` walks the two or three close bars that exist, not the ~50 registered views. `Add`/`Remove` maintain the chain and the parent's `Children`; `CountOfKind` exposes it for diagnostics.
 - **`ViewStack`** — list-backed navigation stack (bottom = index 0). `Remove`, `MoveToTop`, `BelowOrNull`, `IsCoveredAbove`, and `PeekBelowTopOrNull` run in place; there is no `ToArray()` or temporary stack anywhere on the show/close path. Enumeration is top-first, same as `Stack<T>`.
 - **Prefab cache** — `(prefab, isScreen)` per kind, so the show path never calls `GetComponent<UIViewChannel>()` on the prefab.
 
@@ -314,6 +314,26 @@ Steady-state `GetView<T>()` is allocation-free (asserted by `UISystemTests.GetVi
 To observe shows from outside, subscribe to `IUISystem.ViewShown` — it fires after any view's `OnShow`, immediate and animated alike, and not on resume.
 
 `UIView` itself is now only the lifecycle: its animation plumbing lives in `ViewAnimator` (owns the lifetime and in-flight cancellation sources; a run reports whether it finished instead of throwing), the dim in `ViewBackgroundOverlay`, and the raise-above-everything behaviour in `ViewHighlight`.
+
+### Internals — How the System Is Put Together
+
+`UISystem` (the MonoBehaviour, ~200 lines) is a composition root: it holds the serialized references, wires the parts below in `EnsureInitialized`, forwards `IUISystem`, and implements `IViewHost`. Everything else is an `internal sealed class` in the same folder, built once and never exposed to game code:
+
+| Part | Owns | Answers |
+|------|------|---------|
+| `ViewRegistry` | `ViewRecord` per registered view + the per-kind index | *is X registered / static / dynamic / closing?* |
+| `ScreenStacks` | one `ViewStack` per `UIChannel` + the UI camera | push/pop/remove with canvas re-sorting, *which screen hosts a parentless fragment?* |
+| `FragmentHistories` | one `ViewStack` per parent + the per-parent show gate | *what is under this fragment?*, serialising rapid shows on one parent |
+| `StackPolicy` | four predicates over `ViewStackBehaviour` (`Pauses`, `Hides`, `Closes`, `Covers`) | the only place a behaviour's meaning is spelled out; `ViewStack.IsCoveredAbove` uses it too |
+| `ViewFactory` | prefab cache, `ViewPool`, the DI container | spawn, clone a template, release, destroy |
+| `ShowPipeline` | — | resolve → spawn → register → push → pause what is below → entrance |
+| `ClosePipeline` | — | pop → hide → cascade to children → pool/destroy/hide-in-place → resume what was uncovered |
+
+The two pipelines share one pause path and one resume path each — `PauseBelowAsync(above, below, immediate, cascade)` and `ResumeBelowAsync(behaviour, below, immediate, cascade)` — where `cascade` is the single screen/fragment difference (a screen also pauses/resumes the fragments in its history). Both read `StackPolicy`, so a new behaviour is added there, not in a switch. On the close side, `SettleAsync` is the one place a view leaves presentation and `CascadeChildren` the one place its children follow it: dynamic children are pooled or destroyed, static children are torn down and either hidden (parent stays registered) or left to the parent's fate.
+
+`ViewRecord.IsClosing` replaces the old closing set: a view mid-close is skipped by every lookup and a second `Close` is a no-op. The resume after a close uses the stack behaviour the view was *shown* with (captured before settle clears the per-show override), so a fragment shown with `ShowOptions(stackBehaviour: HideBelow)` over a `DoNothing` default still brings the view below back.
+
+**Editor tooling.** *AK ▸ UI ▸ View Stack Visualizer* renders the live state — channel stacks, per-parent histories, the pool, and a consistency check across them. It reads the internal parts directly (`UISystem.Registry/Screens/Histories/Pool`, visible via `InternalsVisibleTo("AK.UISystem.Editor")`); there is no reflection on field names left to break.
 
 ### Static vs Dynamic Fragments
 
@@ -432,7 +452,7 @@ Animations are ScriptableObject strategies. Assign a `UIAnimationConfig` to any 
 //   _playInParallelWithPrevious — true = crossfade, false = sequential
 ```
 
-30+ built-in strategies including Fade, Slide, Scale, Bounce, Elastic, PopSnap, CardDeal, ConfettiBurst, and more. All use DOTween under the hood. Create your own by extending `AnimationStrategy`:
+30+ built-in strategies including Fade, Slide, Scale, Bounce, Elastic, PopSnap, CardDeal, ConfettiBurst, and more, kept as assets so designers can try them out. All use DOTween under the hood. Create your own by extending `AnimationStrategy`:
 
 ```csharp
 [CreateAssetMenu(menuName = "UISystem/Animations/MyCustomAnimation")]
@@ -450,9 +470,11 @@ public class MyCustomAnimation : AnimationStrategy
 }
 ```
 
+A strategy returns tweens and nothing else — `IAnimationStrategy` is exactly the two methods above. The system awaits them through the `PlayShowAsync`/`PlayHideAsync` extension methods, which link every tween to the animated content (`SetLink(target.gameObject, KillOnDisable)`) so a tween can never finish on a view that was disabled, pooled or destroyed under it, and which turn cancellation into a killed tween plus `OperationCanceledException`. Return `null` for "nothing to animate". A component strategy that drives its own timing (an Animator, a Timeline) implements `IAsyncAnimationStrategy` on top and the system awaits that instead.
+
 ### Object Pooling
 
-Dynamic fragments with `ReturnToPoolOnClose = true` are returned to a `ViewPool` instead of destroyed. The pool keys by `(Type, ViewId)`, so you can have multiple variants of the same view type. Pooled views go through `OnBeforePool()` → `OnReset()` before returning to the pool, and are fully re-initialized on next show.
+Dynamic fragments with `ReturnToPoolOnClose = true` are returned to a `ViewPool` instead of destroyed. The pool keys by `(Type, ViewId)`, so you can have multiple variants of the same view type. The close pipeline settles a pooled view completely before the pool sees it: hide hooks, then `OnBeforePool()` while its children are still registered (close dynamic children there with `CloseOptions.Now` if you want them to see a normal close rather than the cascade), then the cascade, then `OnReset()` — whose base implementation resets the animated transform, cancels a pending delayed start and turns input back on. The pool itself only kills leftover tweens, deactivates and reparents; on the next show the view is re-attached and re-initialised like a fresh instance.
 
 ### Background Overlay
 
@@ -495,6 +517,7 @@ Add a `ViewBackgroundOverlay` component next to a UIView and the view dims every
 | Add a dark overlay behind a screen | Add a `ViewBackgroundOverlay` component to the UIView |
 | Highlight one view for a tutorial | `ViewHighlight.Enter(view)` … `ViewHighlight.Exit(view)` |
 | Create a custom animation | Extend `AnimationStrategy`, override `PlayShowAnimation` and `PlayHideAnimation` |
+| See what is on the stacks right now | *AK ▸ UI ▸ View Stack Visualizer* (editor window, live in Play Mode) |
 
 ---
 

@@ -82,7 +82,7 @@ namespace AK.Systems
 			for (int i = index + 1; i < _items.Count; i++)
 			{
 				var above = _items[i];
-				if (above != null && Covers(above.StackBehaviour)) return true;
+				if (above != null && StackPolicy.Covers(above.StackBehaviour)) return true;
 			}
 
 			return false;
@@ -100,11 +100,6 @@ namespace AK.Systems
 		}
 
 		public Enumerator GetEnumerator() => new(_items);
-
-		private static bool Covers(ViewStackBehaviour behaviour) =>
-			behaviour is ViewStackBehaviour.HideBelow
-				or ViewStackBehaviour.PauseAndHideBelow
-				or ViewStackBehaviour.PauseOnlyBelow;
 
 		/// <summary>Top-first enumeration, the same order <c>Stack&lt;T&gt;</c> yields.</summary>
 		public struct Enumerator

@@ -159,20 +159,21 @@ namespace AK.Systems
 		/// <summary>Called when the view on top is closed and this view resumes.</summary>
 		public virtual void OnResume() { }
 
-		/// <summary>Called when a pooled view is returned to the pool. Reset your internal state here.</summary>
+		/// <summary>
+		/// Called when a pooled view is returned to the pool, after its children are gone.
+		/// Reset your internal state here (text, images, references) and call the base.
+		/// </summary>
 		public virtual void OnReset()
 		{
 			ResetState();
 		}
 
 		/// <summary>
-		/// Override this to close dynamic fragments before pooling.
+		/// Called on a pooled view on its way to the pool, before the cascade settles its
+		/// children — the place to close dynamic fragments that should see a normal close.
+		/// Prefer <see cref="CloseOptions.Now"/>; an animated close here is cut short by the cascade.
 		/// </summary>
-		public virtual void OnBeforePool()
-		{
-			// Override in subclasses to close dynamic fragments before pooling
-			// Example: Close any dynamically spawned tooltips, popups, etc.
-		}
+		public virtual void OnBeforePool() { }
 
 		// =====================================================================
 		// PUBLIC API
@@ -501,6 +502,9 @@ namespace AK.Systems
 				_animatableContent.localRotation = Quaternion.identity;
 				_animatableContent.anchoredPosition = Vector2.zero;
 			}
+
+			// A pause leaves input off; nothing on the reuse path turns it back on but this.
+			if (CanvasGroup != null) SetInteractable(true);
 
 			_animator.EnsureLifetime();
 		}

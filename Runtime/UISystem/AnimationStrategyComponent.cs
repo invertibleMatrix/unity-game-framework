@@ -1,5 +1,3 @@
-using System.Threading;
-using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using UnityEngine;
 
@@ -7,9 +5,11 @@ namespace AK.Systems
 {
 	/// <summary>
 	/// Component-based animation strategy. Lives on a GameObject next to its view, so unlike
-	/// the SO-based AnimationStrategy it can hold per-instance scene references.
-	/// Rule of thumb: SO strategies are shared and tuning-only; component strategies are
-	/// per-instance and may serialize scene geometry.
+	/// the asset-based <see cref="AnimationStrategy"/> it can hold per-instance scene
+	/// references. Rule of thumb: asset strategies are shared and tuning-only; component
+	/// strategies are per-instance and may serialize scene geometry. Build the entrance and
+	/// exit as tweens; the system links and awaits them. A component that drives its own
+	/// timing implements <see cref="IAsyncAnimationStrategy"/> on top.
 	/// </summary>
 	public abstract class AnimationStrategyComponent : MonoBehaviour, IAnimationStrategy
 	{
@@ -25,17 +25,5 @@ namespace AK.Systems
 
 		public abstract Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default);
 		public abstract Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup);
-
-		public virtual UniTask PlayShowAsync(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default,
-		                                     CancellationToken ct = default)
-		{
-			return PlayShowAnimation(target, canvasGroup, entryPos).ToUniTask(cancellationToken: ct);
-		}
-
-		public virtual UniTask PlayHideAsync(RectTransform target, CanvasGroup canvasGroup,
-		                                     CancellationToken ct = default)
-		{
-			return PlayHideAnimation(target, canvasGroup).ToUniTask(cancellationToken: ct);
-		}
 	}
 }

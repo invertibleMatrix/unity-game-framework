@@ -4,6 +4,12 @@ using UnityEngine;
 
 namespace AK.Systems
 {
+	/// <summary>
+	/// Shelves closed view instances by kind for reuse. A view arrives here already settled by
+	/// the close pipeline — hooks run, children cascaded, state reset — so the pool only makes
+	/// the object inert (kills what still tweens inside it, deactivates, reparents) and hands
+	/// it back on the next spawn of the same kind.
+	/// </summary>
 	public class ViewPool
 	{
 		private readonly Dictionary<ViewKey, Stack<UIView>> _pools  = new();
@@ -19,6 +25,9 @@ namespace AK.Systems
 		{
 			_viewsContainer = viewsContainer;
 		}
+
+		/// <summary>Idle instances by kind. Diagnostics and editor tooling.</summary>
+		internal IReadOnlyDictionary<ViewKey, Stack<UIView>> Pools => _pools;
 
 		private Transform PoolRoot
 		{
@@ -81,24 +90,9 @@ namespace AK.Systems
 				_pools[key] = stack;
 			}
 
-			// Let the view close its dynamic children before pooling
-			// This prevents orphaned child views when parent is pooled
-			view.OnBeforePool();
-
-			view.Lifecycle().Teardown();
-
-			if (view.TryGetComponent(out ViewHighlight highlight))
-			{
-				highlight.Restore();
-			}
-
-			// OnReset lets the view clear custom state (text, images, references) for reuse.
-			view.OnReset();
-
-			// Kill any tweens still targeting this view's hierarchy. Teardown handles the
-			// view's own animation targets, but per-view leftovers (e.g. toast floaters) and
-			// animation-strategy ambient loops can survive that - a surviving sequence that
-			// completes later would call Close() on an unregistered view.
+			// Strategy tweens are linked to the content and die with it; this catches what is
+			// not — per-view leftovers such as toast floaters, whose completion callbacks would
+			// otherwise fire on a shelved view.
 			view.GetComponentsInChildren(true, _canvasGroupScratch);
 			for (int i = 0; i < _canvasGroupScratch.Count; i++)
 			{
@@ -114,14 +108,6 @@ namespace AK.Systems
 			}
 
 			_rectTransformScratch.Clear();
-
-			// Restore interaction state: pause-behaviours (PauseOnlyBelow etc.) flip
-			// interactable/blocksRaycasts off, and nothing restored them on the reuse path.
-			if (view.CanvasGroup != null)
-			{
-				view.CanvasGroup.interactable = true;
-				view.CanvasGroup.blocksRaycasts = true;
-			}
 
 			view.gameObject.SetActive(false);
 			view.transform.SetParent(PoolRoot, false);
