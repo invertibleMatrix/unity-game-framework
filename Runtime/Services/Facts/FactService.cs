@@ -12,17 +12,21 @@ namespace AK.Services.Facts
 	/// Default IFactService. Persists one count row per fact — the entire disk footprint
 	/// of the fact domain. Identity redirects are applied once at load and the file is
 	/// rewritten, so a redirected fact costs nothing after the first launch.
+	///
+	/// Every mutation commits to disk unless inside a <see cref="BeginBatch"/> scope.
 	/// </summary>
-	public class FactService : IFactService
+	public class FactService : IFactService, IBatchable
 	{
-		private readonly FactLedgerState              _state;
-		private readonly Dictionary<Uid, int>         _counts = new();
+		private readonly FactLedgerState      _state;
+		private readonly DeferredCommit       _commit;
+		private readonly Dictionary<Uid, int> _counts = new();
 
 		public event Action<Uid<FactType>> Changed;
 
 		public FactService(UidRedirectTable redirects = null)
 		{
-			_state = FactLedgerState.Load();
+			_state  = FactLedgerState.Load();
+			_commit = new DeferredCommit(_state.Commit);
 
 			bool rewritten = ApplyRedirects(redirects);
 
@@ -36,9 +40,16 @@ namespace AK.Services.Facts
 
 			if (rewritten)
 			{
-				_state.Commit();
+				_commit.Commit();
 			}
 		}
+
+		// ---------------------------------------------------------------- batching
+
+		public LedgerBatch BeginBatch() => new(this);
+
+		void IBatchable.Suspend() => _commit.Suspend();
+		void IBatchable.Resume()  => _commit.Resume();
 
 		// ---------------------------------------------------------------- record
 
@@ -91,7 +102,7 @@ namespace AK.Services.Facts
 			{
 				_counts.Remove(id);
 				_state.Counts.RemoveAll(e => e.FactId == id);
-				_state.Commit();
+				_commit.Commit();
 			}
 			else
 			{
@@ -105,7 +116,7 @@ namespace AK.Services.Facts
 		{
 			_counts.Clear();
 			_state.Counts.Clear();
-			_state.Commit();
+			_commit.Commit();
 		}
 
 		// ---------------------------------------------------------------- query
@@ -200,7 +211,7 @@ namespace AK.Services.Facts
 				_state.Counts.Add(new FactCountEntry { FactId = id, Count = count });
 			}
 
-			_state.Commit();
+			_commit.Commit();
 		}
 
 		/// <summary>

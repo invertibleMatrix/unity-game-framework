@@ -49,5 +49,12 @@ namespace AK.Services.Facts
 		/// a redirect entry.
 		/// </summary>
 		IReadOnlyList<Uid> FindOrphans(IUidResolver resolver);
+
+		/// <summary>
+		/// Defers the disk write until the returned scope is disposed, so several Records in a
+		/// row cost one serialization and one flush. Counts and <see cref="Changed"/> still
+		/// update immediately. Nested scopes flush once at the outermost dispose.
+		/// </summary>
+		LedgerBatch BeginBatch();
 	}
 }

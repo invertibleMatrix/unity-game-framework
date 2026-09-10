@@ -274,6 +274,17 @@ public enum UIChannel
 
 Higher channels always render on top. Multiple screens on the same channel stack (e.g., two Menu screens) — the newer one gets `sortingOrder = 100 + stackDepth`. Override a screen's channel at show time with the `channelOverride` parameter.
 
+### Internals — How Lookups Stay Cheap
+
+The system answers three questions on every `Show`/`Close`/`GetView`: *is a static of this kind already registered?*, *is a dynamic of this kind already open on this parent?*, *which view sits below this one in its stack?* None of them scan the whole registry or copy a stack.
+
+- **`ViewKey`** — `(Type, ViewId)` identity of a view kind. Keys the prefab cache, the `ViewPool`, and the registry index.
+- **Registry index** — every registered view is threaded onto a per-kind singly linked list (`ViewRecord.NextOfKind`, head in `_recordsByKind`). Finding a static or a dynamic instance of `UIViewCloseBar` walks the two or three close bars that exist, not the ~50 registered views. Register/unregister maintain the chain; `CountOfKind` exposes it for diagnostics.
+- **`ViewStack`** — list-backed navigation stack (bottom = index 0). `Remove`, `MoveToTop`, `BelowOrNull`, `IsCoveredAbove`, and `PeekBelowTopOrNull` run in place; there is no `ToArray()` or temporary stack anywhere on the show/close path. Enumeration is top-first, same as `Stack<T>`.
+- **Prefab cache** — `(prefab, isScreen)` per kind, so the show path never calls `GetComponent<UIViewChannel>()` on the prefab.
+
+Steady-state `GetView<T>()` is allocation-free (asserted by `UISystemTests.GetView_DoesNotAllocate_OnceWarm`). What still allocates per show is inherent to the design: the view instance on a pool miss, one `ViewRecord`, one `UniTaskCompletionSource` per serialized fragment show, and the UniTask async state machines.
+
 ### Static vs Dynamic Fragments
 
 **Static fragments** are pre-placed as children in the prefab. They survive `Normal` close — they're hidden, not destroyed. When the parent re-shows, static fragments with `ShowOnStart = true` automatically reappear. Use statics for permanent UI elements like a currency bar or navigation tabs that always exist in a screen.
@@ -1087,6 +1098,91 @@ UID (ScriptableObject carrying one Uid)
     -> CurrencyDefinition, RewardDefinition, etc. (game-specific definitions)
 ```
 
+### SlotMap & Handles
+
+`AK.Core.Collections.SlotMap<T>` is generational slot storage: `Add` returns a `Handle<T>` (`{Index, Generation}`, 8 bytes, value-equal), `Remove` frees the slot and bumps its generation, and any handle from the previous lifetime stops resolving. Add/Remove/TryGet are O(1) and allocate nothing at steady state; `foreach` uses a struct enumerator and tolerates removal mid-walk.
+
+Use it wherever code keeps a reference to something that can be recycled underneath it — pooled objects, active tweens, timers, VFX bookkeeping, AI targets. A stale `Handle<T>` answers `false`; a stale C# reference points at whoever got the slot next.
+
+```csharp
+var map = new SlotMap<Enemy>();
+Handle<Enemy> h = map.Add(enemy);
+
+if (map.TryGet(h, out Enemy e)) e.TakeDamage(5);   // false once removed, even if the slot was reused
+
+foreach (Enemy alive in map) alive.Tick();          // zero-alloc; skips dead slots
+
+var walker = map.GetEnumerator();
+while (walker.MoveNext())
+    if (walker.Current.IsDead) map.Remove(walker.CurrentHandle);
+```
+
+### Object Pooling (GameObjects)
+
+`ObjectPoolService` (`IObjectPoolService`) pools prefab instances per `PoolableObjectDefinition` (a `UID` asset: prefab, initial size, max size, prewarm flag), registered through an `ObjectPoolRegistry`. Every checked-out instance lives in one `SlotMap<PooledInstance>`.
+
+Two APIs over the same pool:
+
+```csharp
+// Reference API — you own a GameObject; do not touch it after release.
+Bullet b = _pools.Get<Bullet>(bulletDef, muzzle.position, muzzle.rotation);
+b.ReturnToPool();                        // or _pools.Release(b.gameObject)
+
+// Lease API — for anything that outlives a frame. A stale lease resolves to nothing.
+Handle<PooledInstance> lease = _pools.Lease(bulletDef, muzzle.position, muzzle.rotation);
+if (_pools.TryGet(lease, out Bullet bullet)) bullet.Fire();
+_pools.Release(lease);                   // false (no log) if already released
+```
+
+Get/Lease/Release are O(1) and allocate nothing once a pool has reached its working size; `IPoolable` components are captured once per instance. Double release by reference logs a warning; double release by lease is a silent `false`.
+
+### Result & ErrorCode
+
+Expected failures are values, not exceptions and not `null`. `Result` (no payload) and `Result<T>` are `readonly struct`s carrying an `ErrorCode` and an optional `Detail` string that is `null` on the happy path — so success allocates nothing. Bugs still throw; only outcomes the caller is expected to handle travel as `Result`.
+
+```csharp
+Result<Transaction> recorded = _transactions.Record(type, amount);
+if (recorded.IsFailed) return recorded.Untyped;         // propagate the code, drop the payload
+Transaction tx = recorded.Value;
+
+Result granted = _rewards.Grant(reward);
+if (!granted) Debug.LogWarning($"reward skipped: {granted}");   // implicit bool; ToString prints Fail(Code: Detail)
+
+// Inside a method returning Result<T>:
+return value;                          // implicit Ok
+return Result.Fail(ErrorCode.NotFound); // implicit failure conversion
+```
+
+`ErrorCode` is grouped in blocks of 100 by domain (1xx argument/state, 2xx providers, 3xx cost, 4xx reward, 5xx transaction, 6xx store/IAP, 9xx internal). Games add their own codes from `ErrorCode.GameDefined` (10000) upward via `Result.Fail(int, string)`. UI switches on `Code`; nothing parses `Detail`.
+
+Services returning `Result`: `ICostService.CanAfford/Deduct`, `IRewardService.Grant`, `ITransactionService.Record/RecordPending/CreditAsync/Reverse`, `IPurchaseService.Purchase`.
+
+### Scope Guards (`ref struct` + `using`)
+
+Three guards give RAII-style "runs on every exit path" semantics. Each is a `ref struct`, so the compiler forbids storing it in a field, capturing it in a lambda, boxing it, or holding it across an `await` — the scope *is* the stack frame.
+
+```csharp
+// One disk flush instead of one per Record. Counts and Changed events still fire immediately.
+using (_facts.BeginBatch())
+{
+    _facts.Record(districtButtonPressed);
+    _facts.Record(districtEntered);
+}
+
+// Scratch list from a pool; returned cleared when the scope ends.
+using PooledList<IReward> rewards = ListPool<IReward>.Rent();
+item.CollectRewards(rewards.List);
+for (int i = 0; i < rewards.Count; i++) _rewards.Grant(rewards[i]);
+
+// Profiler region; compiles to nothing without ENABLE_PROFILER.
+using (ProfilerScope.Begin(Markers.ShopRefresh))
+{
+    RebuildShopList();
+}
+```
+
+`LedgerBatch` is exposed by `IFactService.BeginBatch()` and `ITransactionService.BeginBatch()`; scopes nest and flush once at the outermost dispose. Both services persist through `PersistableState.Commit`, which serializes to JSON and calls `PlayerPrefs.Save()` — a disk flush — so batching matters anywhere more than one record happens in a frame.
+
 ### EventBus
 
 High-performance, allocation-conscious event bus with priority-based dispatch and event consumption.
@@ -1561,7 +1657,14 @@ Two-layer system: `IIAPService` (raw store operations) and `IPurchaseService` (b
 var purchaseService = new PurchaseService(costService, rewardService, iapService: null);
 
 // High-level purchase (handles cost deduction and reward delivery)
-var status = await purchaseService.Purchase(purchasableItemDefinition, immediateCredit: true);
+Result purchase = await purchaseService.Purchase(purchasableItemDefinition, immediateCredit: true);
+switch (purchase.Code)
+{
+    case ErrorCode.None:          ShowSuccess(); break;
+    case ErrorCode.CannotAfford:  ShowNotEnoughCurrency(); break;
+    case ErrorCode.Cancelled:     break;                       // user backed out of the store sheet
+    default:                      ShowStoreError(purchase.Code); break;
+}
 
 // Check IAP ownership (only when IAP is enabled)
 if (purchaseService.IAPService != null)

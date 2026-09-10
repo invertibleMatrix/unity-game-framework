@@ -46,30 +46,28 @@ namespace AK.Services.Costs
 			return false;
 		}
 
-		public bool CanAfford(ICostInfo cost)
+		public Result CanAfford(ICostInfo cost)
 		{
-			if (cost == null || cost.CostType.IsNone) return true;
+			if (cost == null || cost.CostType.IsNone) return Result.Ok;
 
-			if (_providers.TryGetValue(cost.CostType, out ICostProvider provider))
+			if (!_providers.TryGetValue(cost.CostType, out ICostProvider provider))
 			{
-				return provider.CanAfford(cost);
+				return Result.Fail(ErrorCode.NoProvider, UidDebugNames.Describe(cost.CostType));
 			}
 
-			Debug.LogWarning($"[CostService] No provider registered for cost type {UidDebugNames.Describe(cost.CostType)}. Defaulting to unaffordable.");
-			return false;
+			return provider.CanAfford(cost) ? Result.Ok : Result.Fail(ErrorCode.CannotAfford);
 		}
 
-		public bool Deduct(ICostInfo cost)
+		public Result Deduct(ICostInfo cost)
 		{
-			if (cost == null || cost.CostType.IsNone) return true;
+			if (cost == null || cost.CostType.IsNone) return Result.Ok;
 
-			if (_providers.TryGetValue(cost.CostType, out ICostProvider provider))
+			if (!_providers.TryGetValue(cost.CostType, out ICostProvider provider))
 			{
-				return provider.Deduct(cost);
+				return Result.Fail(ErrorCode.NoProvider, UidDebugNames.Describe(cost.CostType));
 			}
 
-			Debug.LogWarning($"[CostService] No provider registered for cost type {UidDebugNames.Describe(cost.CostType)}. Cannot deduct.");
-			return false;
+			return provider.Deduct(cost) ? Result.Ok : Result.Fail(ErrorCode.DeductDeclined);
 		}
 
 		public ICostProvider GetProvider(Uid costType)

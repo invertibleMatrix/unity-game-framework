@@ -43,8 +43,8 @@ namespace AK.Systems.Editor
 		private int _lastValidationFrame = -1;
 
 		// Cached reflection data (resolved once per repaint, not per draw)
-		private Dictionary<UIChannel, Stack<UIView>> _channelStacks;
-		private Dictionary<UIView, Stack<UIView>> _historyStacks;
+		private Dictionary<UIChannel, ViewStack> _channelStacks;
+		private Dictionary<UIView, ViewStack> _historyStacks;
 		private Dictionary<UIView, ViewRecordInfo> _viewRegistry;
 		private HashSet<UIView> _closingViews;
 		private object _viewPool;
@@ -158,13 +158,13 @@ namespace AK.Systems.Editor
 				var channelStacksField = sysType.GetField("_channelStacks",
 					BindingFlags.NonPublic | BindingFlags.Instance);
 				_channelStacks = channelStacksField?.GetValue(uiSystem)
-					as Dictionary<UIChannel, Stack<UIView>>;
+					as Dictionary<UIChannel, ViewStack>;
 
 				// _historyStacks
 				var historyStacksField = sysType.GetField("_historyStacks",
 					BindingFlags.NonPublic | BindingFlags.Instance);
 				_historyStacks = historyStacksField?.GetValue(uiSystem)
-					as Dictionary<UIView, Stack<UIView>>;
+					as Dictionary<UIView, ViewStack>;
 
 				// _viewRegistry -> extract ViewRecord info
 				var viewRegistryField = sysType.GetField("_viewRegistry",
@@ -197,6 +197,13 @@ namespace AK.Systems.Editor
 				EditorGUILayout.HelpBox(
 					$"Reflection error: {ex.Message}", MessageType.Error);
 			}
+		}
+
+		private static List<UIView> TopFirst(ViewStack stack)
+		{
+			var list = new List<UIView>(stack.Count);
+			stack.CopyTopFirst(list);
+			return list;
 		}
 
 		private static ViewRecordInfo ExtractViewRecordInfo(object record)
@@ -301,7 +308,7 @@ namespace AK.Systems.Editor
 			var isCollapsed = EditorGUILayout.Toggle(wasCollapsed, GUILayout.Width(20));
 			_channelCollapsed[channel] = isCollapsed;
 
-			Stack<UIView> stack = null;
+			ViewStack stack = null;
 			int count = 0;
 			if (_channelStacks != null && _channelStacks.TryGetValue(channel, out stack))
 				count = stack?.Count ?? 0;
@@ -323,8 +330,8 @@ namespace AK.Systems.Editor
 
 			if (!isCollapsed)
 			{
-				var screenArray = stack.ToArray();
-				for (int i = 0; i < screenArray.Length; i++)
+				var screenArray = TopFirst(stack);
+				for (int i = 0; i < screenArray.Count; i++)
 				{
 					DrawView(screenArray[i], isTop: i == 0, isScreen: true);
 				}
@@ -381,8 +388,8 @@ namespace AK.Systems.Editor
 
 				if (!isCollapsed)
 				{
-					var fragArray = history.ToArray();
-					for (int i = 0; i < fragArray.Length; i++)
+					var fragArray = TopFirst(history);
+					for (int i = 0; i < fragArray.Count; i++)
 					{
 						DrawView(fragArray[i], isTop: i == 0, isScreen: false);
 					}

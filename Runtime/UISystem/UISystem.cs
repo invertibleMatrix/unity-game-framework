@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
+using AK.Core.Collections;
 using AK.Systems.UI;
 using Cysharp.Threading.Tasks;
 using Reflex.Attributes;
@@ -47,12 +47,12 @@ namespace AK.Systems
 		/// Channel stacks keyed by UIChannel.SortOrder.
 		/// The default channel (sort order 0) is always present.
 		/// </summary>
-		private readonly Dictionary<UIChannel, Stack<UIView>> _channelStacks = new();
+		private readonly Dictionary<UIChannel, ViewStack> _channelStacks = new();
 
 		/// <summary>
 		/// Per-parent history stacks for fragments (views without UIChannel).
 		/// </summary>
-		private readonly Dictionary<UIView, Stack<UIView>> _historyStacks = new();
+		private readonly Dictionary<UIView, ViewStack> _historyStacks = new();
 
 		/// <summary>
 		/// Per-parent pending show task. Serializes concurrent show operations on the same parent
@@ -66,10 +66,18 @@ namespace AK.Systems
 		private readonly Dictionary<UIView, ViewRecord> _viewRegistry = new();
 
 		/// <summary>
+		/// Registered views grouped by kind. Each bucket is an intrusive singly linked list of
+		/// records threaded through <see cref="ViewRecord.NextOfKind"/>, so "find the static
+		/// instance of X under parent P" or "is a dynamic X already open on P" walks only the
+		/// instances of that one kind instead of the whole registry.
+		/// </summary>
+		private readonly Dictionary<ViewKey, ViewRecord> _recordsByKind = new();
+
+		/// <summary>
 		/// Lookup cache for fast prefab resolution by (Type, ViewId).
 		/// Built lazily on first access and invalidated when repository changes.
 		/// </summary>
-		private Dictionary<(Type, string), UIView> _prefabLookup;
+		private Dictionary<ViewKey, PrefabEntry> _prefabLookup;
 
 		/// <summary>
 		/// Guards against double-close on screens (like V1's _closingScreens).
@@ -82,7 +90,7 @@ namespace AK.Systems
 		// VIEW RECORD
 		// =================================================================
 
-		private class ViewRecord
+		private sealed class ViewRecord
 		{
 			public UIView       Instance  { get; }
 			public UIView       Parent    { get; }
@@ -90,11 +98,19 @@ namespace AK.Systems
 			public bool         IsDynamic => !IsStatic;
 			public List<UIView> Children  { get; } = new();
 
+			/// <summary>Kind under which this record is indexed. Captured at registration —
+			/// pooled instances reset their ViewId on release, so the live value can drift.</summary>
+			public ViewKey Kind;
+
+			/// <summary>Next record of the same kind in the registry index.</summary>
+			public ViewRecord NextOfKind;
+
 			public ViewRecord(UIView instance, UIView parent, bool isStatic)
 			{
 				Instance = instance;
 				Parent = parent;
 				IsStatic = isStatic;
+				Kind = ViewKey.Of(instance);
 			}
 
 			public void AddChild(UIView child)
@@ -109,16 +125,39 @@ namespace AK.Systems
 			}
 		}
 
+		private readonly struct PrefabEntry
+		{
+			public readonly UIView Prefab;
+			public readonly bool   IsScreen;
+
+			public PrefabEntry(UIView prefab, bool isScreen)
+			{
+				Prefab = prefab;
+				IsScreen = isScreen;
+			}
+		}
+
 		// =================================================================
 		// LIFECYCLE
 		// =================================================================
 
 		private void Awake()
 		{
+			EnsureInitialized();
+		}
+
+		/// <summary>
+		/// Awake's body, callable from edit-mode tests where Unity does not run Awake.
+		/// Idempotent.
+		/// </summary>
+		internal void EnsureInitialized()
+		{
+			if (_viewPool != null) return;
+
 			_viewPool = new ViewPool(_viewsContainer);
 
 			// Ensure the default channel stack always exists
-			_channelStacks[UIChannel.HUD] = new Stack<UIView>();
+			_channelStacks[UIChannel.HUD] = new ViewStack();
 
 			if (_ensureEventSystem && FindFirstObjectByType<EventSystem>() == null)
 			{
@@ -130,13 +169,19 @@ namespace AK.Systems
 
 			if (_spawnDefaultOverlayView)
 			{
-				Show<UIViewOverlay>();	
+				Show<UIViewOverlay>();
 			}
 		}
 
 		public void Dispose()
 		{
-			_viewPool.Clear();
+			_viewPool?.Clear();
+		}
+
+		private static void DestroyViewObject(GameObject go)
+		{
+			if (Application.isPlaying) Destroy(go);
+			else DestroyImmediate(go);
 		}
 
 		// =================================================================
@@ -201,13 +246,7 @@ namespace AK.Systems
 
 		public void Close(UIView view, Action onClose = null)
 		{
-			// Only fire the callback when the close will actually do something - a double-close
-			// or unregistered view early-returns inside CloseInternalAsync and "closed" nothing.
-			bool willClose = view != null && _viewRegistry.ContainsKey(view) && !_closingViews.Contains(view);
-			CloseInternalAsync(view, CloseContext.Normal, false).ContinueWith(() =>
-			{
-				if (willClose) onClose?.Invoke();
-			}).Forget();
+			CloseThenNotifyAsync(view, immediate: false, onClose).Forget();
 		}
 
 		public UniTask CloseAsync(UIView view, CancellationToken ct = default)
@@ -217,11 +256,16 @@ namespace AK.Systems
 
 		public void CloseImmediate(UIView view, Action onClose = null)
 		{
+			CloseThenNotifyAsync(view, immediate: true, onClose).Forget();
+		}
+
+		private async UniTask CloseThenNotifyAsync(UIView view, bool immediate, Action onClose)
+		{
+			// Only fire the callback when the close will actually do something - a double-close
+			// or unregistered view early-returns inside CloseInternalAsync and "closed" nothing.
 			bool willClose = view != null && _viewRegistry.ContainsKey(view) && !_closingViews.Contains(view);
-			CloseInternalAsync(view, CloseContext.Normal, true).ContinueWith(() =>
-			{
-				if (willClose) onClose?.Invoke();
-			}).Forget();
+			await CloseInternalAsync(view, CloseContext.Normal, immediate);
+			if (willClose) onClose?.Invoke();
 		}
 
 		// =================================================================
@@ -252,7 +296,7 @@ namespace AK.Systems
 		{
 			Show<UIViewToast>(onInit: toast =>
 			{
-				toast.Init(0,text);
+				toast.Init(0, text);
 			});
 		}
 
@@ -275,7 +319,7 @@ namespace AK.Systems
 
 		public UniTask GoBackAsync(UIView parentView, CancellationToken ct = default)
 		{
-			return GoBackInternalAsync(parentView, ct:ct);
+			return GoBackInternalAsync(parentView, ct: ct);
 		}
 
 		// =================================================================
@@ -284,20 +328,27 @@ namespace AK.Systems
 
 		public TView GetView<TView>(string viewId = "") where TView : UIView
 		{
-			var id = viewId ?? string.Empty;
-			var type = typeof(TView);
+			var key = new ViewKey(typeof(TView), viewId);
 
-			// Check channel stacks first
+			// Screens on a channel stack first (top-most within a channel), then any registered
+			// instance that is not tearing down.
 			foreach (var stack in _channelStacks.Values)
 			{
-				var match = stack.FirstOrDefault(v => v != null && v.GetType() == type && v.ViewId == id);
-				if (match != null) return match as TView;
+				foreach (var view in stack)
+				{
+					if (view != null && view.GetType() == key.Type && view.ViewId == key.ViewId)
+						return view as TView;
+				}
 			}
 
-			// Then check registry - exclude views currently closing to prevent operating on dying views
-			return _viewRegistry.Values
-			                    .FirstOrDefault(r => r.Instance != null && r.Instance.GetType() == type && r.Instance.ViewId == id && !_closingViews.Contains(r.Instance))?
-			                    .Instance as TView;
+			for (var record = FirstOfKind(key); record != null; record = record.NextOfKind)
+			{
+				UIView instance = record.Instance;
+				if (instance != null && !_closingViews.Contains(instance))
+					return instance as TView;
+			}
+
+			return null;
 		}
 
 		// =================================================================
@@ -306,6 +357,12 @@ namespace AK.Systems
 
 		internal void RegisterStaticView(UIView view, UIView parent)
 		{
+			if (_viewRegistry.ContainsKey(view))
+			{
+				Debug.LogWarning($"Static view '{view.name}' is already registered.", view);
+				return;
+			}
+
 			var record = new ViewRecord(view, parent, isStatic: true);
 
 			if (parent != null && _viewRegistry.TryGetValue(parent, out var parentRecord))
@@ -313,32 +370,13 @@ namespace AK.Systems
 				parentRecord.AddChild(view);
 			}
 
-			if (!_viewRegistry.TryAdd(view, record))
-			{
-				Debug.LogWarning($"Static view '{view.name}' is already registered.", view);
-			}
+			Register(record);
 		}
 
 		internal void ShowExistingView(UIView view, UIContext context = null,
 		                               ViewStackBehaviour? stackBehaviour = null)
 		{
-			if (view == null || view.gameObject == null)
-			{
-				Debug.LogError("Cannot show view: view or its GameObject is null.");
-				return;
-			}
-
-			if (view.IsTemplate)
-			{
-				Debug.LogWarning($"'{view.name}' is a template — call ShowFragment<{view.GetType().Name}>() to spawn a clone; the template itself never shows.", view);
-				return;
-			}
-
-			if (!_viewRegistry.TryGetValue(view, out var record))
-			{
-				Debug.LogError($"Cannot show view '{view.name}': not registered.", view);
-				return;
-			}
+			if (!TryResolveExisting(view, out var record)) return;
 
 			ShowRegisteredViewAsync(view, record.Parent, context, stackBehaviour).Forget();
 		}
@@ -346,23 +384,7 @@ namespace AK.Systems
 		internal UniTask ShowExistingViewAsync(UIView view, UIContext context = null,
 		                                       ViewStackBehaviour? stackBehaviour = null, CancellationToken ct = default)
 		{
-			if (view == null || view.gameObject == null)
-			{
-				Debug.LogError("Cannot show view: view or its GameObject is null.");
-				return UniTask.CompletedTask;
-			}
-
-			if (view.IsTemplate)
-			{
-				Debug.LogWarning($"'{view.name}' is a template — call ShowFragment<{view.GetType().Name}>() to spawn a clone; the template itself never shows.", view);
-				return UniTask.CompletedTask;
-			}
-
-			if (!_viewRegistry.TryGetValue(view, out var record))
-			{
-				Debug.LogError($"Cannot show view '{view.name}': not registered.", view);
-				return UniTask.CompletedTask;
-			}
+			if (!TryResolveExisting(view, out var record)) return UniTask.CompletedTask;
 
 			return ShowRegisteredViewAsync(view, record.Parent, context, stackBehaviour, ct: ct);
 		}
@@ -375,23 +397,7 @@ namespace AK.Systems
 		/// </summary>
 		internal UniTask ShowExistingViewParallel(UIView view, UIContext context = null, CancellationToken ct = default)
 		{
-			if (view == null || view.gameObject == null)
-			{
-				Debug.LogError("Cannot show view: view or its GameObject is null.");
-				return UniTask.CompletedTask;
-			}
-
-			if (view.IsTemplate)
-			{
-				Debug.LogWarning($"'{view.name}' is a template — call ShowFragment<{view.GetType().Name}>() to spawn a clone; the template itself never shows.", view);
-				return UniTask.CompletedTask;
-			}
-
-			if (!_viewRegistry.TryGetValue(view, out var record))
-			{
-				Debug.LogError($"Cannot show view '{view.name}': not registered.", view);
-				return UniTask.CompletedTask;
-			}
+			if (!TryResolveExisting(view, out var record)) return UniTask.CompletedTask;
 
 			UIView parent = record.Parent;
 			if (parent == null)
@@ -399,18 +405,36 @@ namespace AK.Systems
 				return ShowRegisteredViewAsync(view, null, context, null, ct: ct);
 			}
 
-			if (!_historyStacks.TryGetValue(parent, out var history))
-			{
-				history = new Stack<UIView>();
-				_historyStacks[parent] = history;
-			}
-
 			view.PrepareForShowAnimation();
 			view.SetContext(context);
-			RemoveFromStack(view, history);
-			history.Push(view);
+			GetOrCreateHistory(parent).MoveToTop(view);
 
 			return view.InternalShowAsync(ct);
+		}
+
+		private bool TryResolveExisting(UIView view, out ViewRecord record)
+		{
+			record = null;
+
+			if (view == null || view.gameObject == null)
+			{
+				Debug.LogError("Cannot show view: view or its GameObject is null.");
+				return false;
+			}
+
+			if (view.IsTemplate)
+			{
+				Debug.LogWarning($"'{view.name}' is a template — call ShowFragment<{view.GetType().Name}>() to spawn a clone; the template itself never shows.", view);
+				return false;
+			}
+
+			if (!_viewRegistry.TryGetValue(view, out record))
+			{
+				Debug.LogError($"Cannot show view '{view.name}': not registered.", view);
+				return false;
+			}
+
+			return true;
 		}
 
 		/// <summary>
@@ -423,20 +447,14 @@ namespace AK.Systems
 		{
 			if (parent == null || entries == null || entries.Count == 0) return;
 
-			// Ensure the history stack exists
-			if (!_historyStacks.TryGetValue(parent, out var history))
-			{
-				history = new Stack<UIView>();
-				_historyStacks[parent] = history;
-			}
+			ViewStack history = GetOrCreateHistory(parent);
 
-			var tasks = new List<UniTask>();
-
-			foreach (var entry in entries)
+			for (int i = 0; i < entries.Count; i++)
 			{
+				StaticViewEntry entry = entries[i];
 				if (entry.View == null || !entry.ShowOnStart) continue;
 				if (entry.View.IsTemplate) continue;   // templates are clone sources, never presented
-				if (!_viewRegistry.TryGetValue(entry.View, out _)) continue;
+				if (!_viewRegistry.ContainsKey(entry.View)) continue;
 
 				if (entry.ShowOnStartDelay > 0f)
 				{
@@ -448,15 +466,11 @@ namespace AK.Systems
 
 				// Prepare and push onto history stack synchronously (no stack behaviour between siblings)
 				entry.View.PrepareForShowAnimation();
-				RemoveFromStack(entry.View, history);
-				history.Push(entry.View);
+				history.MoveToTop(entry.View);
 
-				// Collect animation tasks — they'll all run in parallel
-				tasks.Add(entry.View.InternalShowAsync());
+				// Each child animates independently; nothing awaits the batch as a whole.
+				entry.View.InternalShowAsync().Forget();
 			}
-
-			// Fire-and-forget the parallel batch
-			UniTask.WhenAll(tasks).Forget();
 		}
 
 		/// <summary>
@@ -494,6 +508,94 @@ namespace AK.Systems
 		}
 
 		// =================================================================
+		// REGISTRY INDEX
+		// =================================================================
+
+		private ViewRecord FirstOfKind(ViewKey key)
+		{
+			return _recordsByKind.TryGetValue(key, out var head) ? head : null;
+		}
+
+		private void Register(ViewRecord record)
+		{
+			_viewRegistry.Add(record.Instance, record);
+
+			if (_recordsByKind.TryGetValue(record.Kind, out var head))
+			{
+				record.NextOfKind = head;
+			}
+
+			_recordsByKind[record.Kind] = record;
+		}
+
+		private void Unregister(UIView view)
+		{
+			if (!_viewRegistry.TryGetValue(view, out var record)) return;
+
+			_viewRegistry.Remove(view);
+
+			if (!_recordsByKind.TryGetValue(record.Kind, out var head)) return;
+
+			if (ReferenceEquals(head, record))
+			{
+				if (record.NextOfKind == null) _recordsByKind.Remove(record.Kind);
+				else _recordsByKind[record.Kind] = record.NextOfKind;
+			}
+			else
+			{
+				for (var current = head; current.NextOfKind != null; current = current.NextOfKind)
+				{
+					if (ReferenceEquals(current.NextOfKind, record))
+					{
+						current.NextOfKind = record.NextOfKind;
+						break;
+					}
+				}
+			}
+
+			record.NextOfKind = null;
+		}
+
+		/// <summary>
+		/// Static instance of a kind that is not tearing down. With a parent, only one
+		/// registered under that parent; without, any static of the kind (it re-routes onto
+		/// its own host).
+		/// </summary>
+		private ViewRecord FindStaticRecord(ViewKey key, UIView parent)
+		{
+			for (var record = FirstOfKind(key); record != null; record = record.NextOfKind)
+			{
+				if (!record.IsStatic) continue;
+				if (parent != null && record.Parent != parent) continue;
+
+				UIView instance = record.Instance;
+				if (instance != null && !_closingViews.Contains(instance))
+				{
+					return record;
+				}
+			}
+
+			return null;
+		}
+
+		/// <summary>Dynamic instance of a kind already open under <paramref name="parent"/>, not tearing down.</summary>
+		private ViewRecord FindDynamicRecord(ViewKey key, UIView parent)
+		{
+			for (var record = FirstOfKind(key); record != null; record = record.NextOfKind)
+			{
+				if (record.IsStatic || record.Parent != parent) continue;
+
+				UIView instance = record.Instance;
+				if (instance != null && !_closingViews.Contains(instance))
+				{
+					return record;
+				}
+			}
+
+			return null;
+		}
+
+		// =================================================================
 		// CORE — Prepare and Register (synchronous instantiation)
 		// =================================================================
 
@@ -509,31 +611,14 @@ namespace AK.Systems
 			bool immediate = false, bool waitForPrevious = false)
 			where TView : UIView
 		{
-			string id = viewId ?? string.Empty;
+			var key = new ViewKey(type, viewId);
 
-			// =================================================================
+			// Static registrations take precedence over the repository:
 			//   • Explicit parent → reuse only a static already registered under THAT parent.
-			//   • No parent       → reuse any static for (type, id) and re-route it onto its
+			//   • No parent       → reuse any static for the kind and re-route it onto its
 			//                       own registered host parent (its effective parent).
-			//
-			// Only when no static is registered do we fall through to the repository
-			// (instantiate/clone a prefab). Views mid-close are excluded so we never
-			// reuse a view that is currently tearing down.
-			// =================================================================
-			ViewRecord staticRecord = parent != null
-				? _viewRegistry.Values.FirstOrDefault(r =>
-					r.Instance != null &&
-					r.Instance.GetType() == type &&
-					r.Instance.ViewId == id &&
-					r.Parent == parent &&
-					r.IsStatic &&
-					!_closingViews.Contains(r.Instance))
-				: _viewRegistry.Values.FirstOrDefault(r =>
-					r.Instance != null &&
-					r.Instance.GetType() == type &&
-					r.Instance.ViewId == id &&
-					r.IsStatic &&
-					!_closingViews.Contains(r.Instance));
+			// Views mid-close are excluded so we never reuse a view that is tearing down.
+			ViewRecord staticRecord = FindStaticRecord(key, parent);
 
 			if (staticRecord != null && staticRecord.Instance is TView staticView)
 			{
@@ -552,14 +637,13 @@ namespace AK.Systems
 			}
 
 			// --- Find prefab (repository fallback) ---
-			var prefab = FindPrefab<TView>(type, id);
-			if (prefab == null)
+			if (!TryFindPrefab(key, out PrefabEntry prefabEntry) || prefabEntry.Prefab is not TView prefab)
 			{
-				Debug.LogError($"View prefab of type {type.Name} with ID '{id}' not found in UIViewRepository.");
+				Debug.LogError($"View prefab of type {type.Name} with ID '{key.ViewId}' not found in UIViewRepository.");
 				return (null, UniTask.CompletedTask);
 			}
 
-			bool isScreen = prefab.GetComponent<UIViewChannel>() != null;
+			bool isScreen = prefabEntry.IsScreen;
 
 			// --- Resolve parent for fragments ---
 			if (!isScreen && parent == null)
@@ -575,22 +659,10 @@ namespace AK.Systems
 			// --- Check for an existing DYNAMIC instance on this parent ---
 			// Static instances are resolved above; this only finds a dynamic instance that
 			// must be closed-and-replaced when multiple instances are not allowed.
-			ViewRecord existingRecord = _viewRegistry.Values.FirstOrDefault(r =>
-				r.Instance.GetType() == type && r.Instance.ViewId == id && r.Parent == parent
-				&& !r.IsStatic
-				&& !_closingViews.Contains(r.Instance));
-
-			// When replacing an existing dynamic instance, the close must be sequenced BEFORE the
-			// new show pipeline: otherwise the old close's resume-of-previous can run after the new
-			// show paused that same view, leaving it visible/interactable on top of the new view.
-			UniTask replaceCloseTask = UniTask.CompletedTask;
-			bool    hasReplaceClose  = false;
-
-			if (existingRecord != null && !prefab.AllowMultipleInstances)
-			{
-				replaceCloseTask = CloseInternalAsync(existingRecord.Instance, CloseContext.Normal, false);
-				hasReplaceClose  = true;
-			}
+			// When replacing, the close is sequenced BEFORE the new show pipeline: otherwise
+			// the old close's resume-of-previous can run after the new show paused that same
+			// view, leaving it visible/interactable on top of the new view.
+			UIView replaced = prefab.AllowMultipleInstances ? null : FindDynamicRecord(key, parent)?.Instance;
 
 			// --- Instantiate or get from pool ---
 			Transform spawnParent = isScreen
@@ -599,9 +671,9 @@ namespace AK.Systems
 
 			TView newView = _viewPool.Get(prefab, spawnParent);
 
-			if (!string.IsNullOrEmpty(id) && string.IsNullOrEmpty(newView.ViewId))
+			if (key.ViewId.Length != 0 && string.IsNullOrEmpty(newView.ViewId))
 			{
-				newView.SetViewId(id);
+				newView.SetViewId(key.ViewId);
 			}
 
 			// --- Configure ---
@@ -617,7 +689,7 @@ namespace AK.Systems
 
 			// --- Register ---
 			var record = new ViewRecord(newView, parent, isStatic: false);
-			_viewRegistry.Add(newView, record);
+			Register(record);
 
 			if (parent != null && _viewRegistry.TryGetValue(parent, out var parentRecord))
 			{
@@ -629,16 +701,16 @@ namespace AK.Systems
 
 			// --- Build the animation pipeline (but don't start it yet) ---
 			UniTask animTask;
-			if (isScreen)
+			if (replaced != null)
 			{
-				animTask = hasReplaceClose
-					? AwaitReplaceCloseThen(replaceCloseTask, () => RunScreenShowAsync(newView, channelOverride, immediate))
-					: RunScreenShowAsync(newView, channelOverride, immediate);
+				animTask = isScreen
+					? ReplaceThenShowScreenAsync(replaced, newView, channelOverride, immediate)
+					: ReplaceThenShowFragmentAsync(replaced, newView, parent, immediate, waitForPrevious);
 			}
 			else
 			{
-				animTask = hasReplaceClose
-					? AwaitReplaceCloseThen(replaceCloseTask, () => RunFragmentShowAsync(newView, parent, immediate, waitForPrevious: waitForPrevious))
+				animTask = isScreen
+					? RunScreenShowAsync(newView, channelOverride, immediate)
 					: RunFragmentShowAsync(newView, parent, immediate, waitForPrevious: waitForPrevious);
 			}
 
@@ -684,7 +756,7 @@ namespace AK.Systems
 			clone.SetContext(context);
 
 			var record = new ViewRecord(clone, parent, isStatic: false);
-			_viewRegistry.Add(clone, record);
+			Register(record);
 
 			if (_viewRegistry.TryGetValue(parent, out var parentRecord))
 			{
@@ -697,21 +769,31 @@ namespace AK.Systems
 		}
 
 		/// <summary>
-		/// Awaits a replace-close before starting the show pipeline (see PrepareAndRegisterView).
-		/// Close failures are logged but never block the new show.
+		/// Closes the instance being replaced before the new screen's show pipeline starts
+		/// (see PrepareAndRegisterView). Close failures are logged but never block the show.
 		/// </summary>
-		private async UniTask AwaitReplaceCloseThen(UniTask closeTask, Func<UniTask> showPipeline)
+		private async UniTask ReplaceThenShowScreenAsync(UIView replaced, UIView newView, UIChannel? channelOverride, bool immediate)
+		{
+			await CloseReplacedAsync(replaced);
+			await RunScreenShowAsync(newView, channelOverride, immediate);
+		}
+
+		private async UniTask ReplaceThenShowFragmentAsync(UIView replaced, UIView newView, UIView parent, bool immediate, bool waitForPrevious)
+		{
+			await CloseReplacedAsync(replaced);
+			await RunFragmentShowAsync(newView, parent, immediate, waitForPrevious: waitForPrevious);
+		}
+
+		private async UniTask CloseReplacedAsync(UIView replaced)
 		{
 			try
 			{
-				await closeTask;
+				await CloseInternalAsync(replaced, CloseContext.Normal, false);
 			}
 			catch (Exception e)
 			{
 				Debug.LogException(e);
 			}
-
-			await showPipeline();
 		}
 
 		// =================================================================
@@ -725,24 +807,14 @@ namespace AK.Systems
 		private async UniTask RunScreenShowAsync(UIView newView, UIChannel? overrideChannel = null, bool immediate = false, CancellationToken ct = default)
 		{
 			UIViewChannel channel = newView.Channel;
-			UIChannel sortOrder = channel.SortOrder;
+			UIChannel sortOrder = overrideChannel ?? channel.SortOrder;
 
-			if (overrideChannel != null)
-			{
-				sortOrder = overrideChannel.Value;
-			}
-
-			if (!_channelStacks.ContainsKey(sortOrder))
-			{
-				_channelStacks[sortOrder] = new Stack<UIView>();
-			}
-
-			var stack = _channelStacks[sortOrder];
+			ViewStack stack = GetOrCreateChannelStack(sortOrder);
 			stack.Push(newView);
 
 			channel.Initialize(_uiCamera, stack.Count);
 
-			UIView previousView = stack.Count > 1 ? stack.Skip(1).First() : null;
+			UIView previousView = stack.PeekBelowTopOrNull();
 
 			if (previousView != null)
 			{
@@ -812,15 +884,8 @@ namespace AK.Systems
 			{
 				// Independent sibling: push history synchronously and animate immediately,
 				// skipping the per-parent gate and stack-behaviour negotiation.
-				if (!_historyStacks.TryGetValue(parent, out var bypassHistory))
-				{
-					bypassHistory = new Stack<UIView>();
-					_historyStacks[parent] = bypassHistory;
-				}
-
 				newView.PrepareForShowAnimation();
-				RemoveFromStack(newView, bypassHistory);
-				bypassHistory.Push(newView);
+				GetOrCreateHistory(parent).MoveToTop(newView);
 
 				await newView.InternalShowAsync(ct, immediate);
 				return;
@@ -828,17 +893,7 @@ namespace AK.Systems
 
 			// Wait for any pending show on this parent to complete first.
 			// This serializes rapid Show calls (e.g., double-tap) so they don't fight.
-			if (_pendingShowTasks.TryGetValue(parent, out var pending))
-			{
-				try
-				{
-					await pending.Task;
-				}
-				catch
-				{
-					/* swallow — we only care about sequencing */
-				}
-			}
+			await WaitForPendingShow(parent);
 
 			var completionSource = new UniTaskCompletionSource();
 			_pendingShowTasks[parent] = completionSource;
@@ -855,31 +910,20 @@ namespace AK.Systems
 			}
 			finally
 			{
-				// Clean up — only remove if it's still our completion source (prevents race with concurrent shows)
-				if (_pendingShowTasks.TryGetValue(parent, out var existing) && ReferenceEquals(existing, completionSource))
-					_pendingShowTasks.Remove(parent);
+				ReleasePendingShow(parent, completionSource);
 			}
 		}
 
 		private async UniTask RunFragmentShowInternalAsync(UIView newView, UIView parent, bool immediate, CancellationToken ct)
 		{
-			if (!_historyStacks.TryGetValue(parent, out var history))
-			{
-				history = new Stack<UIView>();
-				_historyStacks[parent] = history;
-			}
+			ViewStack history = GetOrCreateHistory(parent);
 
 			// Capture previous fragment before pushing
-			UIView previousFragment = null;
-			if (history.Count > 0)
-			{
-				var top = history.Peek();
-				if (top != newView) previousFragment = top;
-			}
+			UIView previousFragment = history.PeekOrNull();
+			if (previousFragment == newView) previousFragment = null;
 
 			// Remove if already in history (bring to top)
-			RemoveFromStack(newView, history);
-			history.Push(newView);
+			history.MoveToTop(newView);
 
 			newView.PrepareForShowAnimation();
 
@@ -932,45 +976,31 @@ namespace AK.Systems
 		private async UniTask ShowRegisteredViewAsync(UIView view, UIView parent, UIContext context,
 		                                              ViewStackBehaviour? stackBehaviour, bool immediate = false, CancellationToken ct = default)
 		{
-			if (parent != null)
+			if (parent == null)
 			{
-				// Wait for any pending show on this parent to complete first.
-				if (_pendingShowTasks.TryGetValue(parent, out var pending))
-				{
-					try
-					{
-						await pending.Task;
-					}
-					catch
-					{
-						/* swallow — we only care about sequencing */
-					}
-				}
-
-				UniTaskCompletionSource completionSource = new();
-				_pendingShowTasks[parent] = completionSource;
-
-				try
-				{
-					await ShowRegisteredViewInternalAsync(view, parent, context, stackBehaviour, immediate, ct);
-					completionSource.TrySetResult();
-				}
-				catch (Exception ex)
-				{
-					completionSource.TrySetException(ex);
-					throw;
-				}
-				finally
-				{
-					// Clean up — only remove if it's still our completion source (prevents race with concurrent shows)
-					if (_pendingShowTasks.TryGetValue(parent, out var existing) && ReferenceEquals(existing, completionSource))
-						_pendingShowTasks.Remove(parent);
-				}
-
+				await ShowRegisteredViewInternalAsync(view, null, context, stackBehaviour, immediate, ct);
 				return;
 			}
 
-			await ShowRegisteredViewInternalAsync(view, parent, context, stackBehaviour, immediate, ct);
+			await WaitForPendingShow(parent);
+
+			UniTaskCompletionSource completionSource = new();
+			_pendingShowTasks[parent] = completionSource;
+
+			try
+			{
+				await ShowRegisteredViewInternalAsync(view, parent, context, stackBehaviour, immediate, ct);
+				completionSource.TrySetResult();
+			}
+			catch (Exception ex)
+			{
+				completionSource.TrySetException(ex);
+				throw;
+			}
+			finally
+			{
+				ReleasePendingShow(parent, completionSource);
+			}
 		}
 
 		private async UniTask ShowRegisteredViewInternalAsync(UIView view, UIView parent, UIContext context,
@@ -986,21 +1016,12 @@ namespace AK.Systems
 				return;
 			}
 
-			if (!_historyStacks.TryGetValue(parent, out var history))
-			{
-				history = new Stack<UIView>();
-				_historyStacks[parent] = history;
-			}
+			ViewStack history = GetOrCreateHistory(parent);
 
-			UIView previousView = null;
-			if (history.Count > 0)
-			{
-				var top = history.Peek();
-				if (top != view) previousView = top;
-			}
+			UIView previousView = history.PeekOrNull();
+			if (previousView == view) previousView = null;
 
-			RemoveFromStack(view, history);
-			history.Push(view);
+			history.MoveToTop(view);
 
 			if (previousView != null)
 			{
@@ -1018,6 +1039,27 @@ namespace AK.Systems
 			{
 				await view.InternalShowAsync(ct, immediate);
 			}
+		}
+
+		private async UniTask WaitForPendingShow(UIView parent)
+		{
+			if (!_pendingShowTasks.TryGetValue(parent, out var pending)) return;
+
+			try
+			{
+				await pending.Task;
+			}
+			catch
+			{
+				/* swallow — we only care about sequencing */
+			}
+		}
+
+		/// <summary>Drops the gate only if it is still ours — a later show may have replaced it.</summary>
+		private void ReleasePendingShow(UIView parent, UniTaskCompletionSource ours)
+		{
+			if (_pendingShowTasks.TryGetValue(parent, out var existing) && ReferenceEquals(existing, ours))
+				_pendingShowTasks.Remove(parent);
 		}
 
 		// =================================================================
@@ -1051,9 +1093,7 @@ namespace AK.Systems
 		private async UniTask CloseScreenAsync(UIView view, ViewRecord record, CloseContext context,
 		                                       bool immediate, CancellationToken ct)
 		{
-			UIChannel sortOrder = view.Channel.SortOrder;
-
-			if (!_channelStacks.TryGetValue(sortOrder, out var stack))
+			if (!_channelStacks.TryGetValue(EffectiveChannel(view), out var stack))
 			{
 				await DestroyViewAsync(view, record, context, immediate, ct);
 				return;
@@ -1062,9 +1102,8 @@ namespace AK.Systems
 			// CASE 1: Not at the top — remove from stack, destroy immediately
 			if (stack.Count == 0 || stack.Peek() != view)
 			{
-				if (stack.Contains(view))
+				if (stack.Remove(view))
 				{
-					RemoveFromStack(view, stack);
 					RecomputeChannelSorting(stack);
 				}
 
@@ -1077,7 +1116,7 @@ namespace AK.Systems
 			RecomputeChannelSorting(stack);
 			_closingViews.Add(view);
 
-			UIView previousView = stack.Count > 0 ? stack.Peek() : null;
+			UIView previousView = stack.PeekOrNull();
 
 			try
 			{
@@ -1134,9 +1173,9 @@ namespace AK.Systems
 					// CASE 2: Mid-stack removal.
 					// Before removing, find the fragment directly below the one being closed.
 					// We need this to determine if it should be resumed after removal.
-					UIView fragmentBelow = FindBelowInStack(view, history);
+					UIView fragmentBelow = history.BelowOrNull(view);
 
-					RemoveFromStack(view, history);
+					history.Remove(view);
 
 					await HideAndDestroyAsync(view, record, context, immediate, ct);
 
@@ -1160,7 +1199,7 @@ namespace AK.Systems
 							or ViewStackBehaviour.PauseAndHideBelow
 							or ViewStackBehaviour.PauseOnlyBelow;
 
-						if (wasHiddenOrBlocked && !IsViewCoveredByAnythingAbove(fragmentBelow, history))
+						if (wasHiddenOrBlocked && !history.IsCoveredAbove(fragmentBelow))
 						{
 							await ResumeFragmentFromMidStackAsync(fragmentBelow, view.StackBehaviour, immediate, ct);
 						}
@@ -1202,7 +1241,7 @@ namespace AK.Systems
 
 			// Now safe to pop — the view is valid and we have its record.
 			history.Pop();
-			UIView previousView = history.Count > 0 ? history.Peek() : null;
+			UIView previousView = history.PeekOrNull();
 
 			bool parallel = !immediate &&
 			                previousView != null &&
@@ -1210,7 +1249,7 @@ namespace AK.Systems
 
 			try
 			{
-				if (parallel && previousView != null)
+				if (parallel)
 				{
 					await UniTask.WhenAll(
 						HideAndDestroyAsync(currentView, record, CloseContext.Normal, immediate, ct),
@@ -1243,6 +1282,7 @@ namespace AK.Systems
 				switch (newView.StackBehaviour)
 				{
 					case ViewStackBehaviour.PauseAndHideBelow:
+					case ViewStackBehaviour.HideBelow:
 						previousView.OnPause();
 						PauseFragments(previousView);
 						await previousView.InternalPauseHideAsync(false, ct);
@@ -1252,13 +1292,6 @@ namespace AK.Systems
 					case ViewStackBehaviour.PauseOnlyBelow:
 						previousView.OnPause();
 						PauseFragments(previousView);
-						previousView.SetInteractable(false);
-						break;
-
-					case ViewStackBehaviour.HideBelow:
-						previousView.OnPause();
-						PauseFragments(previousView);
-						await previousView.InternalPauseHideAsync(false, ct);
 						previousView.SetInteractable(false);
 						break;
 
@@ -1284,6 +1317,9 @@ namespace AK.Systems
 				switch (closedView.StackBehaviour)
 				{
 					case ViewStackBehaviour.PauseAndHideBelow:
+					case ViewStackBehaviour.HideBelow:
+						// Both hid the view and called OnPause, so show it back and resume
+						// children that were implicitly hidden along with the parent.
 						await previousView.InternalResumeShowAsync(ct, immediate);
 						previousView.SetInteractable(true);
 						ResumeFragments(previousView);
@@ -1291,15 +1327,6 @@ namespace AK.Systems
 						break;
 
 					case ViewStackBehaviour.PauseOnlyBelow:
-						previousView.SetInteractable(true);
-						ResumeFragments(previousView);
-						previousView.OnResume();
-						break;
-
-					case ViewStackBehaviour.HideBelow:
-						// HideBelow hid the view and called OnPause, so we need to show it back
-						// and resume children that were implicitly hidden along with the parent.
-						await previousView.InternalResumeShowAsync(ct, immediate);
 						previousView.SetInteractable(true);
 						ResumeFragments(previousView);
 						previousView.OnResume();
@@ -1398,13 +1425,8 @@ namespace AK.Systems
 				switch (closedView.StackBehaviour)
 				{
 					case ViewStackBehaviour.PauseAndHideBelow:
-						await previousFragment.InternalResumeShowAsync(ct, immediate);
-						previousFragment.SetInteractable(true);
-						previousFragment.OnResume();
-						break;
-
 					case ViewStackBehaviour.HideBelow:
-						// HideBelow hid the fragment and called OnPause, so show it back
+						// Both hid the fragment and called OnPause, so show it back
 						// and restore interactable + call OnResume for symmetry with pause.
 						await previousFragment.InternalResumeShowAsync(ct, immediate);
 						previousFragment.SetInteractable(true);
@@ -1446,19 +1468,19 @@ namespace AK.Systems
 					parentRecord.RemoveChild(view);
 				}
 
-				_viewRegistry.Remove(view);
+				Unregister(view);
 			}
 
 			_closingViews.Remove(view);
 
 			foreach (var stack in _channelStacks.Values)
 			{
-				RemoveFromStack(view, stack);
+				stack.Remove(view);
 			}
 
 			foreach (var history in _historyStacks.Values)
 			{
-				RemoveFromStack(view, history);
+				history.Remove(view);
 			}
 		}
 
@@ -1533,7 +1555,7 @@ namespace AK.Systems
 				parentRecord.RemoveChild(view);
 			}
 
-			_viewRegistry.Remove(view);
+			Unregister(view);
 
 			if (record.Instance.ReturnToPoolOnClose && record.IsDynamic)
 			{
@@ -1542,7 +1564,7 @@ namespace AK.Systems
 			else
 			{
 				view.InternalCleanup();
-				Destroy(view.gameObject);
+				DestroyViewObject(view.gameObject);
 			}
 
 			view._overriddenStackBehaviour = null;
@@ -1572,9 +1594,9 @@ namespace AK.Systems
 				parentRecord.RemoveChild(view);
 			}
 
-			_viewRegistry.Remove(view);
+			Unregister(view);
 			view.InternalCleanup();
-			Destroy(view.gameObject);
+			DestroyViewObject(view.gameObject);
 		}
 
 		/// <summary>
@@ -1588,11 +1610,12 @@ namespace AK.Systems
 			if (!_viewRegistry.TryGetValue(parent, out var record)) return;
 
 			// Snapshot — record.Children mutates as children settle during their closes.
-			var children = new List<UIView>(record.Children);
+			// A plain array, not a rented list: the sequential branch awaits between uses.
+			UIView[] children = record.Children.ToArray();
 
 			if (order == ChildCloseOrder.ChildrenFirstSequential)
 			{
-				for (int i = children.Count - 1; i >= 0; i--)
+				for (int i = children.Length - 1; i >= 0; i--)
 				{
 					var child = children[i];
 					if (child != null)
@@ -1603,14 +1626,11 @@ namespace AK.Systems
 			}
 			else
 			{
-				var tasks = new List<UniTask>();
-				for (int i = children.Count - 1; i >= 0; i--)
+				var tasks = new UniTask[children.Length];
+				for (int i = children.Length - 1, t = 0; i >= 0; i--, t++)
 				{
 					var child = children[i];
-					if (child != null)
-					{
-						tasks.Add(CloseChildRecursivelyAsync(child, immediate, ct));
-					}
+					tasks[t] = child != null ? CloseChildRecursivelyAsync(child, immediate, ct) : UniTask.CompletedTask;
 				}
 
 				await UniTask.WhenAll(tasks);
@@ -1654,12 +1674,12 @@ namespace AK.Systems
 					// InternalCleanup runs full lifecycle: OnPrepareHide → OnHide → UnRegisterResources → NullifyContext
 					// It is idempotent, safe if hide already ran.
 					child.InternalCleanup();
-					_viewRegistry.Remove(child);
+					Unregister(child);
 
 					// Remove from any history stack
 					if (child.ParentView != null && _historyStacks.TryGetValue(child.ParentView, out var history))
 					{
-						RemoveFromStack(child, history);
+						history.Remove(child);
 					}
 
 					if (shouldDestroy)
@@ -1700,11 +1720,11 @@ namespace AK.Systems
 					// Dynamic children are destroyed — recurse with ParentDestroyed
 					CloseChildrenImmediate(child, CloseContext.ParentDestroyed);
 					child.InternalCleanup();
-					_viewRegistry.Remove(child);
+					Unregister(child);
 
 					if (child.ParentView != null && _historyStacks.TryGetValue(child.ParentView, out var history))
 					{
-						RemoveFromStack(child, history);
+						history.Remove(child);
 					}
 
 					record.RemoveChild(child);
@@ -1718,7 +1738,7 @@ namespace AK.Systems
 						}
 						else
 						{
-							Destroy(child.gameObject);
+							DestroyViewObject(child.gameObject);
 						}
 					}
 				}
@@ -1731,7 +1751,7 @@ namespace AK.Systems
 
 					if (child.ParentView != null && _historyStacks.TryGetValue(child.ParentView, out var history))
 					{
-						RemoveFromStack(child, history);
+						history.Remove(child);
 					}
 				}
 			}
@@ -1740,7 +1760,7 @@ namespace AK.Systems
 			_pendingShowTasks.Remove(parent);
 		}
 
-		private bool ShouldDestroyView(ViewRecord record, CloseContext context)
+		private static bool ShouldDestroyView(ViewRecord record, CloseContext context)
 		{
 			if (record.IsDynamic) return true;
 			return context == CloseContext.ParentDestroyed || context == CloseContext.ForceDestroy;
@@ -1749,73 +1769,6 @@ namespace AK.Systems
 		// =================================================================
 		// HELPERS
 		// =================================================================
-
-		/// <summary>
-		/// Finds the view directly below the given view in a history stack.
-		/// Returns null if the view is at the bottom or not found.
-		/// Does NOT modify the stack.
-		/// </summary>
-		private static UIView FindBelowInStack(UIView target, Stack<UIView> stack)
-		{
-			// ToArray: index 0 = top of stack, last index = bottom
-			var items = stack.ToArray();
-			for (int i = 0; i < items.Length; i++)
-			{
-				if (items[i] == target)
-				{
-					// The view below is at index i+1 (deeper in the stack)
-					return (i + 1 < items.Length) ? items[i + 1] : null;
-				}
-			}
-
-			return null;
-		}
-
-		/// <summary>
-		/// Checks whether a view is still being covered (hidden or blocked) by any other view
-		/// above it in the remaining history stack.
-		///
-		/// This is needed when removing a mid-stack fragment: even though the removed fragment was
-		/// hiding/blocking the one below, another fragment further up in the stack might also be
-		/// covering it, in which case we should NOT resume.
-		///
-		/// We walk from the target's position upward to the top. If any view above it has
-		/// HideBelow, PauseAndHideBelow, or PauseOnlyBelow, then it is still covered.
-		/// </summary>
-		private static bool IsViewCoveredByAnythingAbove(UIView target, Stack<UIView> stack)
-		{
-			// ToArray: index 0 = top of stack, last index = bottom
-			var items = stack.ToArray();
-
-			int targetIndex = -1;
-			for (int i = 0; i < items.Length; i++)
-			{
-				if (items[i] == target)
-				{
-					targetIndex = i;
-					break;
-				}
-			}
-
-			if (targetIndex < 0)
-			{
-				return false; // View not in stack, nothing covers it
-			}
-
-			// Check all views above the target (from just above it to the top of stack)
-			for (int i = targetIndex - 1; i >= 0; i--)
-			{
-				var above = items[i];
-				if (above.StackBehaviour is ViewStackBehaviour.HideBelow
-					or ViewStackBehaviour.PauseAndHideBelow
-					or ViewStackBehaviour.PauseOnlyBelow)
-				{
-					return true; // Something above is still covering this view
-				}
-			}
-
-			return false;
-		}
 
 		/// <summary>
 		/// Resumes a fragment that was previously hidden or blocked by a fragment that has now been
@@ -1862,11 +1815,9 @@ namespace AK.Systems
 			// Initialize below any real channel so HUD (0) can be selected as fallback.
 			UIChannel bestSortOrder = (UIChannel)(-1);
 
-			foreach ((UIChannel effectiveOrder, Stack<UIView> value) in _channelStacks)
+			foreach ((UIChannel effectiveOrder, ViewStack stack) in _channelStacks)
 			{
-				if (value.Count == 0) continue;
-
-				var topView = value.Peek();
+				if (stack.Count == 0) continue;
 
 				// If a preferred channel is requested, only consider that channel.
 				if (preferredChannel.HasValue && effectiveOrder != preferredChannel.Value)
@@ -1876,7 +1827,7 @@ namespace AK.Systems
 				if (effectiveOrder > bestSortOrder)
 				{
 					bestSortOrder = effectiveOrder;
-					bestCandidate = topView;
+					bestCandidate = stack.Peek();
 				}
 			}
 
@@ -1906,21 +1857,55 @@ namespace AK.Systems
 		}
 
 		/// <summary>
-		/// O(1) prefab lookup by (Type, ViewId). Caches the lookup dictionary on first access.
+		/// The channel stack a screen was pushed onto: its override when one was supplied at
+		/// show time, else the channel component's sort order.
 		/// </summary>
-		private TView FindPrefab<TView>(Type type, string viewId) where TView : UIView
+		private static UIChannel EffectiveChannel(UIView screen)
+		{
+			return screen._overriddenChannel ?? screen.Channel.SortOrder;
+		}
+
+		private ViewStack GetOrCreateChannelStack(UIChannel channel)
+		{
+			if (!_channelStacks.TryGetValue(channel, out var stack))
+			{
+				stack = new ViewStack();
+				_channelStacks[channel] = stack;
+			}
+
+			return stack;
+		}
+
+		private ViewStack GetOrCreateHistory(UIView parent)
+		{
+			if (!_historyStacks.TryGetValue(parent, out var history))
+			{
+				history = new ViewStack();
+				_historyStacks[parent] = history;
+			}
+
+			return history;
+		}
+
+		/// <summary>
+		/// O(1) prefab lookup by kind. Caches the lookup dictionary on first access, along
+		/// with whether each prefab is a screen so the show path never re-queries components.
+		/// </summary>
+		private bool TryFindPrefab(ViewKey key, out PrefabEntry entry)
 		{
 			if (_prefabLookup == null)
 			{
-				_prefabLookup = new Dictionary<(Type, string), UIView>();
-				foreach (var view in _repository.Views)
+				_prefabLookup = new Dictionary<ViewKey, PrefabEntry>();
+				IReadOnlyList<UIView> views = _repository.Views;
+				for (int i = 0; i < views.Count; i++)
 				{
+					UIView view = views[i];
 					if (view != null)
-						_prefabLookup[(view.GetType(), view.ViewId ?? string.Empty)] = view;
+						_prefabLookup[ViewKey.Of(view)] = new PrefabEntry(view, view.GetComponent<UIViewChannel>() != null);
 				}
 			}
 
-			return _prefabLookup.TryGetValue((type, viewId), out var prefab) ? prefab as TView : null;
+			return _prefabLookup.TryGetValue(key, out entry);
 		}
 
 		/// <summary>
@@ -1930,41 +1915,45 @@ namespace AK.Systems
 		/// </summary>
 		internal void CleanupDestroyedViews()
 		{
-			// Purge dead keys from _viewRegistry
-			var deadKeys = new List<UIView>();
+			using PooledList<UIView> dead = ListPool<UIView>.Rent();
+
 			foreach (var key in _viewRegistry.Keys)
 			{
-				if (key == null) deadKeys.Add(key);
+				if (key == null) dead.Add(key);
 			}
 
-			foreach (var key in deadKeys)
-			{
-				_viewRegistry.Remove(key);
-			}
+			for (int i = 0; i < dead.Count; i++) Unregister(dead[i]);
+			dead.List.Clear();
 
-			// Purge dead keys from _historyStacks
-			var deadHistoryKeys = new List<UIView>();
 			foreach (var key in _historyStacks.Keys)
 			{
-				if (key == null) deadHistoryKeys.Add(key);
+				if (key == null) dead.Add(key);
 			}
 
-			foreach (var key in deadHistoryKeys)
-			{
-				_historyStacks.Remove(key);
-			}
+			for (int i = 0; i < dead.Count; i++) _historyStacks.Remove(dead[i]);
+			dead.List.Clear();
 
-			// Purge dead keys from _pendingShowTasks
-			var deadPendingKeys = new List<UIView>();
 			foreach (var key in _pendingShowTasks.Keys)
 			{
-				if (key == null) deadPendingKeys.Add(key);
+				if (key == null) dead.Add(key);
 			}
 
-			foreach (var key in deadPendingKeys)
+			for (int i = 0; i < dead.Count; i++) _pendingShowTasks.Remove(dead[i]);
+		}
+
+		/// <summary>Number of registered views. Diagnostics and tests.</summary>
+		internal int RegisteredViewCount => _viewRegistry.Count;
+
+		/// <summary>Registered views of a kind, walking the kind index. Diagnostics and tests.</summary>
+		internal int CountOfKind(Type type, string viewId = "")
+		{
+			int count = 0;
+			for (var record = FirstOfKind(new ViewKey(type, viewId)); record != null; record = record.NextOfKind)
 			{
-				_pendingShowTasks.Remove(key);
+				count++;
 			}
+
+			return count;
 		}
 
 		/// <summary>
@@ -1973,42 +1962,17 @@ namespace AK.Systems
 		/// with a survivor's baked-in order. Stack bottom is depth 1 (matches push-time
 		/// channel.Initialize(_uiCamera, stack.Count)).
 		/// </summary>
-		private static void RecomputeChannelSorting(Stack<UIView> stack)
+		private static void RecomputeChannelSorting(ViewStack stack)
 		{
-			if (stack == null || stack.Count == 0) return;
+			if (stack == null) return;
 
-			var arr = stack.ToArray(); // top-first
-			for (int i = arr.Length - 1, depth = 1; i >= 0; i--, depth++)
+			for (int i = 0; i < stack.Count; i++)
 			{
-				var v = arr[i];
+				var v = stack[i];
 				if (v != null && v.HasChannel)
 				{
-					v.Channel.UpdateSortingOrder(depth);
+					v.Channel.UpdateSortingOrder(i + 1);
 				}
-			}
-		}
-
-		private static void RemoveFromStack<T>(T item, Stack<T> stack) where T : class
-		{
-			var temp = new Stack<T>();
-			bool found = false;
-
-			while (stack.Count > 0)
-			{
-				var current = stack.Pop();
-				if (current == item && !found)
-				{
-					found = true;
-				}
-				else
-				{
-					temp.Push(current);
-				}
-			}
-
-			while (temp.Count > 0)
-			{
-				stack.Push(temp.Pop());
 			}
 		}
 

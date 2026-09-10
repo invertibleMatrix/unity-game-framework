@@ -1,34 +1,44 @@
 using System.Collections.Generic;
 using AK.Core;
+using AK.Core.Collections;
 using UnityEngine;
-using GameObjectPool = UnityEngine.Pool.ObjectPool<UnityEngine.GameObject>; // disambiguates AK.Core.ObjectPool<T>
 
 namespace AK.Utilities
 {
 	/// <summary>
 	/// Default <see cref="IObjectPoolService"/>. POCO - register in Reflex as IObjectPoolService
 	/// (see ExampleGameBindings for the pattern), or instantiate directly in tests.
-	/// Backed by UnityEngine.Pool.ObjectPool per definition.
+	///
+	/// Every checked-out instance lives in one <see cref="SlotMap{T}"/> and is addressed by the
+	/// <see cref="Handle{T}"/> returned from <c>Lease</c>. Releasing frees the slot, so a handle
+	/// kept past the release resolves to nothing instead of to whoever leased the object next.
+	/// Get/Release are O(1) and allocate nothing once a pool has reached its working size.
 	/// </summary>
 	public class ObjectPoolService : IObjectPoolService
 	{
-		private sealed class PoolEntry
+		private sealed class Pool
 		{
-			public PoolableObjectDefinition Definition;
-			public GameObjectPool Pool;
-			public readonly HashSet<GameObject> Active = new();
+			public readonly PoolableObjectDefinition Definition;
+			public readonly Stack<PooledInstance>    Resting;
+			public int Created;
+			public int Active;
+
+			public Pool(PoolableObjectDefinition definition)
+			{
+				Definition = definition;
+				Resting    = new Stack<PooledInstance>(Mathf.Max(definition.InitialPoolSize, 8));
+			}
+
+			public int Cap => Definition.MaxPoolSize > 0 ? Mathf.Max(Definition.MaxPoolSize, Definition.InitialPoolSize) : int.MaxValue;
 		}
 
-		private readonly Dictionary<PoolableObjectDefinition, PoolEntry> _pools = new();
-
-		// Insertion-ordered definitions backing the Uid.None "first pool" fallback.
-		private readonly List<PoolableObjectDefinition> _poolOrder = new();
+		private readonly Dictionary<PoolableObjectDefinition, Pool> _pools     = new();
+		private readonly List<PoolableObjectDefinition>             _poolOrder = new();
+		private readonly Dictionary<GameObject, PooledInstance>     _byObject  = new();
+		private readonly SlotMap<PooledInstance>                    _leased    = new(64);
 
 		private ObjectPoolRegistry _registry;
-		private Transform _poolRoot;
-
-		// Cache of IPoolable components per created instance (GetComponents allocates).
-		private readonly Dictionary<GameObject, IPoolable[]> _poolableCache = new();
+		private Transform          _poolRoot;
 
 		private Transform PoolRoot
 		{
@@ -37,8 +47,8 @@ namespace AK.Utilities
 				if (_poolRoot == null)
 				{
 					var go = new GameObject("[ObjectPools]");
-					go.SetActive(false); // pooled instances inherit inactivity
-					Object.DontDestroyOnLoad(go);
+					go.SetActive(false);
+					if (Application.isPlaying) Object.DontDestroyOnLoad(go);
 					_poolRoot = go.transform;
 				}
 
@@ -54,6 +64,8 @@ namespace AK.Utilities
 			}
 		}
 
+		// ---------------------------------------------------------------- setup
+
 		public void RegisterPools(ObjectPoolRegistry registry)
 		{
 			if (registry == null)
@@ -64,8 +76,10 @@ namespace AK.Utilities
 
 			_registry = registry;
 
-			foreach (var definition in registry.Objects)
+			IReadOnlyList<PoolableObjectDefinition> definitions = registry.Objects;
+			for (int i = 0; i < definitions.Count; i++)
 			{
+				PoolableObjectDefinition definition = definitions[i];
 				if (definition == null || definition.Prefab == null) continue;
 
 				if (definition.PrewarmOnRegister)
@@ -81,64 +95,125 @@ namespace AK.Utilities
 
 		public void Prewarm(PoolableObjectDefinition definition)
 		{
-			var entry = GetOrCreatePool(definition);
-			if (entry == null) return;
+			Pool pool = GetOrCreatePool(definition);
+			if (pool == null) return;
 
-			var warmed = new List<GameObject>(definition.InitialPoolSize);
-			for (var i = 0; i < definition.InitialPoolSize; i++)
+			int target = Mathf.Min(definition.InitialPoolSize, pool.Cap);
+			while (pool.Created < target)
 			{
-				var instance = entry.Pool.Get();
-				if (instance == null) break; // pool already at cap
-				warmed.Add(instance);
-			}
-
-			foreach (var instance in warmed)
-			{
-				entry.Pool.Release(instance);
+				pool.Resting.Push(CreateInstance(pool));
 			}
 		}
+
+		// ---------------------------------------------------------------- lease
+
+		public Handle<PooledInstance> Lease(PoolableObjectDefinition definition, Vector3 position = default, Quaternion rotation = default,
+		                                    Transform parent = null)
+		{
+			Pool pool = GetOrCreatePool(definition);
+			if (pool == null) return Handle<PooledInstance>.Invalid;
+
+			PooledInstance instance;
+			if (pool.Resting.Count > 0)
+			{
+				instance = pool.Resting.Pop();
+			}
+			else if (pool.Created < pool.Cap)
+			{
+				instance = CreateInstance(pool);
+			}
+			else
+			{
+				Debug.LogWarning($"[ObjectPoolService] Pool for '{definition.name}' is empty and at MaxPoolSize ({definition.MaxPoolSize}).");
+				return Handle<PooledInstance>.Invalid;
+			}
+
+			pool.Active++;
+			instance.Lease = _leased.Add(instance);
+
+			Transform t = instance.Transform;
+			t.SetParent(parent, false);
+			t.SetPositionAndRotation(position, rotation);
+			instance.GameObject.SetActive(true);
+
+			IPoolable[] poolables = instance.Poolables;
+			for (int i = 0; i < poolables.Length; i++)
+			{
+				if (poolables[i] is PoolableObject po) po.IsInPool = false;
+				poolables[i].OnGetFromPool();
+			}
+
+			return instance.Lease;
+		}
+
+		public Handle<PooledInstance> Lease(Uid<PoolableObjectDefinition> definitionId = default, Vector3 position = default, Quaternion rotation = default,
+		                                    Transform parent = null)
+		{
+			PoolableObjectDefinition definition = ResolveDefinition(definitionId);
+			return definition == null ? Handle<PooledInstance>.Invalid : Lease(definition, position, rotation, parent);
+		}
+
+		public bool TryGet(Handle<PooledInstance> lease, out GameObject instance)
+		{
+			if (_leased.TryGet(lease, out PooledInstance pooled))
+			{
+				instance = pooled.GameObject;
+				return true;
+			}
+
+			instance = null;
+			return false;
+		}
+
+		public bool TryGet<T>(Handle<PooledInstance> lease, out T component) where T : Component
+		{
+			if (_leased.TryGet(lease, out PooledInstance pooled))
+			{
+				component = pooled.GameObject.GetComponent<T>();
+				return component != null;
+			}
+
+			component = null;
+			return false;
+		}
+
+		public bool IsLeased(Handle<PooledInstance> lease) => _leased.Contains(lease);
+
+		public bool Release(Handle<PooledInstance> lease)
+		{
+			if (!_leased.Remove(lease, out PooledInstance instance)) return false;
+
+			ReturnToPool(instance);
+			return true;
+		}
+
+		// ---------------------------------------------------------------- reference API
 
 		public GameObject Get(PoolableObjectDefinition definition, Vector3 position = default, Quaternion rotation = default,
 		                      Transform parent = null)
 		{
-			var entry = GetOrCreatePool(definition);
-			if (entry == null) return null;
-
-			var instance = entry.Pool.Get();
-			if (instance == null)
-			{
-				// ObjectPool.Get returns null when at MaxPoolSize and empty.
-				Debug.LogWarning($"[ObjectPoolService] Pool for '{definition.name}' is empty and at MaxPoolSize ({definition.MaxPoolSize}).");
-				return null;
-			}
-
-			entry.Active.Add(instance);
-
-			var t = instance.transform;
-			t.SetParent(parent, false);
-			t.SetPositionAndRotation(position, rotation);
-
-			return instance;
+			Handle<PooledInstance> lease = Lease(definition, position, rotation, parent);
+			return _leased.TryGet(lease, out PooledInstance instance) ? instance.GameObject : null;
 		}
 
 		public T Get<T>(PoolableObjectDefinition definition, Vector3 position = default, Quaternion rotation = default,
 		                Transform parent = null) where T : Component
 		{
-			var instance = Get(definition, position, rotation, parent);
+			GameObject instance = Get(definition, position, rotation, parent);
 			return instance == null ? null : instance.GetComponent<T>();
 		}
 
 		public GameObject Get(Uid<PoolableObjectDefinition> definitionId = default, Vector3 position = default, Quaternion rotation = default,
 		                      Transform parent = null)
 		{
-			var definition = ResolveDefinition(definitionId);
+			PoolableObjectDefinition definition = ResolveDefinition(definitionId);
 			return definition == null ? null : Get(definition, position, rotation, parent);
 		}
 
 		public T Get<T>(Uid<PoolableObjectDefinition> definitionId = default, Vector3 position = default, Quaternion rotation = default,
 		                Transform parent = null) where T : Component
 		{
-			var instance = Get(definitionId, position, rotation, parent);
+			GameObject instance = Get(definitionId, position, rotation, parent);
 			return instance == null ? null : instance.GetComponent<T>();
 		}
 
@@ -146,36 +221,45 @@ namespace AK.Utilities
 		{
 			if (instance == null) return;
 
-			foreach (var entry in _pools.Values)
+			if (!_byObject.TryGetValue(instance, out PooledInstance pooled))
 			{
-				if (!entry.Active.Remove(instance)) continue;
-
-				entry.Pool.Release(instance);
+				Debug.LogWarning($"[ObjectPoolService] '{instance.name}' is not tracked by any pool - destroying it.");
+				DestroyInstance(instance);
 				return;
 			}
 
-			Debug.LogWarning($"[ObjectPoolService] '{instance.name}' is not tracked by any pool (double release?) - destroying it.");
-			Object.Destroy(instance);
+			if (!_leased.Remove(pooled.Lease))
+			{
+				Debug.LogWarning($"[ObjectPoolService] '{instance.name}' released twice.", instance);
+				return;
+			}
+
+			ReturnToPool(pooled);
 		}
+
+		// ---------------------------------------------------------------- stats
 
 		public int ActiveCount(PoolableObjectDefinition definition)
 		{
-			return _pools.TryGetValue(definition, out var entry) ? entry.Active.Count : 0;
+			return _pools.TryGetValue(definition, out Pool pool) ? pool.Active : 0;
 		}
 
 		public int InactiveCount(PoolableObjectDefinition definition)
 		{
-			return _pools.TryGetValue(definition, out var entry) ? entry.Pool.CountInactive : 0;
+			return _pools.TryGetValue(definition, out Pool pool) ? pool.Resting.Count : 0;
 		}
+
+		public int LeasedCount => _leased.Count;
+
+		// ---------------------------------------------------------------- teardown
 
 		public void Clear(PoolableObjectDefinition definition = null)
 		{
 			if (definition != null)
 			{
-				if (_pools.TryGetValue(definition, out var entry))
+				if (_pools.TryGetValue(definition, out Pool pool))
 				{
-					entry.Pool.Clear();
-					entry.Pool.Dispose();
+					DestroyPool(pool);
 					_pools.Remove(definition);
 					_poolOrder.Remove(definition);
 				}
@@ -183,19 +267,20 @@ namespace AK.Utilities
 				return;
 			}
 
-			foreach (var entry in _pools.Values)
+			foreach (Pool pool in _pools.Values)
 			{
-				entry.Pool.Clear();
-				entry.Pool.Dispose();
+				DestroyPool(pool);
 			}
 
 			_pools.Clear();
 			_poolOrder.Clear();
+			_byObject.Clear();
+			_leased.Clear();
 		}
 
-		// -----------------------------------------------------------------
+		// ---------------------------------------------------------------- internals
 
-		private PoolEntry GetOrCreatePool(PoolableObjectDefinition definition)
+		private Pool GetOrCreatePool(PoolableObjectDefinition definition)
 		{
 			if (definition == null)
 			{
@@ -209,80 +294,93 @@ namespace AK.Utilities
 				return null;
 			}
 
-			if (_pools.TryGetValue(definition, out var entry))
+			if (_pools.TryGetValue(definition, out Pool pool))
 			{
-				return entry;
+				return pool;
 			}
 
-			entry = new PoolEntry { Definition = definition };
-
-#if UNITY_EDITOR
-			var collectionCheck = true;
-#else
-			var collectionCheck = false;
-#endif
-
-			entry.Pool = new GameObjectPool(
-				createFunc: () => CreateInstance(definition),
-				actionOnGet: OnGet,
-				actionOnRelease: OnRelease,
-				actionOnDestroy: inst => { if (inst != null) Object.Destroy(inst); },
-				collectionCheck: collectionCheck,
-				defaultCapacity: Mathf.Max(definition.InitialPoolSize, 8),
-				maxSize: definition.MaxPoolSize > 0 ? Mathf.Max(definition.MaxPoolSize, definition.InitialPoolSize) : int.MaxValue);
-
-			_pools.Add(definition, entry);
+			pool = new Pool(definition);
+			_pools.Add(definition, pool);
 			_poolOrder.Add(definition);
-			return entry;
+			return pool;
 		}
 
-		private GameObject CreateInstance(PoolableObjectDefinition definition)
+		private PooledInstance CreateInstance(Pool pool)
 		{
-			var instance = Object.Instantiate(definition.Prefab, PoolRoot);
-			instance.name = definition.Prefab.name;
+			GameObject go = Object.Instantiate(pool.Definition.Prefab, PoolRoot);
+			go.name = pool.Definition.Prefab.name;
 
-			_poolableCache[instance] = instance.GetComponents<IPoolable>();
+			var instance = new PooledInstance(go, go.GetComponents<IPoolable>(), pool.Definition);
 
-			if (instance.GetComponent<PoolableObject>() is { } poolable)
+			for (int i = 0; i < instance.Poolables.Length; i++)
 			{
-				poolable.SetReturnAction(po => Release(po.gameObject));
-				poolable.IsInPool = false;
+				if (instance.Poolables[i] is PoolableObject po)
+				{
+					po.SetReturnAction(ReleasePoolable);
+					po.IsInPool = true;
+				}
 			}
 
+			_byObject.Add(go, instance);
+			pool.Created++;
 			return instance;
 		}
 
-		private void OnGet(GameObject instance)
+		private void ReleasePoolable(PoolableObject poolable) => Release(poolable.gameObject);
+
+		private void ReturnToPool(PooledInstance instance)
 		{
-			if (instance == null) return;
+			instance.Lease = Handle<PooledInstance>.Invalid;
 
-			instance.SetActive(true);
-
-			if (_poolableCache.TryGetValue(instance, out var poolables))
+			IPoolable[] poolables = instance.Poolables;
+			for (int i = 0; i < poolables.Length; i++)
 			{
-				foreach (var p in poolables)
-				{
-					if (p is PoolableObject po) po.IsInPool = false;
-					p.OnGetFromPool();
-				}
+				if (poolables[i] is PoolableObject po) po.IsInPool = true;
+				poolables[i].OnReturnToPool();
+			}
+
+			if (instance.GameObject != null)
+			{
+				instance.Transform.SetParent(PoolRoot, false);
+				instance.GameObject.SetActive(false);
+			}
+
+			if (_pools.TryGetValue(instance.Definition, out Pool pool))
+			{
+				pool.Active--;
+				if (instance.GameObject != null) pool.Resting.Push(instance);
+				else pool.Created--;
 			}
 		}
 
-		private void OnRelease(GameObject instance)
+		private void DestroyPool(Pool pool)
 		{
-			if (instance == null) return;
-
-			if (_poolableCache.TryGetValue(instance, out var poolables))
+			while (pool.Resting.Count > 0)
 			{
-				foreach (var p in poolables)
-				{
-					if (p is PoolableObject po) po.IsInPool = true;
-					p.OnReturnToPool();
-				}
+				PooledInstance resting = pool.Resting.Pop();
+				_byObject.Remove(resting.GameObject);
+				if (resting.GameObject != null) DestroyInstance(resting.GameObject);
 			}
 
-			instance.transform.SetParent(PoolRoot, false);
-			instance.SetActive(false);
+			SlotMap<PooledInstance>.Enumerator leased = _leased.GetEnumerator();
+			while (leased.MoveNext())
+			{
+				PooledInstance instance = leased.Current;
+				if (instance.Definition != pool.Definition) continue;
+
+				_leased.Remove(leased.CurrentHandle);
+				_byObject.Remove(instance.GameObject);
+				if (instance.GameObject != null) DestroyInstance(instance.GameObject);
+			}
+
+			pool.Created = 0;
+			pool.Active  = 0;
+		}
+
+		private static void DestroyInstance(GameObject go)
+		{
+			if (Application.isPlaying) Object.Destroy(go);
+			else Object.DestroyImmediate(go);
 		}
 
 		private PoolableObjectDefinition ResolveDefinition(Uid<PoolableObjectDefinition> definitionId)
@@ -303,7 +401,6 @@ namespace AK.Utilities
 				return definition;
 			}
 
-			// None: first registered pool (consistent with CameraSystem's fallback).
 			if (_poolOrder.Count > 0) return _poolOrder[0];
 
 			Debug.LogWarning("[ObjectPoolService] No pools registered yet.");

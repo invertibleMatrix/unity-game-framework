@@ -14,6 +14,7 @@ namespace AK.Services.Transactions
 	/// is session-scoped.
 	///
 	/// Types are addressed by <see cref="Uid{T}"/>; the asset overloads read <c>type.Id</c>.
+	/// Expected failures come back as <see cref="Result"/> codes, never as null or exceptions.
 	/// </summary>
 	public interface ITransactionService
 	{
@@ -22,28 +23,30 @@ namespace AK.Services.Transactions
 		event Action<Transaction> Reversed;
 
 		/// <summary>Records a fact — the transaction is born Credited. Fires Recorded and Credited.</summary>
-		Transaction Record(TransactionType type, float amount = 1f, string source = null);
-		Transaction Record(Uid<TransactionType> type, float amount = 1f, string source = null);
+		Result<Transaction> Record(TransactionType type, float amount = 1f, string source = null);
+		Result<Transaction> Record(Uid<TransactionType> type, float amount = 1f, string source = null);
 
 		/// <summary>Records a transaction awaiting credit (deferred grants, IAP). Fires Recorded.</summary>
-		Transaction RecordPending(TransactionType type, IReadOnlyList<IReward> rewards = null, string source = null);
-		Transaction RecordPending(Uid<TransactionType> type, IReadOnlyList<IReward> rewards = null, string source = null);
+		Result<Transaction> RecordPending(TransactionType type, IReadOnlyList<IReward> rewards = null, string source = null);
+		Result<Transaction> RecordPending(Uid<TransactionType> type, IReadOnlyList<IReward> rewards = null, string source = null);
 
 		/// <summary>
 		/// Credits a pending transaction: grants its rewards via IRewardService (when
-		/// available), marks it Credited, fires Credited. Idempotent for already-credited
-		/// transactions; fails for Failed/Reversed ones.
+		/// available), marks it Credited, fires Credited. Ok for already-credited
+		/// transactions; <see cref="ErrorCode.TransactionNotPending"/> for Failed/Reversed ones.
+		/// A reward the provider declines does not block the credit; it is logged and skipped.
 		/// </summary>
-		UniTask<bool> CreditAsync(Transaction transaction, CancellationToken ct = default);
+		UniTask<Result> CreditAsync(Transaction transaction, CancellationToken ct = default);
 
 		/// <summary>Convenience: RecordPending + CreditAsync in one call.</summary>
-		UniTask<bool> CreditAsync(Uid<TransactionType> type, IReadOnlyList<IReward> rewards, string source = null, CancellationToken ct = default);
+		UniTask<Result<Transaction>> CreditAsync(Uid<TransactionType> type, IReadOnlyList<IReward> rewards, string source = null, CancellationToken ct = default);
 
 		/// <summary>
 		/// Takes back a credited transaction: marks it Reversed and decrements the count,
 		/// so conditions stop counting it. Reward-level revoke is a provider concern.
+		/// <see cref="ErrorCode.NotFound"/> for an unknown id, <see cref="ErrorCode.TransactionNotCredited"/> otherwise.
 		/// </summary>
-		bool Reverse(Uid transactionId);
+		Result Reverse(Uid transactionId);
 
 		/// <summary>Net credited count for a type (credits minus reversals). Persists across sessions.</summary>
 		int  Count(TransactionType type);
@@ -61,5 +64,12 @@ namespace AK.Services.Transactions
 		/// IUidResolver.
 		/// </summary>
 		IReadOnlyList<Transaction> GetPendingTransactions();
+
+		/// <summary>
+		/// Defers ledger writes until the returned scope is disposed, so a burst of records
+		/// costs one serialization and one disk flush instead of one per call. Nested scopes
+		/// flush once at the outermost dispose.
+		/// </summary>
+		LedgerBatch BeginBatch();
 	}
 }

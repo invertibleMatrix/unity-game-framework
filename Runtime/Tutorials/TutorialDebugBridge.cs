@@ -92,30 +92,34 @@ namespace AK.Tutorials
 			}
 
 			int from = Mathf.Clamp(fromStep, 0, provider.Steps.Count - 1);
-			_facts.SetCount(provider.ProgressFact, from);
 
-			// "All" satisfies every step's conditions; a specific step satisfies only
-			// its own, so later steps stay gated by their real conditions.
-			int last = forceAllSteps ? provider.Steps.Count - 1 : from;
-			for (int i = from; i <= last; i++)
+			using (_facts.BeginBatch())
 			{
-				var step = provider.Steps[i];
-				if (step?.Conditions == null)
-				{
-					continue;
-				}
+				_facts.SetCount(provider.ProgressFact, from);
 
-				foreach (var condition in step.Conditions)
+				// "All" satisfies every step's conditions; a specific step satisfies only
+				// its own, so later steps stay gated by their real conditions.
+				int last = forceAllSteps ? provider.Steps.Count - 1 : from;
+				for (int i = from; i <= last; i++)
 				{
-					if (condition == null || condition.Type == null)
+					var step = provider.Steps[i];
+					if (step?.Conditions == null)
 					{
 						continue;
 					}
 
-					int missing = condition.MinCount - _facts.Count(condition.Type);
-					for (int j = 0; j < missing; j++)
+					foreach (var condition in step.Conditions)
 					{
-						_facts.Record(condition.Type);
+						if (condition == null || condition.Type == null)
+						{
+							continue;
+						}
+
+						int missing = condition.MinCount - _facts.Count(condition.Type);
+						for (int j = 0; j < missing; j++)
+						{
+							_facts.Record(condition.Type);
+						}
 					}
 				}
 			}

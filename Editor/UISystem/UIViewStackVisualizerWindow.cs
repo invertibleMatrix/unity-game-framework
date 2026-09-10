@@ -134,8 +134,8 @@ namespace AK.Systems.Editor
 				return;
 			}
 
-			var channelStacks = channelStacksField.GetValue(uiSystem) as Dictionary<UIChannel, Stack<UIView>>;
-			var historyStacks = historyStacksField.GetValue(uiSystem) as Dictionary<UIView, Stack<UIView>>;
+			var channelStacks = channelStacksField.GetValue(uiSystem) as Dictionary<UIChannel, ViewStack>;
+			var historyStacks = historyStacksField.GetValue(uiSystem) as Dictionary<UIView, ViewStack>;
 			var viewRegistry = viewRegistryField.GetValue(uiSystem) as Dictionary<UIView, object>;
 
 			if (channelStacks == null)
@@ -172,8 +172,8 @@ namespace AK.Systems.Editor
 
 		#region Validation
 
-		private void RunValidation(UISystem uiSystem, Dictionary<UIChannel, Stack<UIView>> channelStacks,
-			Dictionary<UIView, Stack<UIView>> historyStacks, Dictionary<UIView, object> viewRegistry)
+		private void RunValidation(UISystem uiSystem, Dictionary<UIChannel, ViewStack> channelStacks,
+			Dictionary<UIView, ViewStack> historyStacks, Dictionary<UIView, object> viewRegistry)
 		{
 			// Only run validation once per frame
 			if (Time.frameCount == _lastValidationFrame)
@@ -369,6 +369,13 @@ namespace AK.Systems.Editor
 			}
 		}
 
+		private static List<UIView> TopFirst(ViewStack stack)
+		{
+			var list = new List<UIView>(stack.Count);
+			stack.CopyTopFirst(list);
+			return list;
+		}
+
 		private UIView GetParentFromRecord(object record)
 		{
 			if (record == null) return null;
@@ -492,7 +499,7 @@ namespace AK.Systems.Editor
 
 		#endregion
 
-		private void DrawChannelStacks(Dictionary<UIChannel, Stack<UIView>> channelStacks, Dictionary<UIView, object> viewRegistry)
+		private void DrawChannelStacks(Dictionary<UIChannel, ViewStack> channelStacks, Dictionary<UIView, object> viewRegistry)
 		{
 			EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 			EditorGUILayout.LabelField("Channel Stacks (Screens)", EditorStyles.boldLabel);
@@ -517,7 +524,7 @@ namespace AK.Systems.Editor
 			EditorGUILayout.Space(5);
 		}
 
-		private void DrawChannelStack(UIChannel channel, Stack<UIView> stack, Dictionary<UIView, object> viewRegistry)
+		private void DrawChannelStack(UIChannel channel, ViewStack stack, Dictionary<UIView, object> viewRegistry)
 		{
 			if (!_channelCollapsed.ContainsKey(channel))
 			{
@@ -553,8 +560,8 @@ namespace AK.Systems.Editor
 			// Draw views from TOP to BOTTOM
 			if (!isCollapsed)
 			{
-				var viewArray = stack.ToArray();
-				for (int i = 0; i < viewArray.Length; i++)
+				var viewArray = TopFirst(stack);
+				for (int i = 0; i < viewArray.Count; i++)
 				{
 					var view = viewArray[i];
 					DrawView(view, i == 0, isTopLevel: true, viewRegistry);
@@ -564,7 +571,7 @@ namespace AK.Systems.Editor
 			EditorGUILayout.EndVertical();
 		}
 
-		private void DrawHistoryStacks(Dictionary<UIView, Stack<UIView>> historyStacks, Dictionary<UIView, object> viewRegistry)
+		private void DrawHistoryStacks(Dictionary<UIView, ViewStack> historyStacks, Dictionary<UIView, object> viewRegistry)
 		{
 			EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 			EditorGUILayout.LabelField("History Stacks (Fragments)", EditorStyles.boldLabel);
@@ -592,7 +599,7 @@ namespace AK.Systems.Editor
 			EditorGUILayout.Space(5);
 		}
 
-		private void DrawHistoryStack(UIView parent, Stack<UIView> stack, Dictionary<UIView, object> viewRegistry)
+		private void DrawHistoryStack(UIView parent, ViewStack stack, Dictionary<UIView, object> viewRegistry)
 		{
 			if (!_parentCollapsed.ContainsKey(parent))
 			{
@@ -628,8 +635,8 @@ namespace AK.Systems.Editor
 			// Draw fragments from TOP to BOTTOM
 			if (!isCollapsed)
 			{
-				var viewArray = stack.ToArray();
-				for (int i = 0; i < viewArray.Length; i++)
+				var viewArray = TopFirst(stack);
+				for (int i = 0; i < viewArray.Count; i++)
 				{
 					var view = viewArray[i];
 					DrawView(view, i == 0, isTopLevel: false, viewRegistry);
@@ -909,7 +916,7 @@ namespace AK.Systems.Editor
 						// Get pool key type and id
 						var keyType = poolKey.GetType();
 						var typeField = keyType.GetField("Type", BindingFlags.Public | BindingFlags.Instance);
-						var idField = keyType.GetField("ID", BindingFlags.Public | BindingFlags.Instance);
+						var idField = keyType.GetField("ViewId", BindingFlags.Public | BindingFlags.Instance);
 
 						if (typeField != null && idField != null)
 						{

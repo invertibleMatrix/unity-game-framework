@@ -46,18 +46,23 @@ namespace AK.Services.Rewards
 			return false;
 		}
 
-		public bool TryGrantReward(IReward reward)
+		public Result Grant(IReward reward)
 		{
-			if (reward == null || reward.RewardType.IsNone) return false;
+			if (reward == null) return Result.Fail(ErrorCode.NullArgument);
+			if (reward.RewardType.IsNone) return Result.Fail(ErrorCode.NoIdentity);
 
-			if (_providers.TryGetValue(reward.RewardType, out IRewardProvider provider))
+			if (!_providers.TryGetValue(reward.RewardType, out IRewardProvider provider))
 			{
-				provider.GrantReward(reward);
-				return true;
+				return Result.Fail(ErrorCode.NoProvider, UidDebugNames.Describe(reward.RewardType));
 			}
 
-			Debug.LogWarning($"[RewardService] No provider registered for reward type {UidDebugNames.Describe(reward.RewardType)}.");
-			return false;
+			if (!provider.CanProvide(reward))
+			{
+				return Result.Fail(ErrorCode.RewardDeclined);
+			}
+
+			provider.GrantReward(reward);
+			return Result.Ok;
 		}
 
 		public IRewardProvider GetProvider(Uid rewardType)

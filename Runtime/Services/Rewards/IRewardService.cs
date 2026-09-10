@@ -15,10 +15,12 @@ namespace AK.Services.Rewards
 		bool UnregisterProvider(IRewardProvider provider);
 
 		/// <summary>
-		/// Attempt to grant a reward using the registered provider for its type.
-		/// Returns true if a provider was found and the reward was granted.
+		/// Grants a reward through the provider registered for its type.
+		/// <see cref="ErrorCode.NullArgument"/> / <see cref="ErrorCode.NoIdentity"/> for a bad reward,
+		/// <see cref="ErrorCode.NoProvider"/> when nothing is registered for the type,
+		/// <see cref="ErrorCode.RewardDeclined"/> when the provider reports it cannot provide it.
 		/// </summary>
-		bool TryGrantReward(IReward reward);
+		Result Grant(IReward reward);
 
 		/// <summary>Get the provider for a reward type, or null if none registered.</summary>
 		IRewardProvider GetProvider(Uid rewardType);

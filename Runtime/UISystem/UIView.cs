@@ -1,7 +1,6 @@
 using AK.Systems.Animations;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
@@ -569,13 +568,24 @@ namespace AK.Systems
 
 		internal void InitializeStaticChildren(Container diContainer)
 		{
-			InitializeStaticChildrenRecursive(diContainer, new HashSet<UIView>());
+			if (_staticViews.Count == 0) return;
+
+			InitializeStaticChildrenRecursive(diContainer, this, 0);
 		}
 
-		private void InitializeStaticChildrenRecursive(Container diContainer, HashSet<UIView> visited)
+		/// <summary>
+		/// A cycle in the static hierarchy is a view listing one of its own ancestors. The
+		/// ancestors are exactly the views on the current recursion path, so walking the
+		/// <see cref="_parentView"/> chain replaces a visited set; the depth cap is a belt
+		/// for a chain that was corrupted before we got here.
+		/// </summary>
+		private void InitializeStaticChildrenRecursive(Container diContainer, UIView root, int depth)
 		{
-			foreach (var entry in _staticViews)
+			const int maxDepth = 32;
+
+			for (int i = 0; i < _staticViews.Count; i++)
 			{
+				StaticViewEntry entry = _staticViews[i];
 				if (entry.View == null) continue;
 
 				if (entry.View == this)
@@ -584,7 +594,7 @@ namespace AK.Systems
 					continue;
 				}
 
-				if (visited.Contains(entry.View))
+				if (depth >= maxDepth || IsOnPathToRoot(entry.View, root))
 				{
 					Debug.LogError($"Cycle detected in static view hierarchy involving '{entry.View.name}'. Skipping.", this);
 					continue;
@@ -606,10 +616,20 @@ namespace AK.Systems
 				entry.View.gameObject.SetActive(entry.SetActive);
 				_uiSystem.RegisterStaticView(entry.View, this);
 
-				visited.Add(entry.View);
-				entry.View.InitializeStaticChildrenRecursive(diContainer, visited);
-				visited.Remove(entry.View);
+				entry.View.InitializeStaticChildrenRecursive(diContainer, root, depth + 1);
 			}
+		}
+
+		/// <summary>True when <paramref name="candidate"/> is this view or any ancestor up to <paramref name="root"/>.</summary>
+		private bool IsOnPathToRoot(UIView candidate, UIView root)
+		{
+			for (UIView v = this; v != null; v = v._parentView)
+			{
+				if (ReferenceEquals(v, candidate)) return true;
+				if (ReferenceEquals(v, root)) break;
+			}
+
+			return false;
 		}
 
 		/// <summary>
