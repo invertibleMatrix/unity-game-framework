@@ -47,7 +47,7 @@ namespace AK.Tutorials
 
 			UIView parent = ResolveParent(context);
 
-			var view = context.UiSystem.Show<UIView>(fragmentType, context: BuildContext(), parent: parent, viewId: ViewId ?? string.Empty);
+			var view = context.UiSystem.Show<UIView>(fragmentType, new ShowOptions(context: BuildContext(), parent: parent, viewId: ViewId ?? string.Empty));
 			if (view == null)
 			{
 				Debug.LogWarning($"[FragmentStep] Failed to show fragment of type '{fragmentType.Name}'.");

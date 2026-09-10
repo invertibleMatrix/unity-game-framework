@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using DG.Tweening;
 using UnityEngine;
 
@@ -85,14 +85,17 @@ namespace AK.Systems
 			// This prevents orphaned child views when parent is pooled
 			view.OnBeforePool();
 
-			// InternalCleanup runs full close lifecycle (OnPrepareHide → OnHide → UnRegisterResources → NullifyContext).
-			// Idempotent — safe even if InternalHideAsync already ran the close hooks.
-			view.InternalCleanup();
+			view.Lifecycle().Teardown();
+
+			if (view.TryGetComponent(out ViewHighlight highlight))
+			{
+				highlight.Restore();
+			}
 
 			// OnReset lets the view clear custom state (text, images, references) for reuse.
 			view.OnReset();
 
-			// Kill any tweens still targeting this view's hierarchy. InternalCleanup handles the
+			// Kill any tweens still targeting this view's hierarchy. Teardown handles the
 			// view's own animation targets, but per-view leftovers (e.g. toast floaters) and
 			// animation-strategy ambient loops can survive that - a surviving sequence that
 			// completes later would call Close() on an unregistered view.

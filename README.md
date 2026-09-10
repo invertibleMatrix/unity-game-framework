@@ -217,6 +217,8 @@ A unified view framework where **Screen** and **Fragment** are the same `UIView`
 
 Every `Show` method has an async variant (`ShowAsync`) and a fire-and-forget variant (`Show`). Use `Show` when you don't need to wait for the animation to complete — it starts the show and returns the view instance immediately.
 
+Everything a show can be told travels in one `ShowOptions` value: `Context`, `Parent`, `ViewId`, `Channel`, `StackBehaviour`, `Mode`. `default` is a plain show; the factories cover the common shapes and the fluent copies compose the rest. Setting `StackBehaviour` implies `ShowMode.Serialized` — there is no way to ask for a stack behaviour that is then ignored.
+
 The `onInit` callback runs **before any lifecycle event** — before `SetContext`, before `OnPrepareShow`, before `RegisterResources`. Use it to call an Init method on the view that must run first, e.g. injecting a dependency the view needs during its lifecycle hooks.
 
 ```csharp
@@ -226,24 +228,40 @@ viewSystem.Show<MainMenuScreen>();
 // Show a screen and await animation completion
 await viewSystem.ShowAsync<MainMenuScreen>();
 
+// Typed context
+viewSystem.Show<RewardPopup>(ShowOptions.With(new RewardPopupContext { RewardId = rewardId }));
+
 // Show a screen on a specific channel
-viewSystem.Show<SettingsScreen>(channelOverride: UIChannel.Overlay);
+viewSystem.Show<SettingsScreen>(new ShowOptions(channel: UIChannel.Overlay));
 
-// Show a fragment inside a parent view
-var fragment = ShowFragment<CurrencyPanel>();
+// Variant prefab (multi-variant by ViewId)
+viewSystem.Show<UIViewBanner>(ShowOptions.Variant("banner2"));
 
-// Show a fragment with typed context
-var fragment = ShowFragment<RewardPopup>(new RewardPopupContext { RewardId = rewardId });
+// From inside a view: fragments hosted by this view
+var panel = ShowFragment<CurrencyPanel>();
+var popup = ShowFragment<RewardPopup>(ShowOptions.With(new RewardPopupContext { RewardId = rewardId }));
 
-// Show a fragment with custom stack behaviour
-var fragment = ShowFragment<SettingsPanel>(stackBehaviour: ViewStackBehaviour.HideBelow);
+// Negotiate with the fragment below (serialized behind pending shows on this parent)
+ShowFragment<SettingsPanel>(new ShowOptions(stackBehaviour: ViewStackBehaviour.HideBelow));
 
-// Use onInit to initialize the view before any lifecycle event fires
-var fragment = ShowFragment<RewardPopup>(
-    new RewardPopupContext { RewardId = rewardId },
-    onInit: view => view.Init(rewardService)  // runs before OnPrepareShow, RegisterResources, etc.
-);
+// No animation — tooltips and anything that relocates rapidly
+viewSystem.Show<UIViewTooltip>(ShowOptions.With(ctx).Immediate());
+
+// onInit runs before OnPrepareShow, RegisterResources, etc.
+ShowFragment<RewardPopup>(ShowOptions.With(ctx), view => view.Init(rewardService));
+
+// Close
+viewSystem.Close(view);                                  // animated
+viewSystem.Close(view, CloseOptions.Now);                // no animation
+viewSystem.Close(view, default, onClosed: RefreshHud);   // callback fires only if the view was open
+await viewSystem.CloseAsync(view);
+
+// Toasts and banners are extension helpers, not system members
+viewSystem.DisplayToast("Saved");
+viewSystem.DisplayBanner("Coming soon", UIViewBanner.DEFAULT_TOP_ID);
 ```
+
+`ShowMode.Parallel` (the default) pushes onto the parent's history and animates at once — sibling fragments do not negotiate. `ShowMode.Serialized` waits for any show already running on that parent, then applies the new view's stack behaviour to the view below. Screens always run serialized against their channel stack.
 
 ### ViewStackBehaviour — What Happens to the View Below
 
@@ -272,7 +290,7 @@ public enum UIChannel
 }
 ```
 
-Higher channels always render on top. Multiple screens on the same channel stack (e.g., two Menu screens) — the newer one gets `sortingOrder = 100 + stackDepth`. Override a screen's channel at show time with the `channelOverride` parameter.
+Higher channels always render on top. Multiple screens on the same channel stack (e.g., two Menu screens) — the newer one gets `sortingOrder = 100 + stackDepth`. Override a screen's channel at show time with `ShowOptions.OnChannel(...)` (or the `channel:` constructor argument).
 
 ### Internals — How Lookups Stay Cheap
 
@@ -284,6 +302,18 @@ The system answers three questions on every `Show`/`Close`/`GetView`: *is a stat
 - **Prefab cache** — `(prefab, isScreen)` per kind, so the show path never calls `GetComponent<UIViewChannel>()` on the prefab.
 
 Steady-state `GetView<T>()` is allocation-free (asserted by `UISystemTests.GetView_DoesNotAllocate_OnceWarm`). What still allocates per show is inherent to the design: the view instance on a pool miss, one `ViewRecord`, one `UniTaskCompletionSource` per serialized fragment show, and the UniTask async state machines.
+
+### Internals — The System/View Boundary
+
+`UISystem` and `UIView` talk to each other through two interfaces and nothing else — there are no `internal` fields or methods on `UIView`.
+
+- **`IViewLifecycle`** (internal, system → view). `UIView` implements it *explicitly*, so `Attach`, `ShowAsync`, `HideAsync(HideMode)`, `ResumeAsync`, `Pause`, `Resume`, `Conceal`, `Teardown`, `OverrideStackBehaviour`, `ArmDelayedStart` and `AttachStaticChildren` never appear on the type a view author subclasses. The system reaches them through `view.Lifecycle()`. `HideMode.Close` runs the close hooks; `HideMode.Pause` is animation only. `Pause()` is "input off, then `OnPause`"; `Resume()` is "input on, then `OnResume`".
+- **`IViewHost`** (public, view → system). Extends `IUISystem` with the five things a view asks of its owner: `IsRegistered`, `RegisterStatic`, `ShowStaticChildren`, `NotifyShown`, `NotifyDestroyedExternally`. A view holds an `IViewHost`, never the concrete system; `UIView.UISystem` returns that same object.
+- **Registry-owned state.** Whether an instance is a template clone (`IsClone`, decides pooling) and which channel a screen was shown on (`ChannelOverride`) live on the system's `ViewRecord`, not on the view.
+
+To observe shows from outside, subscribe to `IUISystem.ViewShown` — it fires after any view's `OnShow`, immediate and animated alike, and not on resume.
+
+`UIView` itself is now only the lifecycle: its animation plumbing lives in `ViewAnimator` (owns the lifetime and in-flight cancellation sources; a run reports whether it finished instead of throwing), the dim in `ViewBackgroundOverlay`, and the raise-above-everything behaviour in `ViewHighlight`.
 
 ### Static vs Dynamic Fragments
 
@@ -321,14 +351,17 @@ Show:
   RegisterResources()          ← subscribe to events (called ONCE per lifecycle)
   [play show animation]
   OnShow()                     ← enable interactions, start timers
-  ShowStaticChildrenOnStart()  ← auto-show static fragments with ShowOnStart
+  IUISystem.ViewShown          ← fired for observers
+  [static fragments with ShowOnStart start their own show]
 
 Pause (a higher-priority view covers this one):
+  [input blocked]
   OnPause()                    ← pause game logic, timers
   [play hide animation - resources stay registered]
 
 Resume (the covering view is closed):
   [play show animation]
+  [input restored]
   OnResume()                   ← resume game logic, timers
 
 Close:
@@ -339,7 +372,16 @@ Close:
   [destroy / pool / hide depending on static/dynamic + CloseContext]
 ```
 
-**Key detail:** `RegisterResources` / `UnRegisterResources` are called exactly once per view lifecycle (guarded internally). On a normal pause/resume cycle, resources stay registered — the view is logically alive, just not visible.
+**Key detail:** `RegisterResources` / `UnRegisterResources` are called exactly once per view lifecycle. On a normal pause/resume cycle, resources stay registered — the view is logically alive, just not visible.
+
+`UIView.State` says where a view is: `Hidden → Showing → Shown → Paused → Hiding → Hidden`. Resources are registered in every state except `Hidden`, and the hooks above fire only on the transitions between states, which is what keeps them paired when things are interrupted:
+
+- A close (or teardown) during an entrance that has not reached `OnShow` releases the resources and skips `OnPrepareHide`/`OnHide` — hide hooks fire only for a view that was actually shown.
+- A show during an entrance restarts the animation and re-runs `OnPrepareShow` but does not re-register.
+- Anything interrupting an exit first finishes it (`OnHide`, `UnRegisterResources`), then proceeds.
+- Teardown runs whatever the current state still owes and is idempotent.
+
+`IsVisible` is separate from `State`: a paused view under `PauseOnlyBelow` is still drawn, under `HideBelow` it is not. Pinned by `ViewStateTests`.
 
 ### Typed Context — UIView\<TContext\>
 
@@ -367,13 +409,13 @@ public class RewardPopup : UIView<RewardPopupContext>
 ShowFragment<RewardPopup>(new RewardPopupContext { RewardId = rewardId, Amount = 100 });
 ```
 
-### Fragment Navigation — GoBack
+### Fragment Navigation — closing the top fragment
 
-Fragments maintain a per-parent history stack. `GoBack()` pops the current fragment and resumes the previous one:
+Fragments maintain a per-parent history stack. Closing the fragment on top pops it and resumes the one beneath — there is no separate back call:
 
 ```csharp
 // User navigates: HomePanel → SettingsPanel → SoundPanel
-// Calling GoBack() on SoundPanel:
+// soundPanel.Close():
 //   SoundPanel closes (destroyed)
 //   SettingsPanel resumes (animation plays)
 ```
@@ -414,7 +456,7 @@ Dynamic fragments with `ReturnToPoolOnClose = true` are returned to a `ViewPool`
 
 ### Background Overlay
 
-Any UIView with `_showBackgroundOverlay = true` automatically shows a dark overlay at sibling index 0 (renders behind the view's content). The overlay fades in over 0.4s, fades out over 0.1s. Useful for modal-style screens and popups.
+Add a `ViewBackgroundOverlay` component next to a UIView and the view dims everything behind it: the overlay fades in when the show completes and out when a hide starts. Alpha, raycast blocking and both fade durations are serialized on the component (defaults 0.95 / block / 0.4s / 0.1s). The dim is a runtime-built Image at sibling index 0, oversized to cover the nearest Canvas. Useful for modal-style screens and popups.
 
 ### Common Components
 
@@ -427,14 +469,14 @@ Any UIView with `_showBackgroundOverlay = true` automatically shows a dark overl
 | **UIViewBanner** | Top banner with text, duration timer, and Animator support. |
 | **UITutorialArrow** | Oscillating arrow pointing at a target. Auto-rotates toward target. |
 
-### Tutorial Mode
+### Highlight
 
-Any UIView can enter tutorial mode via `SetupTutorialMode()`. This:
-1. Shows a very dark background overlay (0.95 alpha)
-2. Forces the view's Canvas to sort above everything (`Overlay + 1`)
-3. Fragments (which don't own a Canvas) get a temporary override Canvas + GraphicRaycaster
+`ViewHighlight.Enter(view)` raises a view above everything else and dims the rest — what a tutorial step uses to force attention on one control. It adds the `ViewHighlight` component on demand (a view knows nothing about being highlighted), then:
+1. Fades in a `ViewBackgroundOverlay` (reusing the view's own if it has one, otherwise adding a temporary one)
+2. Screens: forces the channel Canvas to sort at `Overlay + 1`
+3. Fragments (no Canvas of their own): adds a temporary override Canvas + GraphicRaycaster just above the parent Canvas
 
-Call `CleanupTutorialMode()` to revert.
+`ViewHighlight.Exit(view)` fades the dim out and restores sorting once it is gone; `Restore()` does the same immediately. The pool restores a highlighted view on release. (`UIViewSpotlight` is a different thing: the rounded cut-out view that tutorials point at a target.)
 
 ### Quick Reference
 
@@ -445,12 +487,13 @@ Call `CleanupTutorialMode()` to revert.
 | Show a screen | `viewSystem.ShowAsync<T>()` or `viewSystem.Show<T>()` |
 | Show a fragment | `parentView.ShowFragment<T>()` or `parentView.ShowFragmentAsync<T>()` |
 | Pass data to a view | Create a `UIContext` subclass, pass via show method or `UIView<TContext>` |
-| Navigate back | `view.GoBack()` — pops from per-parent history stack |
+| Navigate back | `topFragment.Close()` — pops from the parent's history and resumes the one below |
 | Make a fragment auto-close when parent closes | It already does — child fragments auto-cleanup on parent close |
 | Pre-place a fragment that survives close | Add it to parent's `_staticViews` list — statics are hidden, not destroyed |
 | Pool a frequently-spawned fragment | Set `_returnToPoolOnClose = true` on the UIView |
 | Allow multiple instances of same fragment | Set `_allowMultipleInstances = true` |
-| Add a dark overlay behind a screen | Set `_showBackgroundOverlay = true` |
+| Add a dark overlay behind a screen | Add a `ViewBackgroundOverlay` component to the UIView |
+| Highlight one view for a tutorial | `ViewHighlight.Enter(view)` … `ViewHighlight.Exit(view)` |
 | Create a custom animation | Extend `AnimationStrategy`, override `PlayShowAnimation` and `PlayHideAnimation` |
 
 ---

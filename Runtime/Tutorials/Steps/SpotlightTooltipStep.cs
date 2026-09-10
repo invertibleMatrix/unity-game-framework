@@ -52,23 +52,21 @@ namespace AK.Tutorials
 				throw new TutorialStepDeclinedException($"Step '{name}': target '{(TargetId != null ? TargetId.name : "null")}' not registered.");
 			}
 
-			var spotlight = context.UiSystem.Show<UIViewSpotlight>(
-				context: new UIViewSpotlightContext
+			var spotlight = context.UiSystem.Show<UIViewSpotlight>(ShowOptions.With(new UIViewSpotlightContext
 				{
 					Padding = SpotlightPadding,
 					Feather = SpotlightFeather,
 					IntroDuration = SpotlightIntroDuration,
 					IntroEase = SpotlightIntroEase
-				},
-				onInit: s => s.SetTargets(new[] { target }, animateSpotlight: true));
+				}), s => s.SetTargets(new[] { target }, animateSpotlight: true));
 
-			var tooltip = context.UiSystem.Show<UIViewTooltip>(new UIViewTooltipContext(Title, Description, target, Position)
+			var tooltip = context.UiSystem.Show<UIViewTooltip>(ShowOptions.With(new UIViewTooltipContext(Title, Description, target, Position)
 			{
 				Icon = Icon,
 				Offset = Offset,
 				TapAnywhereToClose = false,
 				CloseTime = 0f
-			});
+			}));
 
 			spotlight.AttachFurniture(tooltip.RectTransform);
 

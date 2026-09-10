@@ -37,13 +37,13 @@ namespace AK.Tutorials
 				return;
 			}
 
-			var tooltip = context.UiSystem.Show<UIViewTooltip>(new UIViewTooltipContext(Title, Description, target, Position)
+			var tooltip = context.UiSystem.Show<UIViewTooltip>(ShowOptions.Variant(TooltipId, new UIViewTooltipContext(Title, Description, target, Position)
 			{
 				Icon = Icon,
 				Offset = Offset,
 				TapAnywhereToClose = false,
 				CloseTime = CloseTime
-			}, viewId: TooltipId);
+			}));
 
 			// The tooltip doesn't govern input - open the gate so the player
 			// can act on what it points at.
