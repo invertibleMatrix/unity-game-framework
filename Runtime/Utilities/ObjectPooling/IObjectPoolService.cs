@@ -19,7 +19,7 @@ namespace AK.Utilities
 	public interface IObjectPoolService
 	{
 		/// <summary>
-		/// Registers the registry for UID-based lookups and creates/prewarms all its pools that
+		/// Registers the registry for identity lookups and creates/prewarms all its pools that
 		/// have PrewarmOnRegister enabled. Call once at boot.
 		/// </summary>
 		void RegisterPools(ObjectPoolRegistry registry);
@@ -40,14 +40,14 @@ namespace AK.Utilities
 		         Transform parent = null) where T : Component;
 
 		/// <summary>
-		/// Get by UID. The UID is OPTIONAL: pass null (or empty) to use the first registered pool.
-		/// Use UIDs only when variants need individual addressing.
+		/// Get by identity. None uses the first registered pool; pass an identity only when
+		/// variants need individual addressing.
 		/// </summary>
-		GameObject Get(UID definitionUID = null, Vector3 position = default, Quaternion rotation = default,
+		GameObject Get(Uid<PoolableObjectDefinition> definitionId = default, Vector3 position = default, Quaternion rotation = default,
 		               Transform parent = null);
 
-		/// <summary>UID variant of Get, optionally specifying the component type to return.</summary>
-		T Get<T>(UID definitionUID = null, Vector3 position = default, Quaternion rotation = default,
+		/// <summary>Identity variant of Get, optionally specifying the component type to return.</summary>
+		T Get<T>(Uid<PoolableObjectDefinition> definitionId = default, Vector3 position = default, Quaternion rotation = default,
 		         Transform parent = null) where T : Component;
 
 		/// <summary>

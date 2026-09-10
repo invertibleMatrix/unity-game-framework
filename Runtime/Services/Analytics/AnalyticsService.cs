@@ -164,21 +164,47 @@ namespace AK.Services
 			Track(AnalyticsEvent.Design(eventName, parameters: parameters));
 		}
 
-		public void TrackEvent(UID eventID, Dictionary<ParameterName, object> parameters)
+		public void TrackEvent(AnalyticsEventDefinition definition, Dictionary<ParameterName, object> parameters)
 		{
-			string id = eventID;
-			if (_analyticsMeta != null)
+			if (definition == null)
 			{
-				AnalyticsEventDefinition def = _analyticsMeta.GetEventByID(eventID);
-				if (def != null && !string.IsNullOrEmpty(def.EventID))
-				{
-					id = def.EventID;
-				}
+				Debug.LogError($"{Tag} TrackEvent called with a null definition.");
+				return;
+			}
+
+			TrackDefinition(definition, parameters);
+		}
+
+		public void TrackEvent(Uid<AnalyticsEventDefinition> eventId, Dictionary<ParameterName, object> parameters)
+		{
+			if (eventId.IsNone)
+			{
+				Debug.LogError($"{Tag} TrackEvent called with an empty event identity.");
+				return;
+			}
+
+			// The identity is internal. Only the definition's EventID goes on the wire; an
+			// unresolvable identity is a wiring bug and is never sent as a hex string.
+			if (_analyticsMeta == null || !_analyticsMeta.TryGetEvent(eventId, out AnalyticsEventDefinition definition))
+			{
+				WarnOnce(_warnedMissing, eventId.ToString(), $"{Tag} No AnalyticsEventDefinition for identity {UidDebugNames.Describe(eventId)} — event dropped.");
+				return;
+			}
+
+			TrackDefinition(definition, parameters);
+		}
+
+		private void TrackDefinition(AnalyticsEventDefinition definition, Dictionary<ParameterName, object> parameters)
+		{
+			if (string.IsNullOrEmpty(definition.EventID))
+			{
+				WarnOnce(_warnedMissing, definition.name, $"{Tag} '{definition.name}' has no EventID — event dropped. Set the external key on the definition.");
+				return;
 			}
 
 			var evt = new AnalyticsEvent
 			{
-				Id = string.IsNullOrEmpty(id) ? eventID?.ToString() : id,
+				Id = definition.EventID,
 				Kind = AnalyticsEventKind.Unspecified,
 				Parameters = AnalyticsEventResolver.Stringify(parameters)
 			};

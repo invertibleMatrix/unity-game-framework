@@ -45,11 +45,14 @@ namespace AK.Services.Analytics.Providers
 			TrackEvent(evt.Id, evt.Parameters);
 		}
 
-		public virtual void TrackEvent(UID eventId, Dictionary<ParameterName, object> parameters)
+		public virtual void TrackEvent(Uid<AnalyticsEventDefinition> eventId, Dictionary<ParameterName, object> parameters)
 		{
-			var eventDefinition = _metaDataRepository?.GetEventByID(eventId);
-			var eventName = eventDefinition?.EventID ?? eventId.ToString();
-			TrackEvent(eventName, StringifyParameters(parameters));
+			if (_metaDataRepository == null || !_metaDataRepository.TryGetEvent(eventId, out AnalyticsEventDefinition definition) || string.IsNullOrEmpty(definition.EventID))
+			{
+				return;
+			}
+
+			TrackEvent(definition.EventID, StringifyParameters(parameters));
 		}
 
 		public abstract void TrackEvent(string eventName, Dictionary<string, object> parameters);

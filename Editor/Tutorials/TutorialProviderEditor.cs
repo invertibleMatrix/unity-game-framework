@@ -9,6 +9,8 @@ public class TutorialProviderEditor : Editor
 
 	public override void OnInspectorGUI()
 	{
+		AK.Core.Editor.UidAssetEditor.DrawIdentityBlock((TutorialProvider)target);
+		GUILayout.Space(6);
 		DrawDefaultInspector();
 
 		var provider = (TutorialProvider)target;

@@ -11,7 +11,7 @@ namespace AK.CoreDomain
 	/// Similar to IAPMeta but for analytics events.
 	/// </summary>
 	[CreateAssetMenu(fileName = "AnalyticsMeta", menuName = "AK/MetaData/Analytics/AnalyticsMeta")]
-	public class AnalyticsMeta : MetaDataAsset, IMeta
+	public class AnalyticsMeta : MetaDataAsset, IMetaWithRegistry
 	{
 		[SerializeField] private AnalyticsRegistry _registry;
 
@@ -20,30 +20,21 @@ namespace AK.CoreDomain
 		[Header("Analytics Events")] [Tooltip("All analytics event definitions.")]
 		public List<AnalyticsEventDefinition> Events;
 
-		public AnalyticsRegistry Registry => _registry;
-		
-		public override void InitializeMeta()
-		{
-			_registry.Initialize();
-		}
+		public AnalyticsRegistry    Registry      => _registry;
+		public UidRegistryAssetBase RegistryAsset => _registry;
 
-		/// <summary>
-		/// Gets an event by its asset UID.
-		/// </summary>
-		public AnalyticsEventDefinition GetEventByID(UID eventID)
+		public override void InitializeMeta() { }
+
+		/// <summary>Resolves an event definition by identity. False when unknown — never falls back to a name.</summary>
+		public bool TryGetEvent(Uid<AnalyticsEventDefinition> eventId, out AnalyticsEventDefinition definition)
 		{
-			if (string.IsNullOrEmpty(eventID))
+			if (_registry != null)
 			{
-				return null;
+				return _registry.TryResolve(eventId, out definition);
 			}
 
-			AnalyticsEventDefinition byUid = _registry != null ? _registry.GetObjectByUID(eventID) : null;
-			if (byUid != null)
-			{
-				return byUid;
-			}
-
-			return GetEventByName(eventID);
+			definition = null;
+			return false;
 		}
 
 		/// <summary>

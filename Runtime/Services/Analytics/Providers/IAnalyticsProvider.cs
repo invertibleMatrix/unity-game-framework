@@ -17,7 +17,7 @@ namespace AK.Services.Analytics.Providers
 
 		void Track(AnalyticsEvent evt);
 
-		void TrackEvent(UID eventId, Dictionary<ParameterName, object> parameters);
+		void TrackEvent(Uid<AnalyticsEventDefinition> eventId, Dictionary<ParameterName, object> parameters);
 
 		void TrackEvent(string eventName, Dictionary<string, object> parameters);
 

@@ -31,8 +31,7 @@ namespace AK.Examples.Rewards
 		[Header("Subscription Reward")] [Tooltip("Used only if Type is Subscription. A reference to the SubscriptionReward to be granted")]
 		public SubscriptionReward SubscriptionReward;
 
-		// IReward explicit implementation
-		UID IReward.RewardTypeUID => Type;
+		Uid IReward.RewardType => Type != null ? Type.Id : Uid.None;
 
 		/// <summary>
 		/// Collect all leaf rewards from this definition (flattens bundles recursively).

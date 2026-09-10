@@ -5,16 +5,12 @@ namespace AK.CoreDomain
 {
 	/// <summary>
 	/// Minimal contract for reward dispatch. Services only depend on this interface,
-	/// not on concrete RewardDefinition subclasses. Game definitions implement this
-	/// to be compatible with IRewardService without the service knowing their type.
+	/// not on concrete RewardDefinition subclasses.
 	/// </summary>
 	public interface IReward
 	{
-		/// <summary>
-		/// The UID of the RewardType SO asset used for provider dispatch.
-		/// Maps to RewardType (which extends UID) in the default implementation.
-		/// </summary>
-		UID RewardTypeUID { get; }
+		/// <summary>Identity of the reward type used for provider dispatch.</summary>
+		Uid RewardType { get; }
 
 		/// <summary>
 		/// Collect all leaf rewards from this reward (flattens bundles recursively).

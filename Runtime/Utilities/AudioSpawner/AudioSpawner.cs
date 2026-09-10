@@ -26,8 +26,8 @@ namespace Utilities.AudioSpawner
 		private Dictionary<Type, int> _poolSizes;
 
 		// Active voice tracking — drives concurrency caps, StopAll, IsPlaying
-		private readonly List<AudioComponent>    _activeComponents = new();
-		private readonly Dictionary<string, float> _lastPlayTimeByConfigUid = new();
+		private readonly List<AudioComponent>   _activeComponents = new();
+		private readonly Dictionary<Uid, float> _lastPlayTimeByConfig = new();
 
 		// Music lane: two plain sources A/B-crossfading on a persistent root
 		private GameObject              _musicRoot;
@@ -41,32 +41,18 @@ namespace Utilities.AudioSpawner
 
 		private void Awake()
 		{
-			_audioRegistry.BuildCache();
 			InitializePools();
 			InitializeMusicLane();
 		}
 
-		/// <summary>
-		/// Type-safe spawn: Returns exact type T if config exists for T.
-		/// Returns null if no config found for type T (strict type matching).
-		/// Use this when you need to manipulate the component or have custom logic.
-		/// </summary>
-		public T Spawn<T>(UID variantId = null) where T : AudioComponent
+		public T Spawn<T>(Uid<AudioConfig> variant = default) where T : AudioComponent
 		{
 			Type requestedType = typeof(T);
 
-			// Normalize empty/null UID
-			if (variantId == null || variantId.IsEmpty())
-			{
-				variantId = UID.EmptyUID();
-			}
-
-			// Get config with strict type checking
-			AudioConfig config = _audioRegistry.GetConfigStrict(requestedType, variantId);
+			AudioConfig config = _audioRegistry.GetConfigStrict(requestedType, variant);
 			if (config == null)
 			{
-				Debug.LogError($"Spawn<{requestedType.Name}>() failed: No config found for type '{requestedType.Name}' with variant ID '{variantId.Id}'. " +
-				              $"Use PlayAudio(uid) if you just want to play audio by UID.");
+				Debug.LogError($"Spawn<{requestedType.Name}>() failed: no config for type '{requestedType.Name}' with variant {UidDebugNames.Describe(variant)}.");
 				return null;
 			}
 
@@ -91,10 +77,7 @@ namespace Utilities.AudioSpawner
 			return audioComponent as T;
 		}
 
-		/// <summary>
-		/// Simple audio playback: Plays the given config's audio. Convenience overload
-		/// so call sites holding an AudioConfig never touch UniqueID by hand.
-		/// </summary>
+		/// <summary>Plays the given config's audio. The primary API — call sites hold the config, not an identity.</summary>
 		public AudioComponent PlayAudio(AudioConfig config, Vector3? position = null)
 		{
 			if (config == null)
@@ -133,20 +116,17 @@ namespace Utilities.AudioSpawner
 			return audioComponent;
 		}
 
-		public AudioComponent PlayAudio(UID variantId, Vector3? position = null)
+		public AudioComponent PlayAudio(Uid<AudioConfig> configId, Vector3? position = null)
 		{
-			if (variantId == null || variantId.IsEmpty())
+			if (configId.IsNone)
 			{
-				Debug.LogError("PlayAudio() failed: UID is null or empty. Please provide a valid audio UID");
+				Debug.LogError("PlayAudio() failed: identity is None.");
 				return null;
 			}
 
-			// Get config by UID (forgiving - doesn't care about type)
-			AudioConfig config = _audioRegistry.GetConfigByUID(variantId);
-
-			if (config == null)
+			if (!_audioRegistry.TryResolve(configId, out AudioConfig config))
 			{
-				Debug.LogError($"PlayAudio() failed: No config found for UID '{variantId.Id}'. Check AudioRegistry.");
+				Debug.LogError($"PlayAudio() failed: no config for identity {UidDebugNames.Describe(configId)}. Check AudioRegistry.");
 				return null;
 			}
 
@@ -157,19 +137,26 @@ namespace Utilities.AudioSpawner
 		{
 			if (config == null) return false;
 
-			string uid = config.UniqueID.Id;
-			return _activeComponents.Any(c => c != null && c.ConfigVariantId != null && c.ConfigVariantId.Id == uid);
+			Uid<AudioConfig> id = config.IdAs<AudioConfig>();
+			for (int i = 0; i < _activeComponents.Count; i++)
+			{
+				AudioComponent c = _activeComponents[i];
+				if (c != null && c.ConfigId == id) return true;
+			}
+
+			return false;
 		}
 
 		public void StopAll(AudioConfig config = null)
 		{
-			string uid = config != null ? config.UniqueID.Id : null;
+			bool filter = config != null;
+			Uid<AudioConfig> id = filter ? config.IdAs<AudioConfig>() : default;
 
 			// Snapshot — Stop() mutates the active list via the onStop callback
 			foreach (var component in _activeComponents.ToList())
 			{
 				if (component == null) continue;
-				if (uid != null && (component.ConfigVariantId == null || component.ConfigVariantId.Id != uid)) continue;
+				if (filter && component.ConfigId != id) continue;
 
 				component.Stop();
 			}
@@ -305,10 +292,10 @@ namespace Utilities.AudioSpawner
 
 		private bool PassesPlayGates(AudioConfig config)
 		{
-			string uid = config.UniqueID.Id;
+			Uid id = config.Id;
 
 			if (config.MinIntervalBetweenPlays > 0f &&
-			    _lastPlayTimeByConfigUid.TryGetValue(uid, out float lastPlay) &&
+			    _lastPlayTimeByConfig.TryGetValue(id, out float lastPlay) &&
 			    Time.time - lastPlay < config.MinIntervalBetweenPlays)
 			{
 				return false;
@@ -318,10 +305,11 @@ namespace Utilities.AudioSpawner
 			{
 				int active = 0;
 				AudioComponent oldest = null;
+				var typed = new Uid<AudioConfig>(id);
 
 				foreach (var component in _activeComponents)
 				{
-					if (component == null || component.ConfigVariantId == null || component.ConfigVariantId.Id != uid) continue;
+					if (component == null || component.ConfigId != typed) continue;
 
 					active++;
 					oldest ??= component; // list is spawn-ordered — first match is oldest
@@ -334,7 +322,7 @@ namespace Utilities.AudioSpawner
 				}
 			}
 
-			_lastPlayTimeByConfigUid[uid] = Time.time;
+			_lastPlayTimeByConfig[id] = Time.time;
 			return true;
 		}
 
@@ -507,84 +495,5 @@ namespace Utilities.AudioSpawner
 			}
 		}
 #endif
-
-		/// <summary>
-		/// Legacy method: Spawns and plays audio.
-		/// OBSOLETE: Use PlayAudio(uid, position) for simple playback.
-		/// </summary>
-		[Obsolete("Use PlayAudio(uid, position) for simple playback. Use Spawn<T>() only when you need the component reference.")]
-		public AudioComponent SpawnAndPlay<T>(UID variantId = null, Vector3? position = null) where T : AudioComponent
-		{
-			// For backward compatibility, use PlayAudio for base AudioComponent type
-			if (typeof(T) == typeof(AudioComponent))
-			{
-				PlayAudio(variantId, position);
-				return null;
-			}
-
-			// For specific types, use strict Spawn<T>()
-			var audio = Spawn<T>(variantId);
-			if (audio != null)
-			{
-				audio.Play(position);
-			}
-			return audio;
-		}
-
-		/// <summary>
-		/// Legacy method: Spawns audio by type.
-		/// OBSOLETE: Use Spawn<T>() for type-safe spawning.
-		/// </summary>
-		[Obsolete("Use Spawn<T>() for type-safe spawning.")]
-		public AudioComponent Spawn(Type type, UID variantId)
-		{
-			if (type == null)
-			{
-				Debug.LogError("Spawn() failed: Type is null.");
-				return null;
-			}
-
-			if (!typeof(AudioComponent).IsAssignableFrom(type))
-			{
-				Debug.LogError($"Spawn() failed: Type '{type.Name}' is not an AudioComponent.");
-				return null;
-			}
-
-			// Normalize empty/null UID
-			if (variantId == null || variantId.IsEmpty())
-			{
-				variantId = UID.EmptyUID();
-			}
-
-			// Get config with strict type checking
-			AudioConfig config = _audioRegistry.GetConfigStrict(type, variantId);
-
-			if (config == null)
-			{
-				Debug.LogError($"Spawn({type.Name}) failed: No config found for type '{type.Name}' with variant ID '{variantId.Id}'. " +
-				              $"Use PlayAudio(uid) if you just want to play audio by UID.");
-				return null;
-			}
-
-			// Verify the config's prefab type matches the requested type
-			Type prefabType = config.Prefab.GetType();
-			if (prefabType != type)
-			{
-				Debug.LogError($"Spawn({type.Name}) failed: Config '{config.name}' has prefab type '{prefabType.Name}', " +
-				              $"but requested type is '{type.Name}'. Type mismatch!");
-				return null;
-			}
-
-			// Get from pool or create new
-			AudioComponent audioComponent = GetFromPool(prefabType, config);
-			if (audioComponent == null)
-			{
-				return null;
-			}
-
-			// Init and return
-			audioComponent.Init(config, () => ReturnToPool(prefabType, audioComponent));
-			return audioComponent;
-		}
 	}
 }

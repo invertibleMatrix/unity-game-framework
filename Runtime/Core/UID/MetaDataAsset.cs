@@ -1,7 +1,11 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 namespace AK.Core
 {
+	/// <summary>
+	/// A definition: an identity plus the display metadata every piece of game content
+	/// shares. Domain definitions (currencies, rewards, ad placements...) extend this.
+	/// </summary>
 	public abstract class MetaDataAsset : UID
 	{
 		public string Name;
@@ -9,7 +13,7 @@ namespace AK.Core
 		[Tooltip("Display name shown in UI.")]
 		public string DisplayName;
 
-		[Tooltip("Description of this currency.")] [TextArea(2, 4)]
+		[Tooltip("Description shown in UI.")] [TextArea(2, 4)]
 		public string Description;
 
 		[Tooltip("Icon displayed in UI.")]

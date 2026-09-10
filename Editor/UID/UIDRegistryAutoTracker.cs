@@ -1,61 +1,89 @@
+using System;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
 namespace AK.Core.Editor
 {
 	/// <summary>
-	/// Keeps every UIDRegistryAsset in sync with the project automatically: UID assets
-	/// that appear (created, duplicated, imported, subtree pulls) are tracked by every
-	/// registry whose element type accepts them; deleted assets are swept out. Kills the
-	/// "forgot to Refresh All" failure class — registries are never stale.
+	/// Keeps every registry asset in sync with the project without anyone pressing Refresh.
+	/// A UID asset that appears is tracked by the most specific registry whose element type
+	/// accepts it; one that disappears is untracked; a move is a no-op for tracking (Unity
+	/// references survive moves) but still triggers a null sweep in case the asset was
+	/// deleted mid-move.
+	///
+	/// Runs after <see cref="UidIdentityAuthority"/> (higher postprocess order) so the asset
+	/// already has its identity when it enters a registry.
 	/// </summary>
-	public class UIDRegistryAutoTracker : AssetPostprocessor
+	public sealed class UidRegistryAutoTracker : AssetPostprocessor
 	{
-		private static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets,
-		                                           string[] movedAssets, string[] movedFromAssetPaths)
+		public override int GetPostprocessOrder() => 100;
+
+		private static void OnPostprocessAllAssets(string[] imported, string[] deleted, string[] moved, string[] movedFrom)
 		{
-			bool anyDeleted = deletedAssets.Length > 0;
-			var importedUIDs = new System.Collections.Generic.List<UID>();
-
-			foreach (string path in importedAssets)
+			bool anyAsset = false;
+			foreach (string path in imported)
 			{
-				if (!path.EndsWith(".asset")) continue;
+				if (path.EndsWith(".asset", StringComparison.OrdinalIgnoreCase)) { anyAsset = true; break; }
+			}
 
-				var uid = AssetDatabase.LoadAssetAtPath<UID>(path);
-				if (uid != null)
+			if (!anyAsset)
+			{
+				foreach (string path in deleted)
 				{
-					importedUIDs.Add(uid);
+					if (path.EndsWith(".asset", StringComparison.OrdinalIgnoreCase)) { anyAsset = true; break; }
 				}
 			}
 
-			if (importedUIDs.Count == 0 && !anyDeleted) return;
+			if (!anyAsset) return;
 
-			bool changed = false;
+			List<UidRegistryAssetBase> registries = null;
+			var dirtied = new HashSet<UidRegistryAssetBase>();
 
-			foreach (string registryGuid in AssetDatabase.FindAssets("t:UIDRegistryAsset"))
+			foreach (string path in imported)
 			{
-				var registry = AssetDatabase.LoadAssetAtPath<UIDRegistryAsset>(
-					AssetDatabase.GUIDToAssetPath(registryGuid));
-				if (registry == null) continue;
+				if (!path.EndsWith(".asset", StringComparison.OrdinalIgnoreCase)) continue;
 
-				foreach (UID uid in importedUIDs)
-				{
-					if (registry.TryTrackAsset(uid))
-					{
-						changed = true;
-					}
-				}
+				var asset = AssetDatabase.LoadAssetAtPath<UID>(path);
+				if (asset == null || asset is UidNamespace) continue;
 
-				if (anyDeleted && registry.RemoveNullEntries() > 0)
+				registries ??= UidEditorUtility.LoadAllRegistries();
+				var registry = UidEditorUtility.FindRegistryFor(asset, registries);
+				if (registry != null && registry.Editor_TryTrack(asset))
 				{
-					changed = true;
+					dirtied.Add(registry);
 				}
 			}
 
-			if (changed)
+			if (deleted.Length > 0)
 			{
-				AssetDatabase.SaveAssets();
+				registries ??= UidEditorUtility.LoadAllRegistries();
+				foreach (var registry in registries)
+				{
+					if (registry.Editor_RemoveNullEntries() > 0) dirtied.Add(registry);
+				}
 			}
+
+			foreach (var registry in dirtied)
+			{
+				AssetDatabase.SaveAssetIfDirty(registry);
+			}
+		}
+
+		/// <summary>Full resync of every registry from the project. The "I don't trust the state" button.</summary>
+		[MenuItem(UidEditorUtility.MenuRoot + "Registries/Refresh All From Project", priority = 40)]
+		public static void RefreshAll()
+		{
+			var registries = UidEditorUtility.LoadAllRegistries();
+			int total = 0;
+
+			foreach (var registry in registries)
+			{
+				total += registry.Editor_RefreshFromProject();
+				AssetDatabase.SaveAssetIfDirty(registry);
+			}
+
+			Debug.Log($"[UID] Refreshed {registries.Count} registr{(registries.Count == 1 ? "y" : "ies")} — {total} tracked assets.");
 		}
 	}
 }

@@ -9,5 +9,5 @@ namespace AK.CoreDomain
 	/// Similar to RewardsRegistry but for IAP products.
 	/// </summary>
 	[CreateAssetMenu(fileName = "IAPProductsRegistry", menuName = "AK/MetaData/IAP/IAPProductsRegistry")]
-	public class IAPProductsRegistry : TypedUIDRegistryAsset<IAPProductDefinition> { }
+	public class IAPProductsRegistry : UidRegistryAsset<IAPProductDefinition> { }
 }

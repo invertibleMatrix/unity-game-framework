@@ -21,7 +21,7 @@ namespace AK.Utilities
 
 		private readonly Dictionary<PoolableObjectDefinition, PoolEntry> _pools = new();
 
-		// Insertion-ordered definitions backing the null-UID "first pool" fallback.
+		// Insertion-ordered definitions backing the Uid.None "first pool" fallback.
 		private readonly List<PoolableObjectDefinition> _poolOrder = new();
 
 		private ObjectPoolRegistry _registry;
@@ -62,10 +62,9 @@ namespace AK.Utilities
 				return;
 			}
 
-			registry.Initialize();
 			_registry = registry;
 
-			foreach (var definition in registry.GetAllObjects())
+			foreach (var definition in registry.Objects)
 			{
 				if (definition == null || definition.Prefab == null) continue;
 
@@ -129,17 +128,17 @@ namespace AK.Utilities
 			return instance == null ? null : instance.GetComponent<T>();
 		}
 
-		public GameObject Get(UID definitionUID = null, Vector3 position = default, Quaternion rotation = default,
+		public GameObject Get(Uid<PoolableObjectDefinition> definitionId = default, Vector3 position = default, Quaternion rotation = default,
 		                      Transform parent = null)
 		{
-			var definition = ResolveDefinition(definitionUID);
+			var definition = ResolveDefinition(definitionId);
 			return definition == null ? null : Get(definition, position, rotation, parent);
 		}
 
-		public T Get<T>(UID definitionUID = null, Vector3 position = default, Quaternion rotation = default,
+		public T Get<T>(Uid<PoolableObjectDefinition> definitionId = default, Vector3 position = default, Quaternion rotation = default,
 		                Transform parent = null) where T : Component
 		{
-			var instance = Get(definitionUID, position, rotation, parent);
+			var instance = Get(definitionId, position, rotation, parent);
 			return instance == null ? null : instance.GetComponent<T>();
 		}
 
@@ -286,20 +285,25 @@ namespace AK.Utilities
 			instance.SetActive(false);
 		}
 
-		private PoolableObjectDefinition ResolveDefinition(UID definitionUID)
+		private PoolableObjectDefinition ResolveDefinition(Uid<PoolableObjectDefinition> definitionId)
 		{
-			if (definitionUID != null && !definitionUID.IsEmpty())
+			if (definitionId.IsSet)
 			{
 				if (_registry == null)
 				{
-					Debug.LogError("[ObjectPoolService] UID lookup requires a registry - call RegisterPools() first.");
+					Debug.LogError("[ObjectPoolService] Identity lookup requires a registry - call RegisterPools() first.");
 					return null;
 				}
 
-				return _registry.GetObjectByUID(definitionUID);
+				if (!_registry.TryResolve(definitionId, out PoolableObjectDefinition definition))
+				{
+					Debug.LogError($"[ObjectPoolService] No pool definition for {UidDebugNames.Describe(definitionId)}.");
+				}
+
+				return definition;
 			}
 
-			// Null/empty UID: first registered pool (consistent with CameraSystem's fallback).
+			// None: first registered pool (consistent with CameraSystem's fallback).
 			if (_poolOrder.Count > 0) return _poolOrder[0];
 
 			Debug.LogWarning("[ObjectPoolService] No pools registered yet.");

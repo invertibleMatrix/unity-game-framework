@@ -41,7 +41,7 @@ namespace AK.Examples.Rewards
 				return;
 			}
 
-			var currencyModel = _gameModel.GetCurrencyModel(rd.CurrencyDefinition);
+			var currencyModel = _gameModel.GetOrCreateCurrencyModel(rd.CurrencyDefinition);
 			if (currencyModel == null)
 			{
 				Debug.LogWarning($"[CurrencyRewardProvider] No CurrencyModel found for '{rd.CurrencyDefinition.DisplayName}'.");

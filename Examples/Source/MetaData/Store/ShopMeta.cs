@@ -13,222 +13,166 @@ namespace AK.Examples.Store
 	/// Container for shop item definitions with query methods
 	/// </summary>
 	[CreateAssetMenu(fileName = "ShopMeta", menuName = "AK/MetaData/Store/ShopMeta")]
-	public class ShopMeta : MetaDataAsset, IMeta
+	public class ShopMeta : MetaDataAsset, IMetaWithRegistry
 	{
-		[SerializeField] private ShopRegistry         _productsRegistry;
-		
+		[SerializeField] private ShopRegistry _productsRegistry;
+
 		public IAPProductDefinition NoAdsProductDefinition;
 		public IAPProductDefinition VIPSubscriptionProductDefinition;
 
 		[Header("Categories")] [Tooltip("Product categories for UI organization.")]
-		public List<ShopCategoryDefinition> Categories;
+		public List<ShopCategoryDefinition> Categories = new();
 
 		public ShopRegistry Registry => _productsRegistry;
-		
-		public override void InitializeMeta()
+
+		public UidRegistryAssetBase RegistryAsset => _productsRegistry;
+
+		private IReadOnlyList<ShopItemDefinition> Items =>
+			_productsRegistry != null ? _productsRegistry.Objects : Array.Empty<ShopItemDefinition>();
+
+		public override void InitializeMeta() { }
+
+		public bool TryGetItem(Uid<ShopItemDefinition> id, out ShopItemDefinition item)
 		{
-			_productsRegistry.Initialize();
+			item = null;
+			return _productsRegistry != null && _productsRegistry.TryResolve(id, out item);
 		}
 
-		/// <summary>
-		/// Get item by UID
-		/// </summary>
-		public ShopItemDefinition GetItemByUID(UID uid)
+		public ShopItemDefinition GetItem(Uid<ShopItemDefinition> id)
 		{
-			return _productsRegistry.GetObjectByUID(uid);
-		}
-		
-		/// <summary>
-		/// Get category by UID
-		/// </summary>
-		public ShopCategoryDefinition GetCategoryByUID(UID uid)
-		{
-			return Categories.FirstOrDefault(c => c.CategoryID == uid);
+			return TryGetItem(id, out var item) ? item : null;
 		}
 
-		/// <summary>
-		/// Get all items of a specific type
-		/// </summary>
+		public ShopCategoryDefinition GetCategory(Uid<ShopCategoryDefinition> id)
+		{
+			if (id.IsNone) return null;
+
+			for (int i = 0; i < Categories.Count; i++)
+			{
+				var category = Categories[i];
+				if (category != null && category.CategoryId == id) return category;
+			}
+
+			return null;
+		}
+
 		public List<ShopItemDefinition> GetItemsByType(ShopItemType type)
 		{
-			return _productsRegistry.Registry.Objects.Where(i => i.Type == type).ToList();
+			return Items.Where(i => i.Type == type).ToList();
 		}
 
-		/// <summary>
-		/// Get all items of a specific rarity
-		/// </summary>
 		public List<ShopItemDefinition> GetItemsByRarity(ShopItemRarity rarity)
 		{
-			return _productsRegistry.Registry.Objects.Where(i => i.Rarity == rarity).ToList();
+			return Items.Where(i => i.Rarity == rarity).ToList();
 		}
 
 		/// <summary>
-		/// Get all items that use a specific currency type.
+		/// Items whose cost is paid in the given currency (matched on the cost's resource identity).
 		/// </summary>
-		public List<ShopItemDefinition> GetItemsByCurrency(CurrencyType currencyType)
+		public List<ShopItemDefinition> GetItemsByCurrency(CurrencyDefinition currency)
 		{
-			if (currencyType == null) return new List<ShopItemDefinition>();
-			return _productsRegistry.Registry.Objects.Where(i => i.Cost?.CostTypeUID != null).ToList();
+			if (currency == null) return new List<ShopItemDefinition>();
+
+			var currencyId = currency.Id;
+			return Items.Where(i => i.Cost != null && i.Cost.Resource == currencyId).ToList();
 		}
 
-		/// <summary>
-		/// Get all items that use a specific CostType
-		/// </summary>
 		public List<ShopItemDefinition> GetItemsByCostType(CostType costType)
 		{
 			if (costType == null) return new List<ShopItemDefinition>();
-			return _productsRegistry.Registry.Objects.Where(i => i.CostType == costType).ToList();
+			return Items.Where(i => i.CostType == costType).ToList();
 		}
 
-		/// <summary>
-		/// Gets all products in a specific category.
-		/// </summary>
-		public List<ShopItemDefinition> GetProductsByCategory(UID categoryID)
+		public List<ShopItemDefinition> GetProductsByCategory(Uid<ShopCategoryDefinition> categoryId)
 		{
-			if (categoryID.IsEmpty())
-			{
-				return new List<ShopItemDefinition>();
-			}
-
-			ShopCategoryDefinition category = Categories.FirstOrDefault(c => c.CategoryID == categoryID);
-			if (category == null || category.ProductIDs == null)
-			{
-				return new List<ShopItemDefinition>();
-			}
-
-			return _productsRegistry.Registry.Objects.Where(p => category.ProductIDs.Contains(p.UniqueID)).ToList();
+			return GetProductsByCategory(GetCategory(categoryId));
 		}
 
-		/// <summary>
-		/// Get items with time limits
-		/// </summary>
+		public List<ShopItemDefinition> GetProductsByCategory(ShopCategoryDefinition category)
+		{
+			var result = new List<ShopItemDefinition>();
+			if (category == null || category.Products == null || _productsRegistry == null) return result;
+
+			foreach (var productId in category.Products)
+			{
+				if (_productsRegistry.TryResolve(productId, out var item)) result.Add(item);
+			}
+
+			return result;
+		}
+
 		public List<ShopItemDefinition> GetTimeLimitedItems()
 		{
-			return _productsRegistry.Registry.Objects.Where(i => i.HasTimeLimit).ToList();
+			return Items.Where(i => i.HasTimeLimit).ToList();
 		}
 
-		/// <summary>
-		/// Get items with limited quantity
-		/// </summary>
 		public List<ShopItemDefinition> GetLimitedQuantityItems()
 		{
-			return _productsRegistry.Registry.Objects.Where(i => i.IsLimitedQuantity).ToList();
+			return Items.Where(i => i.IsLimitedQuantity).ToList();
 		}
 
-		/// <summary>
-		/// Get items for a specific level range
-		/// </summary>
 		public List<ShopItemDefinition> GetItemsForLevelRange(int minLevel, int maxLevel)
 		{
-			return _productsRegistry.Registry.Objects.Where(i => i.MinimumLevel >= minLevel && (i.MaximumLevel == 0 || i.MaximumLevel <= maxLevel))
-			                        .ToList();
+			return Items.Where(i => i.MinimumLevel >= minLevel && (i.MaximumLevel == 0 || i.MaximumLevel <= maxLevel)).ToList();
 		}
 
-		/// <summary>
-		/// Get items sorted by price (low to high)
-		/// </summary>
 		public List<ShopItemDefinition> GetItemsSortedByPrice()
 		{
-			return _productsRegistry.Registry.Objects.OrderBy(i => i.GetDiscountedPrice()).ToList();
+			return Items.OrderBy(i => i.GetDiscountedPrice()).ToList();
 		}
 
-		/// <summary>
-		/// Get items sorted by rarity (common to legendary)
-		/// </summary>
 		public List<ShopItemDefinition> GetItemsSortedByRarity()
 		{
-			return _productsRegistry.Registry.Objects.OrderBy(i => i.Rarity).ToList();
+			return Items.OrderBy(i => i.Rarity).ToList();
 		}
 
-		/// <summary>
-		/// Get all visible categories
-		/// </summary>
 		public List<ShopCategoryDefinition> GetVisibleCategories()
 		{
-			return Categories.Where(c => c.IsVisible).ToList();
+			return Categories.Where(c => c != null && c.IsVisible).ToList();
 		}
 
-		/// <summary>
-		/// Get categories available to a player
-		/// </summary>
 		public List<ShopCategoryDefinition> GetAvailableCategoriesForPlayer(int playerLevel)
 		{
-			return Categories.Where(c => c.IsVisible && playerLevel >= c.MinimumLevel && (c.MaximumLevel == 0 || playerLevel <= c.MaximumLevel))
+			return Categories.Where(c => c != null && c.IsVisible && playerLevel >= c.MinimumLevel && (c.MaximumLevel == 0 || playerLevel <= c.MaximumLevel))
 			                 .ToList();
 		}
 
-		/// <summary>
-		/// Get featured categories
-		/// </summary>
 		public List<ShopCategoryDefinition> GetFeaturedCategories()
 		{
-			return Categories.Where(c => c.IsFeatured && c.IsVisible).ToList();
+			return Categories.Where(c => c != null && c.IsFeatured && c.IsVisible).ToList();
 		}
 
-		/// <summary>
-		/// Get categories sorted by sort order
-		/// </summary>
 		public List<ShopCategoryDefinition> GetCategoriesSortedBySortOrder()
 		{
-			return Categories.OrderBy(c => c.SortOrder).ToList();
+			return Categories.Where(c => c != null).OrderBy(c => c.SortOrder).ToList();
 		}
 
-		/// <summary>
-		/// Get total number of items
-		/// </summary>
-		public int GetTotalItemCount()
-		{
-			return _productsRegistry.Registry.Objects.Count;
-		}
+		public int GetTotalItemCount() => Items.Count;
 
-		/// <summary>
-		/// Get number of items by type
-		/// </summary>
-		public int GetItemCountByType(ShopItemType type)
-		{
-			return _productsRegistry.Registry.Objects.Count(i => i.Type == type);
-		}
+		public int GetItemCountByType(ShopItemType type) => Items.Count(i => i.Type == type);
 
-		/// <summary>
-		/// Get number of items by rarity
-		/// </summary>
-		public int GetItemCountByRarity(ShopItemRarity rarity)
-		{
-			return _productsRegistry.Registry.Objects.Count(i => i.Rarity == rarity);
-		}
+		public int GetItemCountByRarity(ShopItemRarity rarity) => Items.Count(i => i.Rarity == rarity);
 
-		/// <summary>
-		/// Get total number of categories
-		/// </summary>
-		public int GetTotalCategoryCount()
-		{
-			return Categories.Count;
-		}
+		public int GetTotalCategoryCount() => Categories.Count;
 
-		/// <summary>
-		/// Get items that are expiring soon (within hours)
-		/// </summary>
 		public List<ShopItemDefinition> GetExpiringItems(int hours)
 		{
 			long currentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 			long expireTime = currentTime + (hours * 3600);
 
-			return _productsRegistry.Registry.Objects.Where(i =>
+			return Items.Where(i =>
 				i.HasTimeLimit &&
 				i.EndTime > currentTime &&
 				i.EndTime <= expireTime
 			).ToList();
 		}
 
-		/// <summary>
-		/// Get items that are newly available (within hours)
-		/// </summary>
 		public List<ShopItemDefinition> GetNewlyAvailableItems(int hours)
 		{
 			long currentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 			long startTime = currentTime - (hours * 3600);
 
-			return _productsRegistry.Registry.Objects.Where(i =>
+			return Items.Where(i =>
 				i.HasTimeLimit &&
 				i.StartTime >= startTime &&
 				i.StartTime <= currentTime

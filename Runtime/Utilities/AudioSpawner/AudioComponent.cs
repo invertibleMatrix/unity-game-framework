@@ -20,7 +20,7 @@ namespace Utilities.AudioSpawner
 		private CancellationTokenSource _stopCts;
 		private Transform               _followTarget;
 
-		public UID ConfigVariantId { get; private set; }
+		public Uid<AudioConfig> ConfigId { get; private set; }
 
 		protected virtual void OnValidate()
 		{
@@ -34,7 +34,7 @@ namespace Utilities.AudioSpawner
 		{
 			CancelPlay();
 
-			ConfigVariantId = config.UniqueID;
+			ConfigId = config.IdAs<AudioConfig>();
 			_config = config;
 			_onStop = onStop;
 			_followTarget = null;

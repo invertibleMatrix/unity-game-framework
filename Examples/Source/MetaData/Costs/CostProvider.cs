@@ -11,20 +11,18 @@ namespace AK.Examples.Costs
 	/// </summary>
 	public abstract class CostProvider : MetaDataAsset, ICostProvider
 	{
-		[Tooltip("The CostType UID asset this provider handles. Used by CostService for dispatch.")]
+		[Tooltip("The CostType asset this provider handles. Used by CostService for dispatch.")]
 		public CostType Type;
 
-		// ICostProvider explicit implementation
-		UID ICostProvider.CostTypeUID => Type;
+		Uid ICostProvider.CostType => Type != null ? Type.Id : Uid.None;
 
 		/// <summary>
 		/// Whether this provider can handle the given cost.
-		/// Default: matches by CostTypeUID reference equality.
-		/// Override for custom matching logic.
+		/// Default: matches by cost type identity. Override for custom matching logic.
 		/// </summary>
 		public virtual bool CanProvide(ICostInfo cost)
 		{
-			return cost != null && cost.CostTypeUID == Type;
+			return cost != null && Type != null && cost.CostType == Type.Id;
 		}
 
 		/// <summary>

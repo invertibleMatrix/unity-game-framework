@@ -4,8 +4,8 @@ using UnityEngine;
 namespace AK.CoreDomain.RemoteConfig
 {
 	/// <summary>
-	/// Abstract base class for remote config variables.
-	/// Extends MetaDataAsset and implements IDefinition and IUIDObject for registry tracking.
+	/// Abstract base class for remote config variables. The identity (inherited) is
+	/// internal; the server-facing key is <see cref="VariableKey"/>.
 	/// </summary>
 	public abstract class RemoteVariableBase : MetaDataAsset
 	{
@@ -17,12 +17,6 @@ namespace AK.CoreDomain.RemoteConfig
 
 		[Tooltip("If true, the fetched value will be cached to PlayerPrefs for offline access.")]
 		[SerializeField] protected bool _cacheValue = true;
-		
-		/// <summary>
-		/// 
-		/// The unique identifier for this variable.
-		/// </summary>
-		public virtual UID UniqueID => this;
 
 		/// <summary>
 		/// The key used to identify this variable in the remote config server.

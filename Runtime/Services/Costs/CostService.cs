@@ -6,13 +6,12 @@ using UnityEngine;
 namespace AK.Services.Costs
 {
 	/// <summary>
-	/// Dispatches cost checking and deduction to the appropriate ICostProvider based on CostTypeUID.
+	/// Dispatches cost checking and deduction to the ICostProvider registered for the cost's type.
 	/// </summary>
 	public class CostService : ICostService
 	{
-		private readonly Dictionary<UID, ICostProvider> _providers = new();
+		private readonly Dictionary<Uid, ICostProvider> _providers = new();
 
-		/// <inheritdoc />
 		public void RegisterProvider(ICostProvider provider)
 		{
 			if (provider == null)
@@ -21,67 +20,61 @@ namespace AK.Services.Costs
 				return;
 			}
 
-			if (provider.CostTypeUID == null)
+			if (provider.CostType.IsNone)
 			{
-				Debug.LogWarning($"[CostService] Cannot register provider with null CostTypeUID.");
+				Debug.LogWarning("[CostService] Cannot register a provider whose cost type has no identity.");
 				return;
 			}
 
-			if (_providers.ContainsKey(provider.CostTypeUID))
+			if (_providers.ContainsKey(provider.CostType))
 			{
-				Debug.LogWarning($"[CostService] Replacing existing provider for CostTypeUID '{provider.CostTypeUID.name}'.");
+				Debug.LogWarning($"[CostService] Replacing existing provider for cost type {UidDebugNames.Describe(provider.CostType)}.");
 			}
 
-			_providers[provider.CostTypeUID] = provider;
+			_providers[provider.CostType] = provider;
 		}
 
-		/// <inheritdoc />
 		public bool UnregisterProvider(ICostProvider provider)
 		{
-			if (provider?.CostTypeUID == null) return false;
+			if (provider == null || provider.CostType.IsNone) return false;
 
-			if (_providers.TryGetValue(provider.CostTypeUID, out var existing) && existing == provider)
+			if (_providers.TryGetValue(provider.CostType, out ICostProvider existing) && existing == provider)
 			{
-				return _providers.Remove(provider.CostTypeUID);
+				return _providers.Remove(provider.CostType);
 			}
 
 			return false;
 		}
 
-		/// <inheritdoc />
 		public bool CanAfford(ICostInfo cost)
 		{
-			if (cost?.CostTypeUID == null) return true;
+			if (cost == null || cost.CostType.IsNone) return true;
 
-			if (_providers.TryGetValue(cost.CostTypeUID, out var provider))
+			if (_providers.TryGetValue(cost.CostType, out ICostProvider provider))
 			{
 				return provider.CanAfford(cost);
 			}
 
-			Debug.LogWarning($"[CostService] No provider registered for CostTypeUID '{cost.CostTypeUID.name}'. " +
-			                 $"Register an ICostProvider for this type. Defaulting to unaffordable.");
+			Debug.LogWarning($"[CostService] No provider registered for cost type {UidDebugNames.Describe(cost.CostType)}. Defaulting to unaffordable.");
 			return false;
 		}
 
-		/// <inheritdoc />
 		public bool Deduct(ICostInfo cost)
 		{
-			if (cost?.CostTypeUID == null) return true;
+			if (cost == null || cost.CostType.IsNone) return true;
 
-			if (_providers.TryGetValue(cost.CostTypeUID, out var provider))
+			if (_providers.TryGetValue(cost.CostType, out ICostProvider provider))
 			{
 				return provider.Deduct(cost);
 			}
 
-			Debug.LogWarning($"[CostService] No provider registered for CostTypeUID '{cost.CostTypeUID.name}'. " +
-			                 $"Cannot deduct. Register an ICostProvider for this type.");
+			Debug.LogWarning($"[CostService] No provider registered for cost type {UidDebugNames.Describe(cost.CostType)}. Cannot deduct.");
 			return false;
 		}
 
-		/// <inheritdoc />
-		public ICostProvider GetProvider(UID costTypeUID)
+		public ICostProvider GetProvider(Uid costType)
 		{
-			return costTypeUID != null && _providers.TryGetValue(costTypeUID, out var provider) ? provider : null;
+			return costType.IsSet && _providers.TryGetValue(costType, out ICostProvider provider) ? provider : null;
 		}
 	}
 }

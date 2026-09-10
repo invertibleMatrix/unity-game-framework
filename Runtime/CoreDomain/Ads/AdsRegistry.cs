@@ -9,5 +9,5 @@ namespace AK.CoreDomain
 	/// Similar to IAPRegistry but for ad placements.
 	/// </summary>
 	[CreateAssetMenu(fileName = "AdsRegistry", menuName = "AK/MetaData/Ads/AdsRegistry")]
-	public class AdsRegistry : TypedUIDRegistryAsset<AdPlacementDefinition> { }
+	public class AdsRegistry : UidRegistryAsset<AdPlacementDefinition> { }
 }

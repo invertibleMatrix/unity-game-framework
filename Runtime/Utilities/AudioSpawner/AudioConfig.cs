@@ -68,7 +68,7 @@ namespace Utilities.AudioSpawner
 		public void PlayDebug()
 		{
 			var audioSpawner = SceneManager.GetActiveScene().GetSceneContainer().Resolve<IAudioSpawner>();
-			audioSpawner.Spawn(Prefab.GetType(), UniqueID).Play();
+			audioSpawner.PlayAudio(this);
 		}
 #endif
 	}

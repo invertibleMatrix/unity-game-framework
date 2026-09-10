@@ -72,7 +72,6 @@ namespace AK.CoreDomain.Analytics
 		[Tooltip("Additional provider-specific configuration.")] [TextArea(2, 4)]
 		public string ProviderConfig;
 
-		public UID UniqueID => this;
 
 		/// <summary>
 		/// Checks if this event should be tracked based on sampling rate.

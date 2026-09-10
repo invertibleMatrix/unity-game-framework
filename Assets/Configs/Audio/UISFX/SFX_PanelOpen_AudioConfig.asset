@@ -12,8 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b78053b013d22994fa0ee9b811829eb9, type: 3}
   m_Name: SFX_PanelOpen_AudioConfig
   m_EditorClassIdentifier: AK.Utilities::Utilities.AudioSpawner.AudioConfigBase
-  _id: 9d94087d-75fd-4936-b3ac-525033383206
-  _description: UID_SFX_PanelOpen_AudioConfig
+  _id:
+    _value: 9d94087d75fd4936b3ac525033383206
+  _provenance: 0
+  _provenanceSource: 
+  _notes: 
   Prefab: {fileID: 8238592554925687221, guid: 8353f8a161edd9540ad7e62c1bdcfdbb, type: 3}
   OutputGroup: {fileID: -7933399665858642236, guid: 01252c8adceea61448fbfa3abc2d02b8, type: 2}
   Clips:

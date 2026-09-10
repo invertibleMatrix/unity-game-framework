@@ -4,6 +4,12 @@ using AK.Core;
 
 namespace AK.Services.Facts
 {
+	/// <summary>
+	/// One count row per fact. Rows are keyed by identity value, never by asset reference
+	/// or name, so the file is meaningful without the asset database and survives renames.
+	/// Rows whose identity no longer resolves are kept (a later patch may restore the
+	/// content) but reported as orphans; nothing is ever remapped silently.
+	/// </summary>
 	[Serializable]
 	public class FactLedgerState : PersistableState<FactLedgerState>
 	{
@@ -15,7 +21,7 @@ namespace AK.Services.Facts
 	[Serializable]
 	public class FactCountEntry
 	{
-		public string FactId;
-		public int    Count;
+		public Uid FactId;
+		public int Count;
 	}
 }

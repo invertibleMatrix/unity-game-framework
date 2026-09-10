@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using AK.Core;
+using AK.CoreDomain.Analytics;
 using AK.Examples.Rewards;
 using UnityEngine;
 
@@ -46,7 +48,7 @@ namespace AK.Examples.Achievements
 
         [Header("Prerequisites")]
         [Tooltip("Achievements that must be completed before this one")]
-        public List<UID> PrerequisiteAchievements;
+        public List<Uid<AchievementDefinition>> PrerequisiteAchievements = new();
 
         [Tooltip("Minimum level required to unlock this achievement")]
         public int MinimumLevel;
@@ -74,7 +76,7 @@ namespace AK.Examples.Achievements
 
         [Header("Analytics")]
         [Tooltip("Analytics event to track when this achievement is completed")]
-        public string CompletionEventID;
+        public AnalyticsEventDefinition CompletionEvent;
 
         [Header("Additional Data")]
         [Tooltip("Additional data for custom achievement types")]
@@ -90,26 +92,27 @@ namespace AK.Examples.Achievements
         /// </summary>
         public float CompletionPercentage => TargetValue > 0 ? (float)CurrentProgress / TargetValue * 100f : 0f;
 
-        public UID UniqueID => this;
 
         /// <summary>
         /// Check if this achievement is available to the player
         /// </summary>
-        public bool IsAvailable(int playerLevel, List<UID> completedAchievements)
+        public bool IsAvailable(int playerLevel, IReadOnlyCollection<Uid<AchievementDefinition>> completedAchievements)
         {
             if (!IsActive) return false;
             if (playerLevel < MinimumLevel) return false;
+            if (PrerequisiteAchievements == null || PrerequisiteAchievements.Count == 0) return true;
+            if (completedAchievements == null) return false;
 
             foreach (var prereq in PrerequisiteAchievements)
             {
-                if (!completedAchievements.Contains(prereq))
-                {
-                    return false;
-                }
+                if (prereq.IsNone) continue;
+                if (!completedAchievements.Contains(prereq)) return false;
             }
 
             return true;
         }
+
+        public Uid<AchievementDefinition> AchievementId => IdAs<AchievementDefinition>();
 
         /// <summary>
         /// Add progress to the achievement

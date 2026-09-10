@@ -13,9 +13,11 @@ namespace AK.CoreDomain
 	/// Supports remote config integration for dynamic ad behavior control.
 	/// </summary>
 	[CreateAssetMenu(fileName = "AdsMeta", menuName = "AK/MetaData/Ads/AdsMeta")]
-	public class AdsMeta : MetaDataAsset, IMeta
+	public class AdsMeta : MetaDataAsset, IMetaWithRegistry
 	{
 		[SerializeField] private AdsRegistry _registry;
+
+		public UidRegistryAssetBase RegistryAsset => _registry;
 
 		[Header("Ad Placements")]
 		[Tooltip("All ad placement definitions.")]
@@ -66,12 +68,12 @@ namespace AK.CoreDomain
 		[Serializable]
 		public class AdCategory
 		{
-			public UID CategoryID;
+			public Uid    CategoryID;
 			public string DisplayName;
 			public string Description;
 			public Sprite Icon;
-			public int DisplayPriority;
-			public List<UID> PlacementIDs;
+			public int    DisplayPriority;
+			public List<AdPlacementDefinition> Placements;
 		}
 
 		#region Properties
@@ -119,13 +121,7 @@ namespace AK.CoreDomain
 			}
 		}
 
-		public override void InitializeMeta()
-		{
-			if (_registry != null)
-			{
-				_registry.Initialize();
-			}
-		}
+		public override void InitializeMeta() { }
 
 		/// <summary>
 		/// Gets the minimum level for interstitials (remote override or default).
@@ -172,15 +168,16 @@ namespace AK.CoreDomain
 			return Placements?.FirstOrDefault(p => p.PlacementID == placementID);
 		}
 
-		/// <summary>
-		/// Gets a placement by its UID.
-		/// </summary>
-		public AdPlacementDefinition GetPlacementByID(UID uid)
+		/// <summary>Resolves a placement by identity through the registry. Null when unknown.</summary>
+		public AdPlacementDefinition GetPlacement(Uid<AdPlacementDefinition> id)
 		{
-			if (uid == null || uid.IsEmpty())
-				return null;
+			return _registry != null && _registry.TryResolve(id, out AdPlacementDefinition placement) ? placement : null;
+		}
 
-			return _registry?.GetObjectByUID(uid);
+		/// <summary>Resolves the registry's live instance for a held placement reference.</summary>
+		public AdPlacementDefinition GetPlacement(AdPlacementDefinition asset)
+		{
+			return asset != null ? GetPlacement(asset.IdAs<AdPlacementDefinition>()) : null;
 		}
 
 		/// <summary>
@@ -284,17 +281,16 @@ namespace AK.CoreDomain
 		/// <summary>
 		/// Gets all placements in a specific category.
 		/// </summary>
-		public List<AdPlacementDefinition> GetPlacementsByCategory(UID categoryID)
+		public List<AdPlacementDefinition> GetPlacementsByCategory(Uid categoryID)
 		{
-			if (categoryID == null || categoryID.IsEmpty())
+			if (categoryID.IsNone)
 				return new List<AdPlacementDefinition>();
 
 			var category = Categories?.FirstOrDefault(c => c.CategoryID == categoryID);
-			if (category?.PlacementIDs == null)
+			if (category?.Placements == null)
 				return new List<AdPlacementDefinition>();
 
-			return Placements?.Where(p => category.PlacementIDs.Contains(p.UniqueID)).ToList() 
-				?? new List<AdPlacementDefinition>();
+			return category.Placements.Where(p => p != null).ToList();
 		}
 
 		/// <summary>
@@ -460,7 +456,7 @@ namespace AK.CoreDomain
 		{
 			if (_registry != null)
 			{
-				_registry.RefreshAllObjects();
+				_registry.Editor_RefreshFromProject();
 				UnityEditor.EditorUtility.SetDirty(this);
 			}
 		}

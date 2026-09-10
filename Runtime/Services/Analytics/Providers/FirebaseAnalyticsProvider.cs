@@ -74,18 +74,14 @@ namespace AK.Services.Analytics.Providers
 			TrackEvent(string.IsNullOrEmpty(evt.Id) ? "event" : evt.Id, parameters);
 		}
 
-		public override void TrackEvent(UID eventId, Dictionary<ParameterName, object> parameters)
+		public override void TrackEvent(Uid<AnalyticsEventDefinition> eventId, Dictionary<ParameterName, object> parameters)
 		{
 			if (!_isEnabled || !_isInitialized)
 			{
 				return;
 			}
 
-			var eventDefinition = _metaDataRepository?.GetEventByID(eventId);
-			var eventName = eventDefinition?.EventID ?? eventId.ToString();
-
-			var stringifiedParams = StringifyParameters(parameters);
-			TrackEvent(eventName, stringifiedParams);
+			base.TrackEvent(eventId, parameters);
 		}
 
 		public override void TrackEvent(string eventName, Dictionary<string, object> parameters)

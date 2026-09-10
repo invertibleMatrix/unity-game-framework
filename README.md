@@ -52,7 +52,7 @@ Assets/UGFW/Runtime/
     CoreDomain/     - Framework-core domain definitions: ads, analytics, notifications, remote config + service interfaces (IReward, ICostInfo, IPurchasable, IRewardProvider, ICostProvider)
     Services/       - SDK integrations: ads, analytics, IAP, purchasing, costs, rewards, remote config, notifications
     UISystem/       - Full UI framework: screens, fragments, animations, pooling
-Assets/UGFW/Editor/ - Editor tools: define symbols window, UI visualizer, UID editor, scene loader
+Assets/UGFW/Editor/ - Editor tools: define symbols window, UI visualizer, UID identity tooling, scene loader
 Assets/UGFW/Examples/ - Example implementations: game model, providers, game-specific MetaData domains (currency, rewards, costs, store, IAP, achievements, etc.)
 ```
 
@@ -233,14 +233,14 @@ viewSystem.Show<SettingsScreen>(channelOverride: UIChannel.Overlay);
 var fragment = ShowFragment<CurrencyPanel>();
 
 // Show a fragment with typed context
-var fragment = ShowFragment<RewardPopup>(new RewardPopupContext { RewardUID = rewardUID });
+var fragment = ShowFragment<RewardPopup>(new RewardPopupContext { RewardId = rewardId });
 
 // Show a fragment with custom stack behaviour
 var fragment = ShowFragment<SettingsPanel>(stackBehaviour: ViewStackBehaviour.HideBelow);
 
 // Use onInit to initialize the view before any lifecycle event fires
 var fragment = ShowFragment<RewardPopup>(
-    new RewardPopupContext { RewardUID = rewardUID },
+    new RewardPopupContext { RewardId = rewardId },
     onInit: view => view.Init(rewardService)  // runs before OnPrepareShow, RegisterResources, etc.
 );
 ```
@@ -338,7 +338,7 @@ Pass data to views using `UIContext` subclasses:
 // Define a context
 public class RewardPopupContext : UIContext
 {
-    public UID RewardUID;
+    public Uid<RewardDefinition> RewardId;
     public int Amount;
 }
 
@@ -353,7 +353,7 @@ public class RewardPopup : UIView<RewardPopupContext>
 }
 
 // Show with context
-ShowFragment<RewardPopup>(new RewardPopupContext { RewardUID = uid, Amount = 100 });
+ShowFragment<RewardPopup>(new RewardPopupContext { RewardId = rewardId, Amount = 100 });
 ```
 
 ### Fragment Navigation — GoBack
@@ -546,7 +546,7 @@ Pass data between states by subclassing `TransitionContext`:
 ```csharp
 public class LevelLoadContext : TransitionContext
 {
-    public UID LevelUID;
+    public Uid<LevelDefinition> LevelId;
     public bool IsRestart;
 }
 
@@ -555,13 +555,13 @@ public class GameplayState : AppState<LevelLoadContext>
 {
     protected override void OnEnter()
     {
-        var levelUID = _context.LevelUID;   // strongly typed
+        var levelId = _context.LevelId;     // strongly typed
         var isRestart = _context.IsRestart;
     }
 }
 
 // Pass context when transitioning
-AppStateMachine.ChangeState(_gameplayState, context: new LevelLoadContext { LevelUID = uid, IsRestart = false });
+AppStateMachine.ChangeState(_gameplayState, context: new LevelLoadContext { LevelId = levelId, IsRestart = false });
 ```
 
 #### Setup
@@ -690,19 +690,22 @@ Formatting helpers: `remaining.ToMMSS()` → `"05:30"`, `remaining.ToCompactForm
 
 ### AudioSpawner
 
-A registry-driven, pooled audio system. Create `AudioConfigBase` ScriptableObjects for each sound type, register them in an `AudioRegistry`, and the `AudioSpawner` handles pooling, playback, and cleanup.
+A registry-driven, pooled audio system. Create `AudioConfig` ScriptableObjects for each sound type, register them in an `AudioRegistry`, and the `AudioSpawner` handles pooling, playback, and cleanup.
 
 ```csharp
-// Primary API — play any sound by UID (covers 99% of use cases)
-audioSpawner.PlayAudio(coinPickupUID);
-audioSpawner.PlayAudio(explosionUID, position: hitPoint);  // 3D spatial
+// Primary API — play a held AudioConfig (covers 99% of use cases)
+audioSpawner.PlayAudio(audioIds.CoinPickup);
+audioSpawner.PlayAudio(audioIds.Explosion, position: hitPoint);  // 3D spatial
+
+// Or by identity, resolved through the registry
+audioSpawner.PlayAudio(coinPickupId);   // Uid<AudioConfig>
 
 // Type-safe spawn — returns AudioComponent without auto-playing
-var audio = audioSpawner.Spawn<MusicAudioComponent>(variantUID);
+var audio = audioSpawner.Spawn<MusicAudioComponent>(variantId);
 audio.Play();
 ```
 
-#### AudioConfigBase — Sound Configuration
+#### AudioConfig — Sound Configuration
 
 Each sound is an SO with:
 - **Clips** — list of AudioClips (one is picked randomly, or play all sequentially)
@@ -733,7 +736,10 @@ var explosion = particleSpawner.Spawn<ExplosionParticle>();
 explosion.Show(hitPoint);
 
 // Spawn with position + rotation + color override
-var firework = particleSpawner.Spawn<FireworkParticle>(variantUID);
+var firework = particleSpawner.Spawn<FireworkParticle>(variantId);   // Uid<ParticleConfigBase>
+
+// Or from a held config
+var confetti = particleSpawner.Spawn(particleIds.Confetti);
 firework.Show(position, rotation, color: Color.red);
 
 // Async variant (uses InstantiateAsync)
@@ -1025,29 +1031,61 @@ int val = _highScore; // same as _highScore.Read()
 
 ### UID System
 
-Unique identifiers as ScriptableObject assets. The backbone of the MetaData system.
+> Full guide — setup, field-type decisions, redirects, namespaces, tooling, FAQ: [`Runtime/Core/UID/UID-GUIDE.md`](Runtime/Core/UID/UID-GUIDE.md).
+
+Identity for game content, split into two things that are easy to confuse and must not be:
+
+| Thing | What it is | Where it lives |
+|---|---|---|
+| `Uid` | A 16-byte **value** (two `ulong`s). Cannot be null, cannot dangle, means the same thing on disk, on a server, in a save file, and in a dictionary key. Serializes as one 32-hex string field. | Everywhere identity is stored, compared, hashed, or transmitted. |
+| `UID` (asset) | A ScriptableObject that **carries** one `Uid`. It is the thing a designer drags into a field. Immutable identity, assigned once at creation by the editor and never changed. Reference equality only. | Only in the asset database. Never in persisted state, never on the wire. |
 
 ```csharp
-// UID is a ScriptableObject with an auto-generated GUID
-// Equality is value-based (by GUID string), not reference-based
-uidA == uidB;           // true if same GUID
-uidA == "some-guid";    // compare with string
-string id = uidA;       // implicit conversion to string
+// Asset -> identity (one direction, explicit)
+Uid id = factType.Id;
+Uid<FactType> typed = factType.IdAs<FactType>();
+
+// Identity -> asset (the other direction, through a registry or the repository)
+if (registry.TryResolve(typed, out FactType asset)) { ... }
+if (metaDataRepository.TryResolve(id, out UID any)) { ... }
+
+// There are NO implicit conversions to or from string or UID. Every crossing is visible.
 ```
 
-**Registry lookup:**
-- `UIDRegistry` -- global registry of all UID assets, lookup by GUID or asset name
-- `TypedUIDRegistry<T>` -- maps UID to typed objects (where `T : UID`), bidirectional lookup
-- `TypedUIDRegistryAsset<T>` -- ScriptableObject wrapper with editor validation buttons
+**`Uid<T>`** is a phantom-typed `Uid` — same 16 bytes, but `Uid<AudioConfig>` cannot be passed where `Uid<FactType>` is expected, and the inspector filters its picker to `T` assets with no attribute. Use untyped `Uid` only where identities are genuinely polymorphic (aggregate resolvers, redirect tables, wire formats). For an untyped field that should still get a filtered picker, use `[UidOf(typeof(MetaDataAsset))]`.
+
+**Minting.** `Uid.NewRandom()` (UUIDv4) for ordinary content. `Uid.Deterministic(namespace, name)` (UUIDv5-style) for closed vocabularies that must agree across projects and servers — create a `UidNamespace` asset in a folder and every UID asset created under it derives its identity from the folder namespace and its file name. `UidProvenance` records which path produced the identity (Minted / Imported / Derived) and governs what tooling may do to it.
+
+**Registries.** `UidRegistryAsset<T>` is one asset per domain that maps `Uid -> T`. Lookups are a single hash probe; `UidHandle<T>` turns a hot-path lookup into one array index. Registries are kept in sync by the editor automatically — an asset that appears is tracked, one that disappears is untracked. Nothing calls `Initialize()`; the lookup builds lazily and rebuilds on mutation. A miss returns `false` and never logs: the caller knows what a missing definition means.
+
+**Persistence.** Ledgers (`FactService`, `TransactionService`, `CurrencyModel`) store `Uid` values, never asset references or names. When content is deliberately replaced, the old identity lives on in saves; a human records `old -> new` in a `UidRedirectTable` and every resolver follows it on a miss. Ledgers apply redirects once at load and rewrite the file. An identity that no longer resolves is reported as an orphan (`FindOrphans`), never healed by name.
+
+**Analytics and external systems.** The `Uid` is internal. What goes on the wire is the definition's external key (`EventID`, `ProductID`, `VariableKey`). An unresolvable identity is dropped with a one-time warning, never sent as hex.
+
+**Editor tooling** (`Tools -> UGFW -> UID`):
+
+| Tool | What it does |
+|---|---|
+| Identity authority | Mints on asset creation (before first save) and on import of identity-less assets. A Ctrl+D duplicate is re-minted immediately. Two imported assets sharing a Uid are a **collision**: recorded, surfaced, and blocked from building until a human picks the survivor. Imported identities are never re-minted. |
+| Audit Project | One pass over identities, registries, redirects, Addressables groups, persisted types, and external keys. Errors block the build (`UidBuildValidator`). CI: `-executeMethod AK.Core.Editor.UidAuditMenu.AuditForCI`. |
+| Resolve Collisions | Choose which asset keeps a shared identity; the others receive fresh ones. |
+| Inspect Identity | Paste a hex from a save/log/server row, see the owning asset (following redirects). |
+| Export Catalog | `uid-catalog.json` — every identity with type, path, provenance, external key, plus all redirects. The contract sibling projects and servers consume. |
+| Registries / Refresh All From Project | Full resync when you do not trust the auto-tracker. |
+
+**Rules the tooling enforces:**
+- Every UID asset has a non-empty identity.
+- Every identity is owned by exactly one asset.
+- No UID asset lives in an Addressables group (bundle duplication would create two live instances of one identity).
+- No `PersistableState` field holds a `UID` asset reference — store `Uid`/`Uid<T>`.
+- Redirect chains terminate at an identity a live asset owns.
 
 **The MetaData identity chain:**
 ```
-UID (ScriptableObject with GUID)
+UID (ScriptableObject carrying one Uid)
   -> MetaDataAsset (UID + Name, DisplayName, Description, Icon)
     -> CurrencyDefinition, RewardDefinition, etc. (game-specific definitions)
 ```
-
-Every definition extends `MetaDataAsset` which extends `UID`. This means every definition has a stable GUID identity AND display metadata.
 
 ### EventBus
 
@@ -1085,9 +1123,9 @@ Registry-driven multi-camera management with URP camera stacking. Cameras can be
 
 | Concept | Description |
 |---------|-------------|
-| **CameraType** | UID-based ScriptableObject that identifies a camera kind (e.g., "Main", "UI", "Effects"). Acts as the shared identity bridge between definitions and runtime instances. |
+| **CameraType** | Identity asset (extends UID) that identifies a camera kind (e.g., "Main", "UI", "Effects"). Acts as the shared identity bridge between definitions and runtime instances. |
 | **CameraDefinition** | MetaDataAsset defining a camera's prefab, CameraType, role, layer order, and base camera reference. The single source of truth for spawned cameras. |
-| **CameraRegistry** | `TypedUIDRegistryAsset<CameraDefinition>` — lookup definitions by CameraType UID. Assigned to `CameraSystem` via Inspector. |
+| **CameraRegistry** | `UidRegistryAsset<CameraDefinition>` — lookup definitions by CameraType identity. Assigned to `CameraSystem` via Inspector. |
 | **CameraRole** | `Base` (renders to screen) or `Overlay` (stacks on top of a Base camera's URP output). |
 | **BaseCamera** | Abstract `StateEntity` implementing `IGameCamera`. All cameras extend this. |
 | **CinemachineBaseCamera** | Adds Cinemachine integration with impulse-based shake. |
@@ -1142,20 +1180,20 @@ Base Camera (CameraType: "Main")
        └─ Overlay Camera (CameraType: "Effects", LayerOrder: 20)
 ```
 
-The `CameraType` SO acts as the shared identity bridge — both the Overlay camera's `_baseCameraType` field and the Base camera's `_cameraType` field reference the same CameraType asset, so they match by GUID.
+The `CameraType` SO acts as the shared identity bridge — both the Overlay camera's `_baseCameraType` field and the Base camera's `_cameraType` field reference the same CameraType asset, so they match by identity.
 
 #### API Reference
 
 ```csharp
 // --- Get cameras ---
 var mainCam = cameraSystem.Get<MainCamera>();           // by type
-var uiCam = cameraSystem.GetCamera(uiCameraTypeUID);    // by CameraType UID
+var uiCam = cameraSystem.GetCamera(uiCameraType);       // by CameraType asset (or Uid<CameraType>)
 
 // --- Enable / Disable ---
 cameraSystem.EnableCamera<MainMenuCamera>();
 cameraSystem.DisableCamera<GameplayCamera>();
-cameraSystem.EnableCamera(uiCameraTypeUID);             // by UID
-cameraSystem.DisableCamera(effectsCameraTypeUID);        // by UID
+cameraSystem.EnableCamera(uiCameraType);                // by asset or identity
+cameraSystem.DisableCamera(effectsCameraType);
 
 // --- Spawn / Remove ---
 var cam = cameraSystem.SpawnCamera<UICamera>(uiCameraType);  // spawn from registry
@@ -1191,7 +1229,7 @@ Every game domain follows a consistent four-part pattern:
 
 ```
 [Domain]Meta          -- ScriptableObject container (e.g., CurrencyMeta, RewardsMeta)
-  -> [Domain]Registry    -- TypedUIDRegistry<Definition> for UID-based lookup
+  -> [Domain]Registry    -- UidRegistryAsset<Definition> for identity lookup
   -> [Domain]Definition  -- The actual data asset (extends MetaDataAsset extends UID)
   -> [Domain]Type        -- ScriptableObject categorizing the domain (e.g., CurrencyType, RewardType)
 ```
@@ -1202,19 +1240,23 @@ Every game domain follows a consistent four-part pattern:
 
 ```
 CurrencyMeta (ScriptableObject)
-  -> CurrencyRegistry (TypedUIDRegistry<CurrencyDefinition>)
+  -> CurrencyRegistry (UidRegistryAsset<CurrencyDefinition>)
   -> CurrencyDefinition : MetaDataAsset   // fields: Type (CurrencyType SO), MaxAmount, StartingAmount, etc.
   -> CurrencyType : MetaDataAsset         // Create instances: "SoftCurrency", "HardCurrency", "Energy", etc.
 ```
 
 ### The MetaDataRepository
 
-`MetaDataRepository` is a single ScriptableObject that holds a `UIDRegistry` and provides a **type-keyed registry** for all domain metas. There are no hardcoded convenience properties — every domain is accessed uniformly through `GetMeta<T>()`:
+`MetaDataRepository` is a single ScriptableObject that provides a **type-keyed registry** for all domain metas and acts as the aggregate `IUidResolver` over every registered registry (plus the optional `UidRedirectTable`). There are no hardcoded convenience properties — every domain is accessed uniformly through `GetMeta<T>()`:
 
 ```csharp
 public class MetaDataRepository : ScriptableObject, IMetaDataRepository
 {
-    public UIDRegistry UIDRegistry;
+    public UidRedirectTable Redirects { get; }
+
+    // IUidResolver — resolves any identity across every registered registry
+    public bool TryResolve(Uid id, out UID asset);
+    public bool TryResolve<T>(Uid<T> id, out T asset) where T : UID;
 
     // Type-keyed registry — extensible without modifying framework code
     public void RegisterMeta<T>(T meta) where T : class, IMeta;
@@ -1235,8 +1277,11 @@ public void InstallBindings(ContainerBuilder builder)
     if (_rewardsMeta != null) _metaDataRepository.RegisterMeta(_rewardsMeta);
     if (_shopMeta != null) _metaDataRepository.RegisterMeta(_shopMeta);
 
+    // Build the aggregate resolver BEFORE anything loads persisted identities
+    _metaDataRepository.InitializeRegistries();
+
     // Then register the repository in DI
-    builder.RegisterValue(_metaDataRepository, new[] { typeof(MetaDataRepository), typeof(IMetaDataRepository) });
+    builder.RegisterValue(_metaDataRepository, new[] { typeof(MetaDataRepository), typeof(IMetaDataRepository), typeof(IUidResolver) });
 }
 ```
 
@@ -1252,11 +1297,11 @@ var shopMeta = repository.GetMeta<ShopMeta>();
 // Safe access with TryGetMeta
 if (repository.TryGetMeta<RewardsMeta>(out var rewards))
 {
-    var rewardDef = rewards.Registry.GetObjectByUID(uid);
+    rewards.TryGetReward(rewardId, out var rewardDef);   // Uid<RewardDefinition>
 }
 ```
 
-**The `IMeta` interface** — all Meta containers implement `IMeta` (defined in `AK.Core`). `MetaDataAsset` already implements `IMeta`, so any Meta class extending `MetaDataAsset` is automatically compatible. For Meta classes that extend `ScriptableObject` directly (like `NotificationsMeta`), implement `IMeta` explicitly with an `InitializeMeta()` method.
+**The `IMeta` interface** — all Meta containers implement `IMeta` (defined in `AK.Core`). `MetaDataAsset` already implements `IMeta`, so any Meta class extending `MetaDataAsset` is automatically compatible. A Meta that owns a registry implements `IMetaWithRegistry` and exposes it through `RegistryAsset`; the repository registers it automatically in `InitializeRegistries()`.
 
 Place ONE `MetaDataRepository` in your bootstrap scene. It's registered in DI and injected everywhere.
 
@@ -1321,7 +1366,7 @@ These domains are **not part of the framework core** — they are example implem
 
 - `IAPProductDefinition` -- store product ID, product type (Consumable/NonConsumable/Subscription)
 - `IAPProductType` enum
-- `ShopCategoryDefinition` -- categories of shop items with cost type, product UIDs
+- `ShopCategoryDefinition` -- categories of shop items with cost type and product identities (`List<Uid<ShopItemDefinition>>`)
 - `ShopItemDefinition` -- individual shop items with rarity, cost, rewards
 - `ShopMeta` / `ShopRegistry` -- container and registry
 
@@ -1382,8 +1427,8 @@ public class MyGameModel : PersistableState<MyGameModel>
     [NonSerialized] private List<CurrencyModel> _currencies = new();
     [SerializeField] private List<SerializableCurrency> _serializedCurrencies = new();
 
-    public CurrencyModel GetCurrencyModel(CurrencyDefinition def) { /* lookup by UID */ }
-    public override void OnInitialized(bool isFirstLaunch) { /* resolve UIDs */ }
+    public CurrencyModel GetCurrencyModel(CurrencyDefinition def) { /* lookup by identity */ }
+    public override void OnInitialized(bool isFirstLaunch) { /* re-resolve identities; quarantine orphans */ }
     public override void OnBeforeSerialize() { /* serialize currencies */ }
     public override void OnAfterDeserialize() { /* deserialize currencies */ }
 }
@@ -1498,7 +1543,7 @@ Multi-provider analytics facade with metadata-driven event definitions.
 analyticsService.TrackEvent("level_complete", new Dictionary<string, object> { { "level", 5 } });
 
 // Track metadata-driven events (validates parameters, maps provider names)
-analyticsService.TrackEvent(eventUID, parameters);
+analyticsService.TrackEvent(analyticsMeta.Ids.LevelComplete, parameters);   // AnalyticsEventDefinition or Uid<AnalyticsEventDefinition>
 
 // Track monetization
 analyticsService.TrackPurchase("com.game.coinpack", 0.99, "USD");
@@ -1548,14 +1593,14 @@ await remoteConfigService.FetchAndActivateAsync();
 
 ### Notification Service
 
-Local push notifications with UID-based scheduling from MetaData definitions.
+Local push notifications scheduled from MetaData definitions (by asset or `Uid<NotificationDefinition>`).
 
 ```csharp
 // Request permission
 notificationService.RequestPermission(status => { /* ... */ });
 
 // Schedule from MetaData definition
-notificationService.ScheduleNotification(welcomeUID, delaySeconds: 86400);
+notificationService.ScheduleNotification(notificationsMeta.Welcome, delaySeconds: 86400);
 
 // Schedule custom
 notificationService.ScheduleNotification("Title", "Message", fireTime, "id", data, repeatInterval);
@@ -1569,7 +1614,7 @@ notificationService.ScheduleNotification("Title", "Message", fireTime, "id", dat
 |------|-----------|-------------|
 | **Define Symbols Window** | Tools > UGFW > Define Symbols | Toggle preprocessor symbols for optional SDKs |
 | **View Stack Visualizer** | AK > UI > V2 - View Stack Visualizer | Inspect live UI channel/fragment stacks, validate consistency |
-| **UID Editor** | Context menu on null UID fields | Create UID assets in-place from inspector |
+| **UID tooling** | `Tools -> UGFW -> UID` | Identity authority, audit + build gate, collision resolver, identity inspector, catalog export (see UID System) |
 | **Missing Scripts Finder** | Tools > Missing Scripts | Find and remove missing script references |
 | **Always Start From Scene 0** | Tools > AK > AlwaysStartsFromScene0 | Force Play mode to start from bootstrap scene |
 | **Inspector Ping Button** | Automatic on all inspectors | Ping button in every Inspector header |

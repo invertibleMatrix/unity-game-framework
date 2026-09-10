@@ -14,7 +14,7 @@ namespace AK.Tutorials
 	/// closes tooltip and spotlight. Steps differ only by which fact asset is
 	/// linked, not by class.
 	/// Direct FactType reference is deliberate: fact types are pure-identity
-	/// (stateless) UID assets, so bundle duplication is behaviorally transparent.
+	/// (stateless) assets, so bundle duplication is behaviorally transparent.
 	/// </summary>
 	[CreateAssetMenu(fileName = "SpotLightTooltipAdvanceOnStep", menuName = "AK/Tutorials/SpotLightTooltipAdvanceOnStep")]
 	public class SpotLightTooltipAdvanceOnStep : SpotlightTooltipStep
@@ -34,11 +34,12 @@ namespace AK.Tutorials
 			// Advance on occurrences recorded while the step is live — a count from
 			// before the tutorial presented (the action already happened once) must
 			// not complete the step the moment it shows.
-			int baseline = context.Facts.Count(_advanceOn.Id);
+			var factId = _advanceOn.IdAs<FactType>();
+			int baseline = context.Facts.Count(factId);
 
-			Debug.Log($"[SpotLightTooltipAdvanceOnStep] '{name}' waiting on fact '{_advanceOn.name}' (GUID: {_advanceOn.Id}).", this);
+			Debug.Log($"[SpotLightTooltipAdvanceOnStep] '{name}' waiting on fact '{_advanceOn.name}' ({factId}).", this);
 
-			await context.Facts.WaitForCountAsync(_advanceOn.Id, baseline + 1, ct);
+			await context.Facts.WaitForCountAsync(factId, baseline + 1, ct);
 		}
 	}
 }

@@ -18,7 +18,7 @@ namespace AK.Examples
 	public class ExampleGameModel : PersistableState<ExampleGameModel>
 	{
 		protected override string SaveKey => "EXAMPLE_GAME_SAVE";
-		protected override int CurrentSaveVersion => 2;
+		protected override int CurrentSaveVersion => 3;
 
 		// Game-specific fields — each game defines its own
 		public int TotalStars;
@@ -34,24 +34,61 @@ namespace AK.Examples
 		[SerializeField] private List<SerializableCurrency> _serializedCurrencies = new();
 
 		[NonSerialized] private IMetaDataRepository _metaDataRepository;
+		[NonSerialized] private readonly List<CurrencyModel> _orphanedCurrencies = new();
 
 		public IReadOnlyList<CurrencyModel> GetAllCurrencies() => _currencies;
+
+		/// <summary>
+		/// Balances whose currency identity no longer resolves. Kept out of the live list so
+		/// gameplay never sees a definition-less model, but still persisted for support/diagnostics.
+		/// </summary>
+		public IReadOnlyList<CurrencyModel> GetOrphanedCurrencies() => _orphanedCurrencies;
 
 		public CurrencyModel GetCurrencyModel(CurrencyDefinition definition)
 		{
 			if (definition == null) return null;
-			return _currencies.FirstOrDefault(x => x.UniqueID == definition.UniqueID);
+			return GetCurrencyModel(definition.IdAs<CurrencyDefinition>());
+		}
+
+		public CurrencyModel GetCurrencyModel(Uid<CurrencyDefinition> currencyId)
+		{
+			if (currencyId.IsNone) return null;
+
+			for (int i = 0; i < _currencies.Count; i++)
+			{
+				if (_currencies[i].CurrencyId == currencyId) return _currencies[i];
+			}
+
+			return null;
 		}
 
 		public CurrencyModel GetCurrencyModel(CurrencyType currencyType)
 		{
 			if (currencyType == null) return null;
-			return _currencies.FirstOrDefault(x => x.CurrencyDefinition?.Type == currencyType);
+			return _currencies.FirstOrDefault(x => x.CurrencyDefinition != null && x.CurrencyDefinition.Type == currencyType);
+		}
+
+		/// <summary>
+		/// Returns the balance for a currency, creating it with the definition's starting amount on first access.
+		/// </summary>
+		public CurrencyModel GetOrCreateCurrencyModel(CurrencyDefinition definition)
+		{
+			if (definition == null) return null;
+
+			var existing = GetCurrencyModel(definition);
+			if (existing != null) return existing;
+
+			var created = new CurrencyModel(definition, definition.StartingAmount);
+			_currencies.Add(created);
+			Commit();
+			return created;
 		}
 
 		public void AddCurrency(CurrencyModel currency)
 		{
-			if (currency == null || _currencies.Contains(currency)) return;
+			if (currency == null || currency.CurrencyId.IsNone || _currencies.Contains(currency)) return;
+			if (GetCurrencyModel(currency.CurrencyId) != null) return;
+
 			_currencies.Add(currency);
 			Commit();
 		}
@@ -73,29 +110,45 @@ namespace AK.Examples
 
 		public override void OnInitialized(bool isFirstLaunch)
 		{
-			foreach (var currency in _currencies)
+			_orphanedCurrencies.Clear();
+
+			for (int i = _currencies.Count - 1; i >= 0; i--)
 			{
-				currency.ResolveUID(_metaDataRepository);
+				var currency = _currencies[i];
+				if (currency.TryResolve(_metaDataRepository)) continue;
+
+				Debug.LogWarning($"[ExampleGameModel] Currency balance for {currency.CurrencyId} (amount {currency.Amount}) no longer resolves to a CurrencyDefinition. Quarantined as orphan.");
+				_orphanedCurrencies.Add(currency);
+				_currencies.RemoveAt(i);
 			}
 		}
 
 		protected override void OnMigrate()
 		{
-			// Example: migrate from version 1 to version 2
-			// if (SaveVersion < 2) { ... }
+			// Version 3 changed the currency identity encoding; earlier saves are pre-launch and dropped.
+			if (SaveVersion < 3)
+			{
+				_currencies.Clear();
+				_serializedCurrencies.Clear();
+			}
 		}
 
 		public override void OnBeforeSerialize()
 		{
 			_serializedCurrencies.Clear();
-			foreach (var currency in _currencies)
+			AppendSerialized(_currencies);
+			AppendSerialized(_orphanedCurrencies);
+		}
+
+		private void AppendSerialized(List<CurrencyModel> models)
+		{
+			foreach (var model in models)
 			{
-				var serializableCurrency = new SerializableCurrency
+				_serializedCurrencies.Add(new SerializableCurrency
 				{
-					TypeName = currency.GetType().AssemblyQualifiedName,
-					Data = JsonUtility.ToJson(currency)
-				};
-				_serializedCurrencies.Add(serializableCurrency);
+					TypeName = model.GetType().AssemblyQualifiedName,
+					Data = JsonUtility.ToJson(model)
+				});
 			}
 		}
 
@@ -105,10 +158,9 @@ namespace AK.Examples
 			foreach (var serializableCurrency in _serializedCurrencies)
 			{
 				var type = Type.GetType(serializableCurrency.TypeName);
-				if (type != null)
+				if (type != null && typeof(CurrencyModel).IsAssignableFrom(type))
 				{
-					var currency = (CurrencyModel)JsonUtility.FromJson(serializableCurrency.Data, type);
-					_currencies.Add(currency);
+					_currencies.Add((CurrencyModel)JsonUtility.FromJson(serializableCurrency.Data, type));
 				}
 				else
 				{

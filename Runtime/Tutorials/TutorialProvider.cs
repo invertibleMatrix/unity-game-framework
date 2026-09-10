@@ -16,7 +16,7 @@ namespace AK.Tutorials
 	/// only the steps whose conditions are met and returns; the next checkpoint
 	/// resumes from the progress count, so tutorials resume correctly after a
 	/// restart and never hold long-lived waits. Holds no presentation logic.
-	/// MetaDataAsset base: UID identity, so references can be GUID links resolved
+	/// MetaDataAsset base: carries an identity, so references can be Uid links resolved
 	/// through the provider registry instead of hard asset references.
 	/// </summary>
 	[CreateAssetMenu(fileName = "TutorialProvider", menuName = "AK/Tutorials/Tutorial Provider")]

@@ -422,7 +422,7 @@ namespace AK.Services
         }
 #endif
 
-		public void ScheduleNotification(UID notificationUID, DateTime fireTime)
+		public void ScheduleNotification(Uid<NotificationDefinition> notificationId, DateTime fireTime)
 		{
 			if (!_isInitialized)
 			{
@@ -437,25 +437,26 @@ namespace AK.Services
 				return;
 			}
 
-			// Get notification definition from MetaData
-			NotificationDefinition notificationDefinition = _notificationsMeta.GetNotification(notificationUID);
+			NotificationDefinition notificationDefinition = _notificationsMeta != null ? _notificationsMeta.GetNotification(notificationId) : null;
 
 			if (notificationDefinition == null)
 			{
-				Debug.LogWarning($"[NotificationService] Notification definition not found: {notificationUID}");
+				Debug.LogWarning($"[NotificationService] Notification definition not found: {UidDebugNames.Describe(notificationId)}");
 				return;
 			}
 
 			if (!notificationDefinition.IsEnabled)
 			{
-				Debug.Log($"[NotificationService] Notification is disabled: {notificationUID}");
+				Debug.Log($"[NotificationService] Notification is disabled: {notificationDefinition.name}");
 				return;
 			}
 
-			var identifier = notificationUID.ToString();
+			// The identity is the platform identifier: stable across launches so a rescheduled
+			// notification replaces its predecessor instead of stacking.
+			string identifier = notificationId.ToString();
 			var data = new Dictionary<string, string>
 			{
-				{ "channel_id", notificationUID },
+				{ "channel_id", identifier },
 				{ "type", notificationDefinition.Type.ToString() }
 			};
 
@@ -477,10 +478,32 @@ namespace AK.Services
 			}
 		}
 
-		public void ScheduleNotification(UID notificationUID, int delaySeconds)
+		public void ScheduleNotification(Uid<NotificationDefinition> notificationId, int delaySeconds)
 		{
 			var fireTime = DateTime.Now.AddSeconds(delaySeconds);
-			ScheduleNotification(notificationUID, fireTime);
+			ScheduleNotification(notificationId, fireTime);
+		}
+
+		public void ScheduleNotification(NotificationDefinition definition, DateTime fireTime)
+		{
+			if (definition == null)
+			{
+				Debug.LogError("[NotificationService] ScheduleNotification called with a null definition.");
+				return;
+			}
+
+			ScheduleNotification(definition.IdAs<NotificationDefinition>(), fireTime);
+		}
+
+		public void ScheduleNotification(NotificationDefinition definition, int delaySeconds)
+		{
+			if (definition == null)
+			{
+				Debug.LogError("[NotificationService] ScheduleNotification called with a null definition.");
+				return;
+			}
+
+			ScheduleNotification(definition.IdAs<NotificationDefinition>(), delaySeconds);
 		}
 
 		public void ScheduleNotification(string title, string message, DateTime fireTime, string identifier = null,

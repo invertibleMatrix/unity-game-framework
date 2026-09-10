@@ -18,7 +18,8 @@ namespace AK.Services
 
 		void TrackEvent(string eventName, Dictionary<string, object> parameters);
 
-		void TrackEvent(UID eventID, Dictionary<ParameterName, object> parameters);
+		void TrackEvent(AnalyticsEventDefinition definition, Dictionary<ParameterName, object> parameters);
+		void TrackEvent(Uid<AnalyticsEventDefinition> eventId, Dictionary<ParameterName, object> parameters);
 
 		void TrackDesign(string eventId, float? value = null, Dictionary<string, object> parameters = null);
 

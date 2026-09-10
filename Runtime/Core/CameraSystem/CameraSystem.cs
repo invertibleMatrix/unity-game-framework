@@ -20,16 +20,16 @@ namespace AK.Systems
 		// Multiple cameras may share a concrete type (prefab variants) - keep them all, first-bound wins lookups.
 		private readonly Dictionary<Type, List<IGameCamera>> _camerasByType = new();
 
-		private readonly Dictionary<string, IGameCamera> _camerasByUID = new();
+		private readonly Dictionary<Uid, IGameCamera> _camerasById = new();
 
-		// Insertion-ordered list backing the "first bound camera" fallback for null UIDs.
+		// Insertion-ordered list backing the "first bound camera" fallback for None identities.
 		private readonly List<IGameCamera> _bindOrder = new();
 
-		private readonly Dictionary<string, UniversalAdditionalCameraData> _baseCameraData = new();
+		private readonly Dictionary<Uid, UniversalAdditionalCameraData> _baseCameraData = new();
 
 		private readonly List<GameObject> _spawnedCameraObjects = new();
 
-		private readonly Dictionary<string, List<IGameCamera>> _pendingOverlays = new();
+		private readonly Dictionary<Uid, List<IGameCamera>> _pendingOverlays = new();
 
 		// Virtual (Cinemachine) cameras
 		private readonly List<IVirtualGameCamera> _virtualCameras = new();
@@ -43,11 +43,6 @@ namespace AK.Systems
 
 		private void Awake()
 		{
-			if (_cameraRegistry != null)
-			{
-				_cameraRegistry.Initialize();
-			}
-
 			_stackComparer = new CameraLayerOrderComparer(_layerOrderCache);
 		}
 
@@ -75,25 +70,27 @@ namespace AK.Systems
 			return null;
 		}
 
-		public IGameCamera GetCamera(UID cameraTypeUID = null)
+		public IGameCamera GetCamera(Uid<CameraType> cameraType = default)
 		{
-			// Null/empty UID = "first bound camera". UIDs only disambiguate variants.
-			if (cameraTypeUID == null || cameraTypeUID.IsEmpty())
+			// None = "first bound camera". Identities only disambiguate variants.
+			if (cameraType.IsNone)
 			{
 				return _bindOrder.Count > 0 ? _bindOrder[0] : null;
 			}
 
-			return _camerasByUID.GetValueOrDefault(cameraTypeUID.Id);
+			return _camerasById.GetValueOrDefault(cameraType.Value);
 		}
 
-		public T GetCamera<T>(UID cameraTypeUID = null) where T : class, IGameCamera
+		public IGameCamera GetCamera(CameraType cameraType) => GetCamera(ToId(cameraType));
+
+		public T GetCamera<T>(Uid<CameraType> cameraType = default) where T : class, IGameCamera
 		{
-			if (cameraTypeUID != null && !cameraTypeUID.IsEmpty())
+			if (cameraType.IsSet)
 			{
-				return _camerasByUID.GetValueOrDefault(cameraTypeUID.Id) as T;
+				return _camerasById.GetValueOrDefault(cameraType.Value) as T;
 			}
 
-			// No UID: first bound camera assignable to T.
+			// No identity: first bound camera assignable to T.
 			foreach (var camera in _bindOrder)
 			{
 				if (camera is T match)
@@ -103,6 +100,13 @@ namespace AK.Systems
 			}
 
 			return null;
+		}
+
+		public T GetCamera<T>(CameraType cameraType) where T : class, IGameCamera => GetCamera<T>(ToId(cameraType));
+
+		private static Uid<CameraType> ToId(CameraType cameraType)
+		{
+			return cameraType != null ? cameraType.IdAs<CameraType>() : default;
 		}
 
 		public IReadOnlyList<T> GetCameras<T>() where T : class, IGameCamera
@@ -139,15 +143,15 @@ namespace AK.Systems
 				_camerasByType[type] = new List<IGameCamera> { gameCamera };
 			}
 
-			if (gameCamera.CameraTypeUID != null && !gameCamera.CameraTypeUID.IsEmpty())
+			if (gameCamera.CameraTypeId.IsSet)
 			{
-				if (_camerasByUID.TryGetValue(gameCamera.CameraTypeUID.Id, out var existing) && !ReferenceEquals(existing, gameCamera))
+				if (_camerasById.TryGetValue(gameCamera.CameraTypeId.Value, out var existing) && !ReferenceEquals(existing, gameCamera))
 				{
-					Debug.LogWarning($"[CameraSystem] Duplicate CameraType UID '{gameCamera.CameraTypeUID}' on '{gameCamera.GameObject.name}' - keeping the first bound ('{existing.GameObject.name}').");
+					Debug.LogWarning($"[CameraSystem] Duplicate CameraType {UidDebugNames.Describe(gameCamera.CameraTypeId)} on '{gameCamera.GameObject.name}' - keeping the first bound ('{existing.GameObject.name}').");
 				}
 				else
 				{
-					_camerasByUID[gameCamera.CameraTypeUID.Id] = gameCamera;
+					_camerasById[gameCamera.CameraTypeId.Value] = gameCamera;
 				}
 			}
 
@@ -190,10 +194,10 @@ namespace AK.Systems
 			// Overlay Camera: Auto-stack if base exists, otherwise defer
 			else if (gameCamera.Role == CameraRole.Overlay)
 			{
-				var baseUID = gameCamera.DefaultBaseCameraUID;
-				if (baseUID != null && !baseUID.IsEmpty())
+				Uid<CameraType> baseId = gameCamera.DefaultBaseCameraId;
+				if (baseId.IsSet)
 				{
-					var baseKey = baseUID.Id;
+					Uid baseKey = baseId.Value;
 					if (_baseCameraData.ContainsKey(baseKey))
 					{
 						AddToStack(baseKey, gameCamera);
@@ -226,12 +230,12 @@ namespace AK.Systems
 				}
 			}
 
-			if (gameCamera.CameraTypeUID != null && !gameCamera.CameraTypeUID.IsEmpty())
+			if (gameCamera.CameraTypeId.IsSet)
 			{
-				// Only remove the UID mapping if it still points at THIS camera (duplicate-UID binds keep the first).
-				if (_camerasByUID.TryGetValue(gameCamera.CameraTypeUID.Id, out var mapped) && ReferenceEquals(mapped, gameCamera))
+				// Only remove the mapping if it still points at THIS camera (duplicate binds keep the first).
+				if (_camerasById.TryGetValue(gameCamera.CameraTypeId.Value, out var mapped) && ReferenceEquals(mapped, gameCamera))
 				{
-					_camerasByUID.Remove(gameCamera.CameraTypeUID.Id);
+					_camerasById.Remove(gameCamera.CameraTypeId.Value);
 				}
 			}
 
@@ -250,10 +254,10 @@ namespace AK.Systems
 
 			if (gameCamera.Role == CameraRole.Overlay)
 			{
-				var baseUID = gameCamera.DefaultBaseCameraUID;
-				if (baseUID != null && !baseUID.IsEmpty())
+				Uid<CameraType> baseId = gameCamera.DefaultBaseCameraId;
+				if (baseId.IsSet)
 				{
-					var baseKey = baseUID.Id;
+					Uid baseKey = baseId.Value;
 					if (_pendingOverlays.TryGetValue(baseKey, out var pending))
 					{
 						pending.Remove(gameCamera);
@@ -271,7 +275,7 @@ namespace AK.Systems
 			}
 		}
 
-		public T SpawnCamera<T>(UID cameraTypeUID = null) where T : class, IGameCamera
+		public T SpawnCamera<T>(Uid<CameraType> cameraType = default) where T : class, IGameCamera
 		{
 			if (_cameraRegistry == null)
 			{
@@ -279,26 +283,21 @@ namespace AK.Systems
 				return null;
 			}
 
-			CameraDefinition definition;
-
-			if (cameraTypeUID != null && !cameraTypeUID.IsEmpty())
-			{
-				definition = _cameraRegistry.GetDefinitionByCameraType(cameraTypeUID as CameraType);
-			}
-			else
-			{
-				// Null UID: first definition whose prefab actually carries a T component.
-				definition = FindFirstDefinitionFor<T>();
-			}
+			// None: first definition whose prefab actually carries a T component.
+			CameraDefinition definition = cameraType.IsSet
+				? _cameraRegistry.GetDefinitionByCameraType(cameraType)
+				: FindFirstDefinitionFor<T>();
 
 			if (definition == null || definition.Prefab == null)
 			{
-				Debug.LogError($"[CameraSystem] SpawnCamera failed: No CameraDefinition found for CameraType '{cameraTypeUID}'.");
+				Debug.LogError($"[CameraSystem] SpawnCamera failed: no CameraDefinition for CameraType {UidDebugNames.Describe(cameraType)}.");
 				return null;
 			}
 
 			return SpawnFromDefinition<T>(definition);
 		}
+
+		public T SpawnCamera<T>(CameraType cameraType) where T : class, IGameCamera => SpawnCamera<T>(ToId(cameraType));
 
 		private T SpawnFromDefinition<T>(CameraDefinition definition) where T : class, IGameCamera
 		{
@@ -333,9 +332,9 @@ namespace AK.Systems
 			return gameCamera as T;
 		}
 
-		public void RemoveCamera(UID cameraTypeUID, bool destroy = true)
+		public void RemoveCamera(Uid<CameraType> cameraType, bool destroy = true)
 		{
-			var camera = GetCamera(cameraTypeUID);
+			var camera = GetCamera(cameraType);
 			if (camera == null) return;
 
 			UnbindCamera(camera);
@@ -346,6 +345,8 @@ namespace AK.Systems
 				Destroy(camera.GameObject);
 			}
 		}
+
+		public void RemoveCamera(CameraType cameraType, bool destroy = true) => RemoveCamera(ToId(cameraType), destroy);
 
 		public void EnableCamera<T>(bool enableGameObject = true) where T : class, IGameCamera
 		{
@@ -380,9 +381,9 @@ namespace AK.Systems
 			DisablePhysicalOrVirtual(camera, disableGameObject);
 		}
 
-		public void EnableCamera(UID cameraTypeUID, bool enableGameObject = true)
+		public void EnableCamera(Uid<CameraType> cameraType, bool enableGameObject = true)
 		{
-			var camera = GetCamera(cameraTypeUID);
+			var camera = GetCamera(cameraType);
 			if (camera == null) return;
 
 			if (camera is IVirtualGameCamera virtualCamera)
@@ -395,19 +396,23 @@ namespace AK.Systems
 			EnablePhysicalCamera(camera, enableGameObject);
 		}
 
-		public void DisableCamera(UID cameraTypeUID, bool disableGameObject = true)
+		public void EnableCamera(CameraType cameraType, bool enableGameObject = true) => EnableCamera(ToId(cameraType), enableGameObject);
+
+		public void DisableCamera(Uid<CameraType> cameraType, bool disableGameObject = true)
 		{
-			var camera = GetCamera(cameraTypeUID);
+			var camera = GetCamera(cameraType);
 			if (camera == null) return;
 
 			DisablePhysicalOrVirtual(camera, disableGameObject);
 		}
 
+		public void DisableCamera(CameraType cameraType, bool disableGameObject = true) => DisableCamera(ToId(cameraType), disableGameObject);
+
 		private void EnablePhysicalCamera(IGameCamera camera, bool enableGameObject)
 		{
-			if (camera.Role == CameraRole.Overlay && camera.DefaultBaseCameraUID != null)
+			if (camera.Role == CameraRole.Overlay && camera.DefaultBaseCameraId.IsSet)
 			{
-				AddToStack(camera.DefaultBaseCameraUID.Id, camera);
+				AddToStack(camera.DefaultBaseCameraId.Value, camera);
 			}
 
 			if (enableGameObject)
@@ -422,9 +427,9 @@ namespace AK.Systems
 			{
 				DeactivateVirtualCamera(virtualCamera);
 			}
-			else if (camera.Role == CameraRole.Overlay && camera.DefaultBaseCameraUID != null)
+			else if (camera.Role == CameraRole.Overlay && camera.DefaultBaseCameraId.IsSet)
 			{
-				RemoveFromStack(camera.DefaultBaseCameraUID.Id, camera);
+				RemoveFromStack(camera.DefaultBaseCameraId.Value, camera);
 			}
 
 			if (disableGameObject)
@@ -459,7 +464,7 @@ namespace AK.Systems
 			}
 		}
 
-		private void AddToStack(string baseKey, IGameCamera overlay)
+		private void AddToStack(Uid baseKey, IGameCamera overlay)
 		{
 			if (!_baseCameraData.TryGetValue(baseKey, out var baseData)) return;
 
@@ -470,7 +475,7 @@ namespace AK.Systems
 			}
 		}
 
-		private void RemoveFromStack(string baseKey, IGameCamera overlay)
+		private void RemoveFromStack(Uid baseKey, IGameCamera overlay)
 		{
 			if (!_baseCameraData.TryGetValue(baseKey, out var baseData)) return;
 
@@ -537,9 +542,9 @@ namespace AK.Systems
 			}
 		}
 
-		public void ActivateVirtualCamera(UID cameraTypeUID = null, IVirtualGameCamera explicitCamera = null)
+		public void ActivateVirtualCamera(Uid<CameraType> cameraType = default, IVirtualGameCamera explicitCamera = null)
 		{
-			var target = ResolveVirtualCamera(cameraTypeUID, explicitCamera);
+			var target = ResolveVirtualCamera(cameraType, explicitCamera);
 			if (target == null) return;
 
 			foreach (var cam in _virtualCameras)
@@ -553,10 +558,15 @@ namespace AK.Systems
 			_activeVirtualCamera = target;
 		}
 
-		public async UniTask<IVirtualGameCamera> ActivateVirtualCameraAsync(UID cameraTypeUID = null, IVirtualGameCamera explicitCamera = null,
+		public void ActivateVirtualCamera(CameraType cameraType, IVirtualGameCamera explicitCamera = null)
+		{
+			ActivateVirtualCamera(ToId(cameraType), explicitCamera);
+		}
+
+		public async UniTask<IVirtualGameCamera> ActivateVirtualCameraAsync(Uid<CameraType> cameraType = default, IVirtualGameCamera explicitCamera = null,
 		                                                                    CancellationToken ct = default)
 		{
-			ActivateVirtualCamera(cameraTypeUID, explicitCamera);
+			ActivateVirtualCamera(cameraType, explicitCamera);
 			await WaitForCameraBlendAsync(ct);
 			return _activeVirtualCamera;
 		}
@@ -608,25 +618,25 @@ namespace AK.Systems
 			}
 		}
 
-		private IVirtualGameCamera ResolveVirtualCamera(UID cameraTypeUID, IVirtualGameCamera explicitCamera)
+		private IVirtualGameCamera ResolveVirtualCamera(Uid<CameraType> cameraType, IVirtualGameCamera explicitCamera)
 		{
 			if (explicitCamera != null) return explicitCamera;
 
-			if (cameraTypeUID != null && !cameraTypeUID.IsEmpty())
+			if (cameraType.IsSet)
 			{
-				if (_camerasByUID.TryGetValue(cameraTypeUID.Id, out var camera))
+				if (_camerasById.TryGetValue(cameraType.Value, out var camera))
 				{
 					if (camera is IVirtualGameCamera virtualCamera) return virtualCamera;
 
-					Debug.LogWarning($"[CameraSystem] Camera '{cameraTypeUID}' is bound but is not a virtual camera.");
+					Debug.LogWarning($"[CameraSystem] Camera {UidDebugNames.Describe(cameraType)} is bound but is not a virtual camera.");
 					return null;
 				}
 
-				Debug.LogWarning($"[CameraSystem] No camera bound for CameraType '{cameraTypeUID}'.");
+				Debug.LogWarning($"[CameraSystem] No camera bound for CameraType {UidDebugNames.Describe(cameraType)}.");
 				return null;
 			}
 
-			// Null UID: default first, otherwise the first bound virtual camera.
+			// None: default first, otherwise the first bound virtual camera.
 			return _defaultVirtualCamera ?? (_virtualCameras.Count > 0 ? _virtualCameras[0] : null);
 		}
 
@@ -645,7 +655,7 @@ namespace AK.Systems
 
 		private CameraDefinition FindFirstDefinitionFor<T>() where T : class, IGameCamera
 		{
-			foreach (var def in _cameraRegistry.GetAllObjects())
+			foreach (var def in _cameraRegistry.Objects)
 			{
 				if (def == null || def.Prefab == null) continue;
 
@@ -667,14 +677,14 @@ namespace AK.Systems
 			BaseCamera[] sceneCameras = null;
 			VirtualGameCamera[] sceneVirtualCameras = null;
 
-			foreach (var def in _cameraRegistry.GetAllObjects())
+			foreach (var def in _cameraRegistry.Objects)
 			{
 				if (def == null || !def.SpawnOnStart || def.Prefab == null) continue;
 
-				var hasType = def.CameraType != null && !def.CameraType.IsEmpty();
+				var hasType = def.CameraType != null && def.CameraType.HasIdentity;
 
 				// Already bound (e.g., a scene camera whose Start ran first)?
-				if (hasType && _camerasByUID.ContainsKey(def.CameraType.Id)) continue;
+				if (hasType && _camerasById.ContainsKey(def.CameraType.Id)) continue;
 
 				// Pre-placed in the scene but not yet bound (Start order not guaranteed)?
 				if (hasType && SceneHasCameraWithType(def.CameraType, ref sceneCameras, ref sceneVirtualCameras)) continue;
@@ -690,9 +700,11 @@ namespace AK.Systems
 			sceneCameras ??= FindObjectsByType<BaseCamera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 			sceneVirtualCameras ??= FindObjectsByType<VirtualGameCamera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 
+			Uid<CameraType> wanted = cameraType.IdAs<CameraType>();
+
 			foreach (var cam in sceneCameras)
 			{
-				if (cam != null && HasCameraType(cam.CameraTypeUID, cameraType))
+				if (cam != null && cam.CameraTypeId.IsSet && cam.CameraTypeId == wanted)
 				{
 					return true;
 				}
@@ -700,7 +712,7 @@ namespace AK.Systems
 
 			foreach (var cam in sceneVirtualCameras)
 			{
-				if (cam != null && HasCameraType(cam.CameraTypeUID, cameraType))
+				if (cam != null && cam.CameraTypeId.IsSet && cam.CameraTypeId == wanted)
 				{
 					return true;
 				}
@@ -709,20 +721,16 @@ namespace AK.Systems
 			return false;
 		}
 
-		private static bool HasCameraType(UID cameraTypeUID, CameraType cameraType)
-		{
-			return cameraTypeUID != null && !cameraTypeUID.IsEmpty() &&
-			       cameraTypeUID.Id == cameraType.Id;
-		}
+		// Base cameras without a CameraType still need a stable stack key. Deriving one from
+		// the concrete type name keeps the map a pure Uid keyspace while preserving the old
+		// "one base per type" behaviour for unaddressed cameras.
+		private static readonly Uid TypeKeyNamespace = Uid.Parse("6f2a9c4e1b3d4a7f9e8c2b1d5a6f7e8c");
 
-		private string GetBaseCameraKey(IGameCamera camera)
+		private static Uid GetBaseCameraKey(IGameCamera camera)
 		{
-			if (camera.CameraTypeUID != null && !camera.CameraTypeUID.IsEmpty())
-			{
-				return camera.CameraTypeUID.Id;
-			}
-
-			return camera.GetType().Name;
+			return camera.CameraTypeId.IsSet
+				? camera.CameraTypeId.Value
+				: Uid.Deterministic(TypeKeyNamespace, camera.GetType().FullName);
 		}
 
 		public void Dispose()

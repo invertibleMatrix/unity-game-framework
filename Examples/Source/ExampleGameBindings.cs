@@ -1,29 +1,30 @@
 using AK.Core;
 using AK.CoreDomain;
 using AK.CoreDomain.Ads;
-using AK.CoreDomain.Transactions;
-using AK.Examples.Costs;
-using AK.Examples.Currency;
 using AK.CoreDomain.Notifications;
-using AK.Examples.Rewards;
-using AK.Examples.Store;
+using AK.CoreDomain.Transactions;
 using AK.Examples.Costs;
 using AK.Examples.Models;
 using AK.Examples.Rewards;
+using AK.Examples.Store;
 using AK.Services;
 using AK.Services.Costs;
 using AK.Services.Rewards;
 using AK.Services.Transactions;
-using Reflex.Core;
-using Reflex.Enums;
-using UnityEngine;
 using AK.Systems;
+using Reflex.Core;
+using UnityEngine;
 
 namespace AK.Examples
 {
 	/// <summary>
 	/// Example DI installer showing the full bootstrap pattern:
-	/// game model loading, provider initialization, meta registration, and optional IAP.
+	/// meta registration, registry initialization, game model loading, provider
+	/// initialization, and optional IAP.
+	///
+	/// Order matters: registries are initialized before the game model loads so
+	/// persisted identities resolve, and the same repository is handed to services
+	/// that must turn persisted identities back into assets.
 	/// </summary>
 	public class ExampleGameBindings : MonoBehaviour, IInstaller
 	{
@@ -34,22 +35,16 @@ namespace AK.Examples
 		[SerializeField] private BootState         _bootState;
 		[SerializeField] private MainMenuState     _mainMenuState;
 		[SerializeField] private CameraSystem      _cameraSystem;
-		[SerializeField] private UISystem _uiSystem;
-		
-		
+		[SerializeField] private UISystem          _uiSystem;
+
 		[Header("Custom Meta — register game-specific domains")]
-		[SerializeField] private AdsMeta _adsMeta;
-		[SerializeField] private ShopMeta _shopMeta;
+		[SerializeField] private AdsMeta           _adsMeta;
+		[SerializeField] private ShopMeta          _shopMeta;
+		[SerializeField] private CurrencyMeta      _currencyMeta;
 		[SerializeField] private NotificationsMeta _notificationsMeta;
-		
-		[Header("Cost Type Assets")]
-		[SerializeField] private CostType _softCurrencyCostType;
 
 		[Header("Cost Providers")]
 		[SerializeField] private SoftCurrencyCostProvider _softCurrencyCostProvider;
-
-		[Header("Reward Type Assets")]
-		[SerializeField] private RewardType _currencyRewardType;
 
 		[Header("Reward Providers")]
 		[SerializeField] private CurrencyRewardProvider _currencyRewardProvider;
@@ -64,39 +59,36 @@ namespace AK.Examples
 
 		public void InstallBindings(ContainerBuilder builder)
 		{
-			// Meta Data — register custom domains before initializing
 			if (_adsMeta != null) _metaDataRepository.RegisterMeta(_adsMeta);
 			if (_shopMeta != null) _metaDataRepository.RegisterMeta(_shopMeta);
+			if (_currencyMeta != null) _metaDataRepository.RegisterMeta(_currencyMeta);
 			if (_notificationsMeta != null) _metaDataRepository.RegisterMeta(_notificationsMeta);
 
-			builder.RegisterValue(_metaDataRepository, new[] { typeof(MetaDataRepository), typeof(IMetaDataRepository) });
+			_metaDataRepository.InitializeRegistries();
 
-			// Game Model — load from save, initialize
+			builder.RegisterValue(_metaDataRepository, new[] { typeof(MetaDataRepository), typeof(IMetaDataRepository), typeof(IUidResolver) });
+
 			GameModel = ExampleGameModel.Load();
 			GameModel.SetMetaDataRepository(_metaDataRepository);
 			GameModel.Initialize(out bool isFirstLaunch);
 			builder.RegisterValue(GameModel, new[] { typeof(ExampleGameModel) });
 
-			// Cost Service — init providers with the currency model from the game model
-			var softCurrency = GameModel.GetCurrencyModel(_softCurrencyCostProvider.CurrencyDefinition);
+			var softCurrency = GameModel.GetOrCreateCurrencyModel(_softCurrencyCostProvider.CurrencyDefinition);
 			_softCurrencyCostProvider.Init(softCurrency);
 			var costService = new CostService();
 			costService.RegisterProvider(_softCurrencyCostProvider);
 			builder.RegisterValue(costService, new[] { typeof(ICostService) });
 
-			// Reward Service — init providers with game model before registering
 			_currencyRewardProvider.Init(GameModel);
 			var rewardService = new RewardService();
 			rewardService.RegisterProvider(_currencyRewardProvider);
 			builder.RegisterValue(rewardService, new[] { typeof(IRewardService) });
 
-		// Purchase Service — iapService is optional (null = no IAP)
-		var transactionService = new TransactionService(rewardService, _metaDataRepository);
-		builder.RegisterValue(transactionService, new[] { typeof(ITransactionService) });
+			var transactionService = new TransactionService(rewardService, _metaDataRepository, _metaDataRepository.Redirects);
+			builder.RegisterValue(transactionService, new[] { typeof(ITransactionService) });
 
-		var purchaseService = new PurchaseService(costService, rewardService, null, transactionService);
-		builder.RegisterValue(purchaseService, new[] { typeof(IPurchaseService) });
-
+			var purchaseService = new PurchaseService(costService, rewardService, null, transactionService);
+			builder.RegisterValue(purchaseService, new[] { typeof(IPurchaseService) });
 
 			builder.RegisterValue(_cameraSystem, new[] { typeof(ICameraSystem) });
 			builder.RegisterValue(_uiSystem, new[] { typeof(IUISystem) });

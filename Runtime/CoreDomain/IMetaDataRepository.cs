@@ -1,13 +1,16 @@
-﻿using System.Collections.Generic;
 using AK.Core;
-using UnityEngine;
-using UnityEngine.AddressableAssets;
 
 namespace AK.CoreDomain
 {
-	public interface IMetaDataRepository
+	/// <summary>
+	/// Type-keyed access to every Meta container plus untyped identity resolution across
+	/// all of them. The resolver view is derived from the registries the metas own — there
+	/// is no separate list to keep in sync.
+	/// </summary>
+	public interface IMetaDataRepository : IUidResolver
 	{
-		public UIDRegistry  UIDRegistry  { get; }
+		/// <summary>Redirects applied on every miss, in every registry this repository knows. May be null.</summary>
+		UidRedirectTable Redirects { get; }
 
 		/// <summary>
 		/// Register a Meta container for type-keyed lookup via GetMeta<T>().
@@ -15,21 +18,20 @@ namespace AK.CoreDomain
 		/// </summary>
 		void RegisterMeta<T>(T meta) where T : class, IMeta;
 
-		/// <summary>
-		/// Get a Meta container by type. Returns null if not registered.
-		/// </summary>
+		/// <summary>Get a Meta container by type. Returns null if not registered.</summary>
 		T GetMeta<T>() where T : class, IMeta;
 
-		/// <summary>
-		/// Try to get a Meta container by type. Returns false if not registered.
-		/// </summary>
+		/// <summary>Try to get a Meta container by type. Returns false if not registered.</summary>
 		bool TryGetMeta<T>(out T meta) where T : class, IMeta;
 
 		/// <summary>
-		/// Initialize all registered Meta containers and the UID registry.
+		/// Register a registry for aggregate resolution. Metas that own registries call this
+		/// from InitializeMeta; standalone registries (audio, particles, cameras) can be
+		/// registered directly from bindings.
 		/// </summary>
-		void InitializeRegistries();
+		void RegisterRegistry(UidRegistryAssetBase registry);
 
-		public T GetObjectByUID<T>(UID uid) where T : ScriptableObject;
+		/// <summary>Initialize all registered Meta containers, then wire redirects into every registry.</summary>
+		void InitializeRegistries();
 	}
 }

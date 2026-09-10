@@ -5,5 +5,5 @@ using UnityEngine;
 namespace AK.CoreDomain
 {
 	[CreateAssetMenu(fileName = "RewardsRegistry", menuName = "AK/MetaData/RewardsRegistry")]
-	public class RewardsRegistry : TypedUIDRegistryAsset<RewardDefinition> { }
+	public class RewardsRegistry : UidRegistryAsset<RewardDefinition> { }
 }

@@ -12,34 +12,35 @@ namespace Utilities.ParticleSpawner
 		[SerializeField]
 		private ParticlesRegistry _particlesRegistry;
 
-		private Dictionary<UID, Queue<ParticleComponent>> _pools;
+		private Dictionary<Uid, Queue<ParticleComponent>> _pools;
 
 		// Active effect tracking — drives the concurrency cap and StopAll
 		private readonly List<ParticleComponent> _activeComponents = new();
 
 		private void Awake()
 		{
-			_particlesRegistry.BuildCache();
 			InitializePools();
 		}
 
-		public T Spawn<T>(UID variantId = null, Action onStop = null) where T : ParticleComponent
+		public T Spawn<T>(Uid<ParticleConfigBase> variant = default, Action onStop = null) where T : ParticleComponent
 		{
-			ParticleConfigBase config = _particlesRegistry.GetConfig<T>(variantId);
+			ParticleConfigBase config = _particlesRegistry.GetConfig<T>(variant);
 			if (config == null)
 			{
-				return null; // Error is logged by the registry
+				Debug.LogError($"Spawn<{typeof(T).Name}>() failed: no config for type with variant {UidDebugNames.Describe(variant)}.");
+				return null;
 			}
 
 			return SpawnByConfig(config, onStop) as T;
 		}
 
-		public async UniTask<T> SpawnAsync<T>(UID variantId = null, Action onStop = null) where T : ParticleComponent
+		public async UniTask<T> SpawnAsync<T>(Uid<ParticleConfigBase> variant = default, Action onStop = null) where T : ParticleComponent
 		{
-			ParticleConfigBase config = _particlesRegistry.GetConfig<T>(variantId);
+			ParticleConfigBase config = _particlesRegistry.GetConfig<T>(variant);
 			if (config == null)
 			{
-				return null; // Error is logged by the registry
+				Debug.LogError($"SpawnAsync<{typeof(T).Name}>() failed: no config for type with variant {UidDebugNames.Describe(variant)}.");
+				return null;
 			}
 
 			if (!PassesConcurrencyGate(config))
@@ -54,9 +55,9 @@ namespace Utilities.ParticleSpawner
 			}
 			else
 			{
-				if (config.VariantId == null || !_pools.TryGetValue(config.VariantId, out var pool))
+				if (!_pools.TryGetValue(config.Id, out var pool))
 				{
-					Debug.LogError($"No pool found for particle with key '{config.VariantId}'.");
+					Debug.LogError($"No pool found for particle '{config.name}'.");
 					return null;
 				}
 
@@ -66,10 +67,29 @@ namespace Utilities.ParticleSpawner
 			return FinalizeSpawn(particleComponent, config, onStop) as T;
 		}
 
-		/// <summary>
-		/// Config-driven one-call play: spawn and show in a single step, no generic,
-		/// no UID extraction. The particle equivalent of PlayAudio(config).
-		/// </summary>
+		public ParticleComponent Spawn(ParticleConfigBase config, Action onStop = null)
+		{
+			if (config == null)
+			{
+				Debug.LogError("Spawn() failed: config is null.");
+				return null;
+			}
+
+			return SpawnByConfig(config, onStop);
+		}
+
+		public T Spawn<T>(ParticleConfigBase config, Action onStop = null) where T : ParticleComponent
+		{
+			var component = Spawn(config, onStop);
+			if (component == null) return null;
+
+			if (component is T typed) return typed;
+
+			Debug.LogError($"Spawn<{typeof(T).Name}>() failed: '{config.name}' spawned a {component.GetType().Name}.");
+			component.Stop();
+			return null;
+		}
+
 		public ParticleComponent Play(ParticleConfigBase config, Vector3 position,
 		                              Quaternion? rotation = null, Color? color = null, Action onStop = null)
 		{
@@ -101,16 +121,16 @@ namespace Utilities.ParticleSpawner
 			return component;
 		}
 
-		/// <summary>Stops all active effects, or only the given config's.</summary>
 		public void StopAll(ParticleConfigBase config = null)
 		{
-			string uid = config != null && config.VariantId != null ? config.VariantId.Id : null;
+			bool filter = config != null;
+			Uid<ParticleConfigBase> id = filter ? config.IdAs<ParticleConfigBase>() : default;
 
 			// Snapshot — Stop() mutates the active list via the recycle callback
 			foreach (var component in _activeComponents.ToList())
 			{
 				if (component == null) continue;
-				if (uid != null && (component.ConfigVariantId == null || component.ConfigVariantId.Id != uid)) continue;
+				if (filter && component.ConfigId != id) continue;
 
 				component.Stop();
 			}
@@ -138,9 +158,9 @@ namespace Utilities.ParticleSpawner
 			}
 			else
 			{
-				if (config.VariantId == null || !_pools.TryGetValue(config.VariantId, out var pool))
+				if (!_pools.TryGetValue(config.Id, out var pool))
 				{
-					Debug.LogError($"No pool found for particle with key '{config.VariantId}'.");
+					Debug.LogError($"No pool found for particle '{config.name}'.");
 					return null;
 				}
 
@@ -157,11 +177,12 @@ namespace Utilities.ParticleSpawner
 				return true;
 			}
 
-			string uid = config.VariantId.Id;
+			Uid<ParticleConfigBase> id = config.IdAs<ParticleConfigBase>();
 			int active = 0;
-			foreach (var component in _activeComponents)
+			for (int i = 0; i < _activeComponents.Count; i++)
 			{
-				if (component != null && component.ConfigVariantId != null && component.ConfigVariantId.Id == uid)
+				ParticleComponent component = _activeComponents[i];
+				if (component != null && component.ConfigId == id)
 				{
 					active++;
 				}
@@ -185,7 +206,7 @@ namespace Utilities.ParticleSpawner
 
 				if (pooled)
 				{
-					if (captured.ConfigVariantId != null && _pools.TryGetValue(captured.ConfigVariantId, out var queue))
+					if (_pools.TryGetValue(captured.ConfigId.Value, out var queue))
 					{
 						queue.Enqueue(captured);
 					}
@@ -202,24 +223,23 @@ namespace Utilities.ParticleSpawner
 
 		private void InitializePools()
 		{
-			_pools = new Dictionary<UID, Queue<ParticleComponent>>();
+			_pools = new Dictionary<Uid, Queue<ParticleComponent>>();
 
 			if (_particlesRegistry == null || _particlesRegistry.ParticleConfigs == null) return;
 
 			foreach (var config in _particlesRegistry.ParticleConfigs)
 			{
-				if (config == null || config.Prefab == null || config.VariantId == null || config.InitialPoolSize == 0) continue;
+				if (config == null || config.Prefab == null || !config.HasIdentity || config.InitialPoolSize == 0) continue;
 
-				if (!_pools.ContainsKey(config.VariantId))
+				if (!_pools.TryGetValue(config.Id, out var pool))
 				{
-					_pools[config.VariantId] = new Queue<ParticleComponent>();
+					pool = new Queue<ParticleComponent>();
+					_pools[config.Id] = pool;
 				}
 
-				var pool = _pools[config.VariantId];
 				for (int i = 0; i < config.InitialPoolSize; i++)
 				{
-					ParticleComponent ps = CreateNewParticle(config.Prefab);
-					pool.Enqueue(ps);
+					pool.Enqueue(CreateNewParticle(config.Prefab));
 				}
 			}
 		}
@@ -275,7 +295,7 @@ namespace Utilities.ParticleSpawner
 
 			foreach (var kvp in _pools)
 			{
-				Debug.Log($"Pool '{kvp.Key}': {kvp.Value.Count} available");
+				Debug.Log($"Pool '{UidDebugNames.Describe(kvp.Key)}': {kvp.Value.Count} available");
 			}
 		}
 #endif

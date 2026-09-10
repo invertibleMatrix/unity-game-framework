@@ -56,8 +56,8 @@ namespace AK.Systems
 		/// </summary>
 		public Camera Camera => ResolveBrainCamera();
 
-		public UID CameraTypeUID         => _cameraType;
-		public UID DefaultBaseCameraUID  => _baseCameraType;
+		public Uid<CameraType> CameraTypeId        => _cameraType != null ? _cameraType.IdAs<CameraType>() : default;
+		public Uid<CameraType> DefaultBaseCameraId => _baseCameraType != null ? _baseCameraType.IdAs<CameraType>() : default;
 
 		public CinemachineVirtualCameraBase VirtualCamera => _virtualCamera;
 		public int  BasePriority => _basePriority;
@@ -135,7 +135,7 @@ namespace AK.Systems
 		{
 			if (_cameraSystem != null)
 			{
-				_cameraSystem.ActivateVirtualCamera(CameraTypeUID, this);
+				_cameraSystem.ActivateVirtualCamera(CameraTypeId, this);
 				return;
 			}
 
@@ -171,7 +171,7 @@ namespace AK.Systems
 			if (_cameraSystem == null) return null;
 
 			// Explicit brain assignment wins; otherwise the first bound Cinemachine base camera.
-			var brainCam = (_baseCameraType != null && !_baseCameraType.IsEmpty()
+			var brainCam = (_baseCameraType != null && _baseCameraType.HasIdentity
 				                ? _cameraSystem.GetCamera<ICinemachineGameCamera>(_baseCameraType)
 				                : null)
 			               ?? _cameraSystem.GetCamera<ICinemachineGameCamera>();

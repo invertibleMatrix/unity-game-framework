@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AK.Core;
+using AK.Examples.Rewards;
 using UnityEngine;
 
 namespace AK.Examples.Difficulty
@@ -66,7 +67,7 @@ namespace AK.Examples.Difficulty
         public float RewardMultiplier = 1f;
 
         [Tooltip("Bonus rewards for completion")]
-        public List<UID> BonusRewards = new();
+        public List<RewardDefinition> BonusRewards = new();
 
         [Header("Visual Settings")]
         [Tooltip("Show hints")]
@@ -97,6 +98,5 @@ namespace AK.Examples.Difficulty
             return DifficultyLevel + (levelProgress * DifficultyIncreasePerLevel * 10f);
         }
 
-        public UID UniqueID => this;
     }
 }

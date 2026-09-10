@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using AK.Core;
+using AK.CoreDomain.Analytics;
+using AK.CoreDomain.Transactions;
 using AK.Examples.Costs;
 using AK.Examples.Rewards;
 using AK.Examples.Store;
@@ -70,8 +72,11 @@ namespace AK.CoreDomain
 		[Header("Display Priority")] [Tooltip("Sort order in store UI (lower = higher priority).")]
 		public int DisplayPriority = 0;
 
-		[Header("Analytics")] [Tooltip("Custom analytics event name for tracking purchases.")]
-		public string AnalyticsEventName;
+		[Header("Analytics")] [Tooltip("Analytics event fired when this item is purchased.")]
+		public AnalyticsEventDefinition PurchaseEvent;
+
+		[Header("Transaction")] [Tooltip("Transaction type recorded in the ledger when this item is bought.")]
+		public TransactionType TransactionType;
 
 		[Header("Rewards")] [Tooltip("The rewards granted upon purchase.")] 
 		public RewardDefinition Reward;
@@ -85,13 +90,11 @@ namespace AK.CoreDomain
 		[Tooltip("Optional gacha rewards that are probabilistic (e.g., 'Chance to get rare item').")] 
 		public GachaBundle GachaRewards;
 
-		public UID AnalyticsEventDefId;
-
-		// IPurchasable explicit implementation
 		string IPurchasable.DisplayName => DisplayName;
 		string IPurchasable.ProductID => ProductID;
 		ICostInfo IPurchasable.Cost => Cost;
-		UID IPurchasable.TransactionTypeUID => UniqueID;
+		Uid<TransactionType> IPurchasable.TransactionType =>
+			TransactionType != null ? TransactionType.IdAs<TransactionType>() : default;
 
 		/// <summary>
 		/// Collect all rewards from this item as IReward (interface-based, used by services).

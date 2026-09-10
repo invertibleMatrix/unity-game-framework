@@ -53,19 +53,13 @@ namespace AK.Services
 		/// <returns>True if permission is permanently denied or blocked</returns>
 		bool IsPermissionPermanentlyDenied();
 
-		/// <summary>
-		/// Schedules a notification by its UID.
-		/// </summary>
-		/// <param name="notificationUID">The UID of the notification definition</param>
-		/// <param name="fireTime">When to fire the notification</param>
-		void ScheduleNotification(UID notificationUID, DateTime fireTime);
+		/// <summary>Schedules a notification definition, resolved through NotificationsMeta by identity.</summary>
+		void ScheduleNotification(Uid<NotificationDefinition> notificationId, DateTime fireTime);
+		void ScheduleNotification(Uid<NotificationDefinition> notificationId, int delaySeconds);
 
-		/// <summary>
-		/// Schedules a notification by its UID with a delay.
-		/// </summary>
-		/// <param name="notificationUID">The UID of the notification definition</param>
-		/// <param name="delaySeconds">Delay in seconds before firing</param>
-		void ScheduleNotification(UID notificationUID, int delaySeconds);
+		/// <summary>Convenience for call sites holding the definition asset.</summary>
+		void ScheduleNotification(NotificationDefinition definition, DateTime fireTime);
+		void ScheduleNotification(NotificationDefinition definition, int delaySeconds);
 
 		/// <summary>
 		/// Schedules a notification with custom content.
@@ -186,9 +180,9 @@ namespace AK.Services
 		public string Message { get; set; }
 
 		/// <summary>
-		/// The notification UID from metadata (if applicable).
+		/// Identity of the notification definition, when scheduled from metadata.
 		/// </summary>
-		public UID NotificationUID { get; set; }
+		public Uid<NotificationDefinition> NotificationId { get; set; }
 
 		/// <summary>
 		/// Additional data associated with the notification.

@@ -58,9 +58,9 @@ namespace AK.Services
 				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InternalError };
 			}
 
-			if (item.Cost == null || item.Cost.CostTypeUID == null)
+			if (item.Cost == null || item.Cost.CostType.IsNone)
 			{
-				Debug.LogError($"[PurchaseService] Item '{item.DisplayName}' has no Cost or CostTypeUID assigned.");
+				Debug.LogError($"[PurchaseService] Item '{item.DisplayName}' has no Cost or cost type assigned.");
 				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InternalError };
 			}
 
@@ -132,7 +132,7 @@ namespace AK.Services
 			var rewards = new List<IReward>();
 			item.CollectRewards(rewards);
 
-			var transaction = _transactionService.RecordPending(item.TransactionTypeUID, rewards, item.ProductID);
+			var transaction = _transactionService.RecordPending(item.TransactionType, rewards, item.ProductID);
 
 			if (immediateCredit)
 			{

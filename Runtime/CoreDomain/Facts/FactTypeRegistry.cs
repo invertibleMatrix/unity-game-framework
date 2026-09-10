@@ -8,5 +8,5 @@ namespace AK.CoreDomain.Facts
 	/// Use Refresh All Objects in the editor to repopulate.
 	/// </summary>
 	[CreateAssetMenu(fileName = "FactTypeRegistry", menuName = "AK/Facts/Fact Type Registry")]
-	public class FactTypeRegistry : TypedUIDRegistryAsset<FactType> { }
+	public class FactTypeRegistry : UidRegistryAsset<FactType> { }
 }

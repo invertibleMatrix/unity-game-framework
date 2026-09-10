@@ -1,69 +1,36 @@
-using System.Collections.Generic;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
-using UnityEditor;
+using UnityEngine;
 
 namespace AK.Core.Editor
 {
 	/// <summary>
-	/// Build gate for UID identity integrity. The two silent killers — an empty logical
-	/// GUID and a duplicated one — fail the build instead of shipping broken links and
-	/// orphaned counts. Registries tracking deleted or identity-less assets fail too.
+	/// Build gate. Runs the full audit and fails the build on any error: a missing identity,
+	/// a collision, a dangling redirect, an identity asset inside Addressables, or persisted
+	/// state holding an asset reference. Every one of these ships silently otherwise and
+	/// surfaces as lost progress or broken links in the field.
 	/// </summary>
-	public class UIDBuildValidator : IPreprocessBuildWithReport
+	public sealed class UidBuildValidator : IPreprocessBuildWithReport
 	{
-		public int callbackOrder => 0;
+		public int callbackOrder => -100;
 
 		public void OnPreprocessBuild(BuildReport report)
 		{
-			var errors = new List<string>();
-			var seenIds = new Dictionary<string, string>();
+			UidAuditReport audit = UidAuditMenu.Audit();
 
-			foreach (string guid in AssetDatabase.FindAssets("t:UID"))
+			if (audit.HasErrors)
 			{
-				string path = AssetDatabase.GUIDToAssetPath(guid);
-				var uid = AssetDatabase.LoadAssetAtPath<UID>(path);
-				if (uid == null) continue;
-
-				if (uid.IsEmpty())
-				{
-					errors.Add($"[UID] '{path}' has an empty logical ID. Run Tools → UGFW → Repair UID Assets.");
-					continue;
-				}
-
-				if (seenIds.TryGetValue(uid.Id, out string firstPath))
-				{
-					errors.Add($"[UID] Duplicate logical ID shared by '{firstPath}' and '{path}'. Assign a fresh GUID to one of them.");
-				}
-				else
-				{
-					seenIds[uid.Id] = path;
-				}
+				Debug.LogError(audit.ToString());
+				throw new BuildFailedException($"[UID] {audit.ErrorCount} identity error(s). See the audit report above; run Tools → UGFW → UID → Audit Project.");
 			}
 
-			foreach (string guid in AssetDatabase.FindAssets("t:UIDRegistryAsset"))
+			if (audit.WarningCount > 0)
 			{
-				string path = AssetDatabase.GUIDToAssetPath(guid);
-				var registry = AssetDatabase.LoadAssetAtPath<UIDRegistryAsset>(path);
-				if (registry == null) continue;
-
-				foreach (var obj in registry.GetTrackedObjects())
-				{
-					if (obj == null)
-					{
-						errors.Add($"[UID] Registry '{path}' tracks a deleted asset.");
-					}
-					else if (obj.IsEmpty())
-					{
-						errors.Add($"[UID] Registry '{path}' tracks '{obj.name}' which has an empty logical ID.");
-					}
-				}
+				Debug.LogWarning(audit.ToString());
 			}
-
-			if (errors.Count > 0)
+			else
 			{
-				throw new BuildFailedException(
-					$"UID integrity check failed with {errors.Count} error(s):\n" + string.Join("\n", errors));
+				Debug.Log(audit.ToString());
 			}
 		}
 	}

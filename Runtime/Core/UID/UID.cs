@@ -1,154 +1,55 @@
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace AK.Core
 {
-	[CreateAssetMenu(fileName = "UID_", menuName = "AK/UID_")]
-	public class UID : ScriptableObject, IEquatable<UID>
+	/// <summary>
+	/// The authoring handle for an identity: a ScriptableObject a designer can drag into a
+	/// field instead of typing a string. It carries exactly one <see cref="Uid"/>, assigned
+	/// once when the asset is created and never changed afterwards.
+	///
+	/// Equality is Unity's reference equality. Two live instances with the same Uid are a
+	/// bug (asset-bundle duplication) that the build validator refuses to ship; masking it
+	/// with value-equality would hide the bug, not fix it. Compare <c>.Id</c> when you mean
+	/// "same identity".
+	///
+	/// The asset has no runtime role beyond holding its Uid and whatever a subclass adds.
+	/// Everything that needs to store, compare, hash, or transmit an identity uses the Uid.
+	/// </summary>
+	public class UID : ScriptableObject
 	{
-		[SerializeField]
-		private string _id;
+		[SerializeField, HideInInspector] private Uid            _id;
+		[SerializeField, HideInInspector] private UidProvenance  _provenance;
+		[SerializeField, HideInInspector] private string         _provenanceSource;
 
-		[SerializeField, TextArea(1, 2)]
-		private string _description;
+		[SerializeField, TextArea(1, 3)] private string _notes;
 
-		public string Id          => _id;
+		public Uid           Id               => _id;
+		public UidProvenance Provenance       => _provenance;
+		public string        ProvenanceSource => _provenanceSource;
+		public string        Notes            => _notes;
 
-		public bool IsEmpty() => string.IsNullOrEmpty(_id) || _id == Guid.Empty.ToString();
+		public bool HasIdentity => _id.IsSet;
 
-		public UID UniqueID => this;
-		
-		private void OnValidate()
-		{
-			if (string.IsNullOrEmpty(_id))
-			{
-				GenerateNewGuid();
-#if UNITY_EDITOR
-				// OnValidate changes are in-memory only — without SetDirty the file keeps
-				// an empty _id and every editor session mints a new ephemeral GUID,
-				// silently breaking every stored link.
-				UnityEditor.EditorUtility.SetDirty(this);
-#endif
-			}
+		/// <summary>Typed view of the identity. Zero cost; exists so call sites read naturally.</summary>
+		public Uid<T> IdAs<T>() where T : UID => new(_id);
 
-			// Auto-generate description if empty (optional)
-			if (string.IsNullOrEmpty(_description))
-			{
-				_description = $"UID_{name}";
-			}
-		}
-
-		public void GenerateNewGuid()
-		{
-			_id = Guid.NewGuid().ToString();
-		}
-
-		// Enhanced ToString for better debugging
 		public override string ToString()
 		{
-			return string.IsNullOrEmpty(_description) ? _id : $"{_description} ({_id})";
+			return _id.IsSet ? $"{name} ({_id.ToShortString()})" : $"{name} (no identity)";
 		}
 
-		private static UID _empty;
-
-		public static UID EmptyUID()
+#if UNITY_EDITOR
+		/// <summary>
+		/// The only write path to identity, and it is editor-only. Callers are the identity
+		/// authority (asset creation, duplicate resolution, import) — never gameplay code.
+		/// </summary>
+		internal void Editor_AssignIdentity(Uid id, UidProvenance provenance, string source)
 		{
-			if (_empty == null)
-			{
-				_empty = CreateInstance<UID>();
-				_empty._id = Guid.Empty.ToString();
-				_empty.hideFlags = HideFlags.HideAndDontSave;
-			}
-
-			return _empty;
+			_id               = id;
+			_provenance       = provenance;
+			_provenanceSource = source ?? string.Empty;
 		}
-
-		// This is the key - always compares by GUID string, never reference
-		public bool Equals(UID other)
-		{
-			if (ReferenceEquals(null, other)) return false;
-			if (ReferenceEquals(this, other)) return true;
-
-			// Handle empty/null cases consistently
-			if (IsEmpty() && other.IsEmpty()) return true;
-			if (IsEmpty() || other.IsEmpty()) return false;
-
-			return string.Equals(_id, other._id, StringComparison.OrdinalIgnoreCase);
-		}
-
-		public override bool Equals(object obj)
-		{
-			if (ReferenceEquals(null, obj)) return false;
-			if (ReferenceEquals(this, obj)) return true;
-
-			if (obj is UID uid) return Equals(uid);
-			if (obj is string s) return string.Equals(_id, s, StringComparison.OrdinalIgnoreCase);
-			if (obj is Guid g) return string.Equals(_id, g.ToString(), StringComparison.OrdinalIgnoreCase);
-
-			return false;
-		}
-
-		// Critical for Dictionary keys - always hash the GUID string
-		public override int GetHashCode()
-		{
-			// StringComparer.OrdinalIgnoreCase handles case-insensitive hashing
-			return IsEmpty() ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(_id);
-		}
-		
-		public static bool operator ==(UID left, UID right)
-		{
-			// Unity fake-null aware: a destroyed UID compares equal to null.
-			bool leftNull  = ReferenceEquals(left, null)  || (UnityEngine.Object)left  == null;
-			bool rightNull = ReferenceEquals(right, null) || (UnityEngine.Object)right == null;
-
-			if (leftNull && rightNull) return true;
-			if (leftNull || rightNull) return false;
-			return left.Equals(right);
-		}
-
-		public static bool operator !=(UID left, UID right)
-		{
-			return !(left == right);
-		}
-
-		public static bool operator ==(UID left, string right)
-		{
-			if (ReferenceEquals(left, null)) return string.IsNullOrEmpty(right);
-			return string.Equals(left._id, right, StringComparison.OrdinalIgnoreCase);
-		}
-
-		public static bool operator !=(UID left, string right)
-		{
-			return !(left == right);
-		}
-
-		public static bool operator ==(string left, UID right)
-		{
-			return right == left;
-		}
-
-		public static bool operator !=(string left, UID right)
-		{
-			return !(left == right);
-		}
-
-		// Implicit conversions maintain the GUID-based approach
-		public static implicit operator string(UID uid)
-		{
-			return uid?.Id;
-		}
-
-		// Asset → link projection, for framework internals (persistence writes strings).
-		public static implicit operator UIDRef(UID uid)
-		{
-			return uid != null ? new UIDRef(uid) : null;
-		}
-
-		public static implicit operator Guid(UID uid)
-		{
-			if (uid?.IsEmpty() != false) return Guid.Empty;
-			return Guid.TryParse(uid.Id, out var result) ? result : Guid.Empty;
-		}
+#endif
 	}
 }

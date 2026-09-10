@@ -9,5 +9,5 @@ namespace AK.CoreDomain
 	/// Similar to IAPRegistry but for currencies.
 	/// </summary>
 	[CreateAssetMenu(fileName = "CurrencyRegistry", menuName = "AK/MetaData/Currency/CurrencyRegistry")]
-	public class CurrencyRegistry : TypedUIDRegistryAsset<CurrencyDefinition> { }
+	public class CurrencyRegistry : UidRegistryAsset<CurrencyDefinition> { }
 }

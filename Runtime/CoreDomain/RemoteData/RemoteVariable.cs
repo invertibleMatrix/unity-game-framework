@@ -26,7 +26,6 @@ namespace AK.CoreDomain.RemoteConfig
 		/// </summary>
 		public T DefaultValue => _defaultValue;
 
-		public override UID UniqueID => this;
 
 		/// <summary>
 		/// The current value. Returns remote value if fetched, otherwise cached value, otherwise default.
