@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using AK.Systems;
+using AK.Tests.Support;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
@@ -170,11 +171,12 @@ namespace AK.Tests
 
 			for (int i = 0; i < 4; i++) Exercise(stack, views);
 
-			long before = System.GC.GetAllocatedBytesForCurrentThread();
-			for (int i = 0; i < 100; i++) Exercise(stack, views);
-			long after = System.GC.GetAllocatedBytesForCurrentThread();
+			int allocations = GcAllocations.Count(() =>
+			{
+				for (int i = 0; i < 100; i++) Exercise(stack, views);
+			});
 
-			Assert.That(after - before, Is.EqualTo(0), "stack operations must not allocate");
+			Assert.That(allocations, Is.EqualTo(0), "stack operations must not allocate");
 		}
 
 		private static void Exercise(ViewStack stack, UIView[] views)

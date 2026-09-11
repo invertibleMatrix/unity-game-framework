@@ -241,17 +241,17 @@ namespace AK.Tests
 			for (int i = 0; i < leases.Length; i++) leases[i] = svc.Lease(def);
 			for (int i = 0; i < leases.Length; i++) svc.Release(leases[i]);
 
-			long before = GC.GetAllocatedBytesForCurrentThread();
-
-			for (int round = 0; round < 50; round++)
+			int allocations = GcAllocations.Count(() =>
 			{
-				for (int i = 0; i < leases.Length; i++) leases[i] = svc.Lease(def);
-				for (int i = 0; i < leases.Length; i++) svc.TryGet(leases[i], out GameObject _);
-				for (int i = 0; i < leases.Length; i++) svc.Release(leases[i]);
-			}
+				for (int round = 0; round < 50; round++)
+				{
+					for (int i = 0; i < leases.Length; i++) leases[i] = svc.Lease(def);
+					for (int i = 0; i < leases.Length; i++) svc.TryGet(leases[i], out GameObject _);
+					for (int i = 0; i < leases.Length; i++) svc.Release(leases[i]);
+				}
+			});
 
-			long after = GC.GetAllocatedBytesForCurrentThread();
-			Assert.AreEqual(0, after - before, "Lease/TryGet/Release allocated managed memory at steady state");
+			Assert.AreEqual(0, allocations, "Lease/TryGet/Release allocated managed memory at steady state");
 		}
 	}
 }

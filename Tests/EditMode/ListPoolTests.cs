@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AK.Core.Collections;
+using AK.Tests.Support;
 using NUnit.Framework;
 
 namespace AK.Tests
@@ -51,16 +52,16 @@ namespace AK.Tests
 		{
 			using (ListPool<int>.Rent()) { }
 
-			long before = GC.GetAllocatedBytesForCurrentThread();
-
-			for (int i = 0; i < 1000; i++)
+			int allocations = GcAllocations.Count(() =>
 			{
-				using PooledList<int> rented = ListPool<int>.Rent();
-				rented.Add(i);
-			}
+				for (int i = 0; i < 1000; i++)
+				{
+					using PooledList<int> rented = ListPool<int>.Rent();
+					rented.Add(i);
+				}
+			});
 
-			long after = GC.GetAllocatedBytesForCurrentThread();
-			Assert.AreEqual(0, after - before, "rent/return allocated at steady state");
+			Assert.AreEqual(0, allocations, "rent/return allocated at steady state");
 		}
 	}
 }

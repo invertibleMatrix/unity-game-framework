@@ -302,7 +302,7 @@ namespace AK.Tests.Jobs
 		}
 
 		[Test]
-		public void Schedule_ReusedJobs_SteadyState_AllocatesZeroBytesOnMainThread()
+		public void Schedule_ReusedJobs_SteadyState_AllocatesNothingOnMainThread()
 		{
 			const int jobCount = 256;
 
@@ -316,18 +316,77 @@ namespace AK.Tests.Jobs
 				RunFrame(scheduler, frame);
 			}
 
-			long before = GC.GetAllocatedBytesForCurrentThread();
-
-			for (int frame = 6; frame <= 55; frame++)
+			int allocations = GcAllocations.Count(() =>
 			{
-				for (int i = 0; i < jobCount; i++) scheduler.Schedule(jobs[i]);
+				for (int frame = 6; frame <= 55; frame++)
+				{
+					for (int i = 0; i < jobCount; i++) scheduler.Schedule(jobs[i]);
+					RunFrame(scheduler, frame);
+				}
+			});
+
+			Assert.AreEqual(0, allocations, "schedule + barrier + completion delivery must not allocate once warm");
+			Assert.AreEqual(55, jobs[0].ExecuteCount);
+		}
+
+		private struct IntegrateJob : IJob
+		{
+			public float X, V;
+
+			public void Execute(in FrameContext ctx)
+			{
+				V -= 9.81f * ctx.DeltaTime;
+				X += V * ctx.DeltaTime;
+			}
+		}
+
+		[Test]
+		public void MixedWorkload_SteadyState_AllocatesNothing_OnMainThreadOrOnAnyWorker()
+		{
+			const int workers = 4, jobCount = 64, elements = 2000, warmup = 5, measured = 200;
+
+			JobScheduler scheduler = Create(workers);
+			var          oneShots  = new CountingJob[jobCount];
+			var          batch     = new JobBatch<IntegrateJob>(elements);
+			var          repeating = new CountingJob();
+
+			for (int i = 0; i < jobCount; i++) oneShots[i] = new CountingJob();
+			scheduler.Register(batch);
+			scheduler.ScheduleRepeating(repeating);
+
+			void Produce(int frame)
+			{
+				foreach (ref readonly IntegrateJob r in batch.Results) _ = r.X;
+				for (int i = 0; i < elements; i++)
+				{
+					ref IntegrateJob e = ref batch.Add();
+					e.X = i;
+					e.V = 0f;
+				}
+
+				for (int i = 0; i < jobCount; i++) scheduler.Schedule(oneShots[i]);
+				scheduler.Cancel(scheduler.Schedule(oneShots[0]));
+				_ = scheduler.Stats;
 				RunFrame(scheduler, frame);
 			}
 
-			long after = GC.GetAllocatedBytesForCurrentThread();
+			for (int frame = 1; frame <= warmup; frame++) Produce(frame);
 
-			Assert.AreEqual(0, after - before, "schedule + barrier + completion delivery must not allocate once warm");
-			Assert.AreEqual(55, jobs[0].ExecuteCount);
+			int mainThread = GcAllocations.Count(() =>
+			{
+				for (int frame = warmup + 1; frame <= warmup + measured; frame++) Produce(frame);
+			});
+
+			int anyThread = GcAllocations.Count(() =>
+			{
+				for (int frame = warmup + measured + 1; frame <= warmup + 2 * measured; frame++) Produce(frame);
+			}, allThreads: true);
+
+			Assert.AreEqual(0, mainThread, "main thread: batch fill + results read + schedule + cancel + barrier must not allocate once warm");
+			Assert.AreEqual(0, anyThread, "workers: chunk claims, phase waits and job execution must not allocate once warm");
+			Assert.AreEqual(workers, scheduler.Stats.WorkerCount);
+			Assert.AreEqual(warmup + 2 * measured, repeating.Count);
+			Assert.AreEqual(elements, batch.Results.Length);
 		}
 	}
 }

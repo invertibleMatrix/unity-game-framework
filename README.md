@@ -71,7 +71,9 @@ When creating an asmdef for your game code, reference the UGFW assemblies you ne
 
 ### Tests
 
-The framework's own edit-mode tests live in `UGFW/Tests/EditMode` (assembly `AK.Tests.EditMode`, namespace `AK.Tests`) and depend only on UGFW assemblies, so they travel with the framework. `Support/UISystemHarness` builds a complete, headless `UISystem` (own Reflex container, in-memory `UIViewRepository`, synthetic view prefabs) — use it for tests that exercise view stacking, pooling or lifecycle without a scene. Play-mode tests that need the real player loop live in `UGFW/Tests/PlayMode` (assembly `AK.Tests.PlayMode`). Game-specific tests (ones that load game assets or reference game code) belong in the game's test assembly, not here. Run everything from *Window ▸ General ▸ Test Runner* or `unity command run_tests --mode editor`.
+The framework's own edit-mode tests live in `UGFW/Tests/EditMode` (assembly `AK.Tests.EditMode`, namespace `AK.Tests`) and depend only on UGFW assemblies, so they travel with the framework. `Support/UISystemHarness` builds a complete, headless `UISystem` (own Reflex container, in-memory `UIViewRepository`, synthetic view prefabs) — use it for tests that exercise view stacking, pooling or lifecycle without a scene. Play-mode tests that need the real player loop live in `UGFW/Tests/PlayMode` (assembly `AK.Tests.PlayMode`). Game-specific tests (ones that load game assets or reference game code) belong in the game's test assembly, not here.
+
+Allocation tests use `Support/GcAllocations.Count(body, allThreads)`, which counts the profiler's `GC.Alloc` samples while `body` runs — the same mechanism as Unity's `Is.Not.AllocatingGCMemory()`, with an all-threads mode for worker threads. Do not measure with `GC.GetAllocatedBytesForCurrentThread`: Unity's Mono returns 0 from it on every call, so a test built on it passes no matter what the code does. Warm the measured method itself before counting; the first execution of a call site can allocate once (generic lookups, type initialisers) even when the code under test is allocation-free. Run everything from *Window ▸ General ▸ Test Runner* or `unity command run_tests --mode editor`.
 
 ### Dependency Injection — No Managers, No Singletons
 
@@ -1271,7 +1273,7 @@ cameraSystem.ReorderCameraStack();
 
 ## Module: Jobs
 
-Assembly `AK.Jobs` (namespace `AK.Jobs`, not auto-referenced — add it to your asmdef). A lock-free, frame-synchronous job system for per-frame managed work that has no business on the main thread: simulation ticks, steering, influence maps, procedural generation, scoring. It schedules **where** work runs; **when** stays with UniTask (`await UniTask.Delay(...)` then schedule).
+Assembly `AK.Jobs` (namespace `AK.Jobs`, not auto-referenced — add it to your asmdef). A lock-free, frame-synchronous job system for per-frame managed work that has no business on the main thread: simulation ticks, steering, influence maps, procedural generation, scoring. It schedules **where** work runs; **when** stays with UniTask (`await UniTask.Delay(...)` then schedule). This section is the summary; the ownership model, worked use cases, anti-patterns, internals and open decisions are in [`Runtime/Jobs/README.md`](Runtime/Jobs/README.md), and [`Runtime/Jobs/GUIDE.md`](Runtime/Jobs/GUIDE.md) teaches the underlying concepts — threads, races, ownership, batches, chunks, phases — for programmers new to job systems.
 
 ### The frame contract
 
@@ -1291,8 +1293,8 @@ Nothing is locked. Every buffer has one owner at a time and ownership changes on
 ```csharp
 // GameBindings
 var scheduler = new JobScheduler(new JobSchedulerOptions { WorkerCount = 2 });
-scheduler.AttachToPlayerLoop();                      // ticks at the start of EarlyUpdate
-builder.AddSingleton(scheduler, typeof(IJobScheduler));   // dispose with the container
+scheduler.AttachToPlayerLoop();                                        // ticks at the start of EarlyUpdate
+builder.RegisterValue(scheduler, new[] { typeof(IJobScheduler) });     // Reflex disposes it with the container
 ```
 
 `WorkerCount` defaults to `clamp(cores - 2, 1, 4)`. Unity already runs a render thread and its own job workers, so more managed workers oversubscribe a phone; measure on device before raising it.

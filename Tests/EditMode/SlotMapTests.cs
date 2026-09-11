@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AK.Core.Collections;
+using AK.Tests.Support;
 using NUnit.Framework;
 
 namespace AK.Tests
@@ -263,17 +264,17 @@ namespace AK.Tests
 			for (int i = 0; i < items.Length; i++) handles[i] = map.Add(items[i]);
 			for (int i = 0; i < items.Length; i++) map.Remove(handles[i]);
 
-			long before = GC.GetAllocatedBytesForCurrentThread();
-
-			for (int round = 0; round < 100; round++)
+			int allocations = GcAllocations.Count(() =>
 			{
-				for (int i = 0; i < items.Length; i++) handles[i] = map.Add(items[i]);
-				for (int i = 0; i < items.Length; i++) map.TryGet(handles[i], out _);
-				for (int i = 0; i < items.Length; i++) map.Remove(handles[i]);
-			}
+				for (int round = 0; round < 100; round++)
+				{
+					for (int i = 0; i < items.Length; i++) handles[i] = map.Add(items[i]);
+					for (int i = 0; i < items.Length; i++) map.TryGet(handles[i], out _);
+					for (int i = 0; i < items.Length; i++) map.Remove(handles[i]);
+				}
+			});
 
-			long after = GC.GetAllocatedBytesForCurrentThread();
-			Assert.AreEqual(0, after - before, "Add/TryGet/Remove allocated at steady state");
+			Assert.AreEqual(0, allocations, "Add/TryGet/Remove allocated at steady state");
 		}
 
 		[Test]
@@ -285,14 +286,15 @@ namespace AK.Tests
 			int sum = 0;
 			foreach (Thing t in map) sum += t.Tag;
 
-			long before = GC.GetAllocatedBytesForCurrentThread();
-			for (int round = 0; round < 100; round++)
+			int allocations = GcAllocations.Count(() =>
 			{
-				foreach (Thing t in map) sum += t.Tag;
-			}
-			long after = GC.GetAllocatedBytesForCurrentThread();
+				for (int round = 0; round < 100; round++)
+				{
+					foreach (Thing t in map) sum += t.Tag;
+				}
+			});
 
-			Assert.AreEqual(0, after - before, "struct enumerator must not allocate");
+			Assert.AreEqual(0, allocations, "struct enumerator must not allocate");
 			Assert.Greater(sum, 0);
 		}
 	}

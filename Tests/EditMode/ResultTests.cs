@@ -1,5 +1,6 @@
 using System;
 using AK.Core;
+using AK.Tests.Support;
 using NUnit.Framework;
 
 namespace AK.Tests
@@ -107,17 +108,18 @@ namespace AK.Tests
 		[Test]
 		public void HappyPath_DoesNotAllocate()
 		{
-			long before = GC.GetAllocatedBytesForCurrentThread();
-
-			for (int i = 0; i < 10_000; i++)
+			int Window() => GcAllocations.Count(() =>
 			{
-				Result r = i % 2 == 0 ? Result.Ok : Result.Fail(ErrorCode.NotFound);
-				Result<int> t = r.IsOk ? Result<int>.Ok(i) : Result<int>.Fail(ErrorCode.NotFound);
-				if (t.TryGet(out int v) && v < 0) throw new Exception();
-			}
+				for (int i = 0; i < 10_000; i++)
+				{
+					Result r = i % 2 == 0 ? Result.Ok : Result.Fail(ErrorCode.NotFound);
+					Result<int> t = r.IsOk ? Result<int>.Ok(i) : Result<int>.Fail(ErrorCode.NotFound);
+					if (t.TryGet(out int v) && v < 0) throw new Exception();
+				}
+			});
 
-			long after = GC.GetAllocatedBytesForCurrentThread();
-			Assert.AreEqual(0, after - before, "Result construction and inspection allocated");
+			Window();
+			Assert.AreEqual(0, Window(), "Result construction and inspection allocated");
 		}
 	}
 }

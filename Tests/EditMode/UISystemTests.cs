@@ -286,17 +286,18 @@ namespace AK.Tests
 				_system.GetView<FragmentY>();
 			}
 
-			long before = System.GC.GetAllocatedBytesForCurrentThread();
-			for (int i = 0; i < 200; i++)
+			int Window() => GcAllocations.Count(() =>
 			{
-				_system.GetView<ScreenA>();
-				_system.GetView<FragmentX>();
-				_system.GetView<FragmentY>();
-			}
+				for (int i = 0; i < 200; i++)
+				{
+					_system.GetView<ScreenA>();
+					_system.GetView<FragmentX>();
+					_system.GetView<FragmentY>();
+				}
+			});
 
-			long after = System.GC.GetAllocatedBytesForCurrentThread();
-
-			Assert.That(after - before, Is.EqualTo(0), "GetView must not allocate");
+			Window();
+			Assert.That(Window(), Is.EqualTo(0), "GetView must not allocate");
 		}
 	}
 }

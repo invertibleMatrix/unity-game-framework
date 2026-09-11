@@ -244,7 +244,7 @@ namespace AK.Tests.Jobs
 		}
 
 		[Test]
-		public void Batch_SteadyState_AllocatesZeroBytesOnMainThread()
+		public void Batch_SteadyState_AllocatesNothingOnAnyThread()
 		{
 			const int elements = 1000;
 
@@ -258,17 +258,16 @@ namespace AK.Tests.Jobs
 				RunFrame(scheduler, frame);
 			}
 
-			long before = GC.GetAllocatedBytesForCurrentThread();
-
-			for (int frame = 6; frame <= 55; frame++)
+			int allocations = GcAllocations.Count(() =>
 			{
-				for (int i = 0; i < elements; i++) batch.Add().Input = i;
-				RunFrame(scheduler, frame);
-			}
+				for (int frame = 6; frame <= 55; frame++)
+				{
+					for (int i = 0; i < elements; i++) batch.Add().Input = i;
+					RunFrame(scheduler, frame);
+				}
+			}, allThreads: true);
 
-			long after = GC.GetAllocatedBytesForCurrentThread();
-
-			Assert.AreEqual(0, after - before);
+			Assert.AreEqual(0, allocations, "fill + rotate + chunked execution must not allocate once warm");
 			Assert.AreEqual(elements, batch.Results.Length);
 		}
 	}
