@@ -69,6 +69,10 @@ Why this matters:
 
 When creating an asmdef for your game code, reference the UGFW assemblies you need (e.g., `AK.Core`, `AK.UISystem`). The UGFW assemblies will already have their internal references set up correctly.
 
+### Tests
+
+The framework's own edit-mode tests live in `UGFW/Tests/EditMode` (assembly `AK.Tests.EditMode`, namespace `AK.Tests`) and depend only on UGFW assemblies, so they travel with the framework. `Support/UISystemHarness` builds a complete, headless `UISystem` (own Reflex container, in-memory `UIViewRepository`, synthetic view prefabs) — use it for tests that exercise view stacking, pooling or lifecycle without a scene. Game-specific tests (ones that load game assets or reference game code) belong in the game's test assembly, not here. Run everything from *Window ▸ General ▸ Test Runner* or `unity command run_tests --mode editor`.
+
 ### Dependency Injection — No Managers, No Singletons
 
 UGFW uses **Reflex** as its DI container. The container flows through the entire framework:
