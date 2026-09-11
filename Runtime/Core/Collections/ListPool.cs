@@ -26,6 +26,8 @@ namespace AK.Core.Collections
 
 		public static PooledList<T> Rent(int minCapacity = 0)
 		{
+			MainThreadGuard.Assert("ListPool<T>.Rent");
+
 			List<T> list;
 			if (Free.Count > 0)
 			{

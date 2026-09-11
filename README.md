@@ -71,7 +71,7 @@ When creating an asmdef for your game code, reference the UGFW assemblies you ne
 
 ### Tests
 
-The framework's own edit-mode tests live in `UGFW/Tests/EditMode` (assembly `AK.Tests.EditMode`, namespace `AK.Tests`) and depend only on UGFW assemblies, so they travel with the framework. `Support/UISystemHarness` builds a complete, headless `UISystem` (own Reflex container, in-memory `UIViewRepository`, synthetic view prefabs) — use it for tests that exercise view stacking, pooling or lifecycle without a scene. Game-specific tests (ones that load game assets or reference game code) belong in the game's test assembly, not here. Run everything from *Window ▸ General ▸ Test Runner* or `unity command run_tests --mode editor`.
+The framework's own edit-mode tests live in `UGFW/Tests/EditMode` (assembly `AK.Tests.EditMode`, namespace `AK.Tests`) and depend only on UGFW assemblies, so they travel with the framework. `Support/UISystemHarness` builds a complete, headless `UISystem` (own Reflex container, in-memory `UIViewRepository`, synthetic view prefabs) — use it for tests that exercise view stacking, pooling or lifecycle without a scene. Play-mode tests that need the real player loop live in `UGFW/Tests/PlayMode` (assembly `AK.Tests.PlayMode`). Game-specific tests (ones that load game assets or reference game code) belong in the game's test assembly, not here. Run everything from *Window ▸ General ▸ Test Runner* or `unity command run_tests --mode editor`.
 
 ### Dependency Injection — No Managers, No Singletons
 
@@ -839,122 +839,6 @@ effect.Show(transform.position);
 
 `ParticleComponent` sets `ParticleSystemStopAction.Callback` — when the particle system finishes, `OnParticleSystemStopped()` fires, the `onStop` callback runs, and the component returns to the pool automatically. You never manually return particles.
 
-### JobDispatcher
-
-A lock-free, multi-threaded job scheduling system with frame-level precision. Three threads work in lock-step: **Main Thread** (Unity API jobs), **Worker Thread** (background computation), and **Handler Thread** (buffer preparation). The system uses a "one frame ahead" double-buffer strategy — while threads execute from the front buffer, the handler prepares the back buffer for the next frame, eliminating contention.
-
-```csharp
-// Inject IJobDispatcher
-[Inject] private readonly IJobDispatcher _jobDispatcher;
-```
-
-#### Execute on Main Thread (Unity API safe)
-
-```csharp
-// Immediate — runs this frame
-_jobDispatcher.UnityThread.Execute(() => transform.position = newPos);
-
-// Next frame
-_jobDispatcher.UnityThread.ExecuteInNextFrame(() => RefreshUI());
-
-// After delay
-_jobDispatcher.UnityThread.ExecuteAfterDelay(() => ShowResult(), 2.0f);
-
-// Every Update
-var handle = _jobDispatcher.UnityThread.ExecuteEveryUpdate(() => PollInput());
-
-// Every FixedUpdate
-var handle = _jobDispatcher.UnityThread.ExecuteEveryFixedUpdate(() => ProcessPhysics());
-
-// Repeating at interval
-var handle = _jobDispatcher.UnityThread.InvokeRepeating(() => SyncState(), 1.0f, 0.5f);
-
-// At specific frame
-_jobDispatcher.UnityThread.ExecuteAtFrame(() => FrameExactAction(), targetFrame);
-
-// Cancel a repeating/scheduled job
-handle.CancelJob();
-```
-
-#### Execute on Worker Thread (offload heavy work)
-
-```csharp
-// Run on background thread — NO Unity API access in the job
-_jobDispatcher.WorkerThread.Execute(() =>
-{
-    var result = HeavyComputation();     // pure C# computation
-    // Cannot touch GameObject, Transform, etc. here
-});
-
-// Get result back on main thread — use callCompleteOnMainThread
-_jobDispatcher.WorkerThread.Execute(
-    job: () =>
-    {
-        var data = ComputePathfinding();   // background thread
-    },
-    onComplete: () =>
-    {
-        RenderPath(data);                  // main thread — safe to use Unity API
-    },
-    callCompleteOnMainThread: true
-);
-```
-
-#### IDispatchableJob — Structured Jobs
-
-For more complex jobs, implement `IDispatchableJob`:
-
-```csharp
-public class PathfindJob : IDispatchableJob
-{
-    private Vector3 _start, _end;
-    private List<Vector3> _path;
-
-    public void OnExecute()
-    {
-        // Runs on worker thread — heavy computation
-        _path = AStar.Compute(_start, _end);
-    }
-
-    public void OnComplete()
-    {
-        // Runs on the thread that dispatched the job
-        // (or main thread if callCompleteOnMainThread was true)
-        RenderPath(_path);
-    }
-
-    public void OnStop() { /* cleanup */ }
-}
-
-// Dispatch
-_jobDispatcher.WorkerThread.ExecuteJob(new PathfindJob(), callCompleteOnMainThread: true);
-```
-
-#### How the Pipeline Works
-
-```
-Frame N:   Threads execute from FrontBuffer[N]
-           Handler prepares BackBuffer[N+1] from backlog
-
-Frame N+1: Buffers swap atomically
-           Threads execute from FrontBuffer[N+1] (prepared last frame)
-           Handler prepares BackBuffer[N+2]
-```
-
-**Three-tier job classification:**
-- **Immediate** (`CurrentFrameJobs`) — bypass handler, execute this frame
-- **Near future** (`NextFrameJobs`) — bypass handler, execute next frame
-- **Distant future** (handler backlog) — handler schedules into back buffer
-
-This means immediate jobs have zero scheduling overhead, and the handler never becomes a bottleneck.
-
-**Key rules:**
-- Workers run on a background thread — never access Unity API from `OnExecute()`
-- Use `callCompleteOnMainThread: true` to safely use Unity API in `OnComplete()`
-- Keep jobs short (< 16ms) to avoid frame drops
-- Use `IDispatchedJobHandle.CancelJob()` to cancel scheduled/repeating jobs
-- Access frame timing via `IJobDispatcher.FrameCounter`, `.UnityTime`, `.Dt`
-
 ### NumberFormatter
 
 Static utility for formatting large numbers into abbreviated, mobile-friendly strings. Extension methods on `int`, `long`, `float`, `double`.
@@ -1383,6 +1267,92 @@ cameraSystem.ReorderCameraStack();
 4. Add `CameraSystem` MonoBehaviour to your scene, assign the `CameraRegistry` in Inspector
 5. For pre-placed cameras: add `BaseCamera` components to GameObjects in the scene, assign their `_cameraType` and `_baseCameraType` fields in Inspector
 6. For dynamic cameras: set `SpawnOnStart = true` on definitions that should auto-spawn, or call `SpawnCamera<T>()` at runtime
+
+
+## Module: Jobs
+
+Assembly `AK.Jobs` (namespace `AK.Jobs`, not auto-referenced — add it to your asmdef). A lock-free, frame-synchronous job system for per-frame managed work that has no business on the main thread: simulation ticks, steering, influence maps, procedural generation, scoring. It schedules **where** work runs; **when** stays with UniTask (`await UniTask.Delay(...)` then schedule).
+
+### The frame contract
+
+```
+frame N      Schedule(job) / batch.Add()        → appended to main-owned pending buffers
+top of N+1   barrier (EarlyUpdate, before any Update)
+             workers idle? → deliver N-1's completions, swap pending ⇄ executing, kick workers
+             workers busy? → skip: nothing swapped, pending keeps accumulating, one frame of latency
+frame N+1    workers run the frozen executing set in parallel with the whole main-thread frame
+top of N+2   completions on the main thread; batch Results readable for the whole frame
+```
+
+Nothing is locked. Every buffer has one owner at a time and ownership changes only at the barrier, when every worker is provably parked; the two barrier events are the memory fences. Workers read the frozen buffers and write only their own job data, so there is no line for two cores to fight over. The only atomics are the chunk cursor and two counters.
+
+### Setup
+
+```csharp
+// GameBindings
+var scheduler = new JobScheduler(new JobSchedulerOptions { WorkerCount = 2 });
+scheduler.AttachToPlayerLoop();                      // ticks at the start of EarlyUpdate
+builder.AddSingleton(scheduler, typeof(IJobScheduler));   // dispose with the container
+```
+
+`WorkerCount` defaults to `clamp(cores - 2, 1, 4)`. Unity already runs a render thread and its own job workers, so more managed workers oversubscribe a phone; measure on device before raising it.
+
+### Batches — the fast path
+
+Homogeneous struct jobs stored contiguously. The element's fields are the inputs and the outputs, so a worker streams through the array with a direct call per element and no object to chase.
+
+```csharp
+struct SteerJob : IJob
+{
+    public Vector3 Position, Target;   // in
+    public Vector3 Velocity;           // out
+    public void Execute(in FrameContext ctx) => Velocity = (Target - Position).normalized * ctx.DeltaTime;
+}
+
+var batch = new JobBatch<SteerJob>(capacity: 512);
+scheduler.Register(batch);
+
+// every frame
+foreach (var agent in agents) { ref SteerJob j = ref batch.Add(); j.Position = agent.Position; j.Target = agent.Target; }
+foreach (ref readonly SteerJob r in batch.Results) Apply(r);   // last finished frame; stays until a newer frame with elements completes
+```
+
+`Results` becomes readable two frames after `Add` (one frame to hand off, one to run). The three buffers rotate at the barrier — fill, execute, read — so reading last frame's results and filling this frame's inputs never touch the same array.
+
+A per-frame producer should add only when `batch.PendingCount == 0`. If the workers overran and the barrier skipped a frame, last frame's elements are still pending; adding another frame's worth on top just makes the next hand-off twice as long, and the overrun feeds itself. Skipping the add re-simulates from the latest `Results` next frame, which is what a simulation wants anyway. `Stats.SkippedFrames` tells you it is happening; `Stats.LastFrameCriticalTicks` tells you by how much.
+
+### Reference jobs
+
+```csharp
+sealed class BakeJob : IJob, IJobCallback
+{
+    public void Execute(in FrameContext ctx) { /* worker: pure C# */ }
+    public void OnComplete(bool cancelled)   { /* main thread, exactly once */ }
+}
+
+JobHandle h = scheduler.Schedule(new BakeJob());          // runs next frame
+scheduler.Cancel(h);                                       // before hand-off: never runs; after: may run once, OnComplete(true)
+scheduler.ScheduleRepeating(job);                          // every frame until cancelled
+scheduler.Schedule(ctx => Work(), done => Refresh());      // delegate form; allocates a wrapper, not for per-frame use
+```
+
+`JobHandle` is an 8-byte generational value: a handle whose job completed is rejected by every call instead of aliasing a later job in the same slot. Completions are delivered in schedule order regardless of how many workers ran them.
+
+### Phases
+
+`JobSchedulerOptions.PhaseCount = 2` splits each frame into ordered phases: every chunk of phase 0 finishes before any chunk of phase 1 starts, so a phase-1 job may read what phase 0 wrote. Pass `phase:` to `Schedule`, `ScheduleRepeating`, or the `JobBatch` constructor. This covers integrate → resolve → post-process pipelines without a dependency graph.
+
+### Rules for job code
+
+1. **No Unity API** — engine objects are main-thread-only. Read time from `FrameContext`, not `Time`.
+2. **No `ListPool<T>`** or any other main-thread pool. In the editor `ListPool.Rent` logs an error if a worker calls it.
+3. **Own your scratch memory** — allocate it once on the job object or in the batch element and reuse it.
+
+A job that throws is logged, counted in `Stats.LastFrameFaults` / `batch.ResultFaults`, and never stops the other jobs or the worker. `Stats` also reports the slowest worker's time per frame (`LastFrameCriticalTicks`) so a game can tune `WorkerCount` at runtime.
+
+### What it deliberately is not
+
+No timers or delays (UniTask), no main-thread scheduling (UniTask), no dependency graph (phases), no work stealing (the executing set is frozen for the frame, so a chunk cursor is enough), no `unsafe`. Tests: `UGFW/Tests/EditMode/Jobs` drive the barrier by hand; `UGFW/Tests/PlayMode/Jobs` (assembly `AK.Tests.PlayMode`) check the real player loop.
 
 
 ## Module: CoreDomain

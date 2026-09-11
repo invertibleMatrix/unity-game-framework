@@ -1,26 +1,18 @@
 {
-    "name": "AK.Tests.EditMode",
+    "name": "AK.Tests.PlayMode",
     "rootNamespace": "AK.Tests",
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "AK.Core",
-        "AK.Jobs",
-        "AK.CoreDomain",
-        "AK.Services",
-        "AK.UISystem",
-        "UniTask",
-        "Reflex"
+        "AK.Jobs"
     ],
-    "includePlatforms": [
-        "Editor"
-    ],
+    "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": true,
     "precompiledReferences": [
-        "nunit.framework.dll",
-        "DOTween.dll"
+        "nunit.framework.dll"
     ],
     "autoReferenced": false,
     "defineConstraints": [
