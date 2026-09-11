@@ -42,6 +42,12 @@ namespace AK.Systems
 
 		public ViewPool Pool => _pool;
 
+		/// <summary>
+		/// Set once the application is quitting. Views settling during teardown are destroyed
+		/// instead of pooled: reparenting a GameObject that is itself being destroyed is an error.
+		/// </summary>
+		public bool IsShuttingDown { get; set; }
+
 		public bool TryGetPrefab(ViewKey key, out PrefabEntry entry)
 		{
 			if (_prefabs == null)

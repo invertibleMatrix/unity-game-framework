@@ -246,7 +246,7 @@ namespace AK.Systems
 			if (!_registry.Contains(view)) return;
 
 			bool staysRegistered = record.IsStatic && context == CloseContext.Normal;
-			bool pooled          = !staysRegistered && record.ShouldPool;
+			bool pooled          = !staysRegistered && record.ShouldPool && !_factory.IsShuttingDown;
 
 			// Before the cascade, so the closes a view issues here still find its children registered.
 			if (pooled) view.OnBeforePool();
@@ -296,7 +296,7 @@ namespace AK.Systems
 				if (child == null || !_registry.TryGet(child, out var childRecord)) continue;
 
 				bool staticSurvives = childRecord.IsStatic && parentStaysRegistered;
-				bool pooled         = !staticSurvives && childRecord.ShouldPool;
+				bool pooled         = !staticSurvives && childRecord.ShouldPool && !_factory.IsShuttingDown;
 
 				if (pooled) child.OnBeforePool();
 

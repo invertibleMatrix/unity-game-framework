@@ -78,9 +78,9 @@ namespace AK.Systems
 		{
 			if (_image != null) _image.DOKill();
 
-			DestroyObject(_dim);
-			DestroyObject(_sprite);
-			DestroyObject(_texture);
+			DestroySafely(_dim);
+			DestroySafely(_sprite);
+			DestroySafely(_texture);
 
 			_dim = null;
 			_image = null;
@@ -138,7 +138,7 @@ namespace AK.Systems
 			dimRect.sizeDelta = (topRight - bottomLeft) * 4f;
 		}
 
-		private static void DestroyObject(Object o)
+		private static void DestroySafely(Object o)
 		{
 			if (o == null) return;
 			if (Application.isPlaying) Destroy(o);

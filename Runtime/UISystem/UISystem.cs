@@ -76,6 +76,11 @@ namespace AK.Systems
 			_factory?.Clear();
 		}
 
+		private void OnApplicationQuit()
+		{
+			if (_factory != null) _factory.IsShuttingDown = true;
+		}
+
 		// =================================================================
 		// IUISystem — SHOW
 		// =================================================================
