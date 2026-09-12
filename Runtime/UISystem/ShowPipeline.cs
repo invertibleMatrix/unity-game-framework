@@ -271,12 +271,18 @@ namespace AK.Systems
 				return;
 			}
 
-			await _histories.WaitForPendingAsync(parent);
-
+			// Join the queue before the first await so shows issued in one tick line up in call order.
 			using FragmentHistories.GateScope gate = _histories.EnterGate(parent);
 			try
 			{
-				await ShowInHistoryAsync(view, parent, immediate, ct);
+				await gate.WaitForTurnAsync(ct);
+
+				// A parent that closed while this show was queued has already settled the view.
+				if (_registry.Contains(view))
+				{
+					await ShowInHistoryAsync(view, parent, immediate, ct);
+				}
+
 				gate.Complete();
 			}
 			catch (Exception ex)
@@ -297,13 +303,17 @@ namespace AK.Systems
 				return;
 			}
 
-			await _histories.WaitForPendingAsync(parent);
-
 			using FragmentHistories.GateScope gate = _histories.EnterGate(parent);
 			try
 			{
-				Prime(view, context, stackBehaviour);
-				await ShowInHistoryAsync(view, parent, immediate, ct);
+				await gate.WaitForTurnAsync(ct);
+
+				if (_registry.Contains(view))
+				{
+					Prime(view, context, stackBehaviour);
+					await ShowInHistoryAsync(view, parent, immediate, ct);
+				}
+
 				gate.Complete();
 			}
 			catch (Exception ex)
