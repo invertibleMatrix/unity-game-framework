@@ -194,7 +194,7 @@ namespace AK.Systems
 			foreach (var fragment in history)
 			{
 				if (fragment != null && fragment.gameObject != null)
-					fragment.OnResume();
+					fragment.Lifecycle().Resume();
 			}
 		}
 

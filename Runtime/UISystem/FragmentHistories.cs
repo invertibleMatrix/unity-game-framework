@@ -122,11 +122,11 @@ namespace AK.Systems
 			}
 
 			/// <summary>
-			/// Waits for the show ahead of this one to settle. The wait itself is never cut
-			/// short — a show that left the queue early would let the ones behind it overtake
-			/// the one ahead — but <paramref name="ct"/> is honoured once the turn comes. The
-			/// wait is bounded by the predecessor's presentation, or by the parent's history
-			/// being dropped, which completes every gate on it.
+			/// Waits for the show ahead of this one to settle, observing <paramref name="ct"/>:
+			/// a cancelled show leaves the queue at once and completes its own slot, so the
+			/// shows behind it are not stranded. The wait is bounded by the predecessor's
+			/// presentation, or by the parent's history being dropped, which completes every
+			/// gate on it.
 			///
 			/// The turn coming does not mean the show is still wanted: a parent closing while
 			/// this show was queued has already settled the view. The caller checks the
@@ -140,11 +140,12 @@ namespace AK.Systems
 				{
 					try
 					{
-						await previous.Source.Task;
+						await previous.Source.Task.AttachExternalCancellation(ct);
 					}
 					catch
 					{
-						// sequencing only — the show ahead failing or being cancelled is not ours
+						// sequencing only — cancellation is re-raised below; a show ahead
+						// failing or being cancelled is not ours
 					}
 
 					_gate.Previous = null;

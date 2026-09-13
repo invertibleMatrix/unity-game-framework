@@ -221,7 +221,7 @@ A unified view framework where **Screen** and **Fragment** are the same `UIView`
 
 ### Showing Views
 
-Every `Show` method has an async variant (`ShowAsync`) and a fire-and-forget variant (`Show`). Use `Show` when you don't need to wait for the animation to complete — it starts the show and returns the view instance immediately.
+Every `Show` method has an async variant (`ShowAsync`) and a fire-and-forget variant (`Show`). Use `Show` when you don't need to wait for the animation to complete — it starts the show and returns the view instance immediately. Cancelling a `ShowAsync` abandons the show: the task ends canceled and the view is closed immediately — a cancelled show never leaves a half-presented view behind.
 
 Everything a show can be told travels in one `ShowOptions` value: `Context`, `Parent`, `ViewId`, `Channel`, `StackBehaviour`, `Mode`. `default` is a plain show; the factories cover the common shapes and the fluent copies compose the rest. Setting `StackBehaviour` implies `ShowMode.Serialized` — there is no way to ask for a stack behaviour that is then ignored.
 
@@ -278,10 +278,9 @@ When a new view is shown on top of an existing one, `ViewStackBehaviour` control
 | `DoNothing` | Stays visible and interactive |
 | `HideBelow` | Paused → hidden with animation → input blocked |
 | `PauseOnlyBelow` | Paused → stays visible → input blocked |
-| `PauseAndHideBelow` | Paused → hidden with animation → input blocked |
 | `CloseBelow` | Fully closed and destroyed |
 
-When the top view is closed, the previous view is **automatically resumed** using the inverse logic — `HideBelow` and `PauseAndHideBelow` trigger resume animation, `PauseOnlyBelow` just restores interactivity.
+When the top view is closed, the previous view is **automatically resumed** using the inverse logic — `HideBelow` triggers resume animation, `PauseOnlyBelow` just restores interactivity.
 
 ### UIChannel — Sorting Layers
 

@@ -27,7 +27,6 @@ namespace AK.Tests
 		[TestCase(ViewStackBehaviour.DoNothing,          "",                  true,  "")]
 		[TestCase(ViewStackBehaviour.HideBelow,          "Pause",             false, "Resume")]
 		[TestCase(ViewStackBehaviour.PauseOnlyBelow,     "Pause",             false, "Resume")]
-		[TestCase(ViewStackBehaviour.PauseAndHideBelow,  "Pause",             false, "Resume")]
 		public void Screen_PushThenClose_AppliesPolicyToScreenBelow(ViewStackBehaviour behaviour, string expectedOnPush,
 		                                                            bool interactableWhileCovered, string expectedOnClose)
 		{
@@ -70,7 +69,6 @@ namespace AK.Tests
 		}
 
 		[TestCase(ViewStackBehaviour.HideBelow)]
-		[TestCase(ViewStackBehaviour.PauseAndHideBelow)]
 		[TestCase(ViewStackBehaviour.PauseOnlyBelow)]
 		public void Screen_Immediate_PushThenClose_MatchesAnimatedTrace(ViewStackBehaviour behaviour)
 		{
@@ -106,12 +104,16 @@ namespace AK.Tests
 			var top = _h.System.Show<RecordingFragmentB>();
 			Assert.That(host.Trace, Is.EqualTo("Pause"));
 			Assert.That(child.Trace, Is.EqualTo("Pause"), "fragments of a paused screen are paused too");
+			Assert.That(child.State, Is.EqualTo(ViewState.Paused), "the fragment's state follows the lifecycle, not just the hook");
+			Assert.That(child.Interactable, Is.False, "the fragment loses input with its parent");
 			child.Clear();
 			host.Clear();
 
 			UISystemHarness.Complete(_h.System.CloseAsync(top));
 			Assert.That(host.Trace, Is.EqualTo("Resume"));
 			Assert.That(child.Trace, Is.EqualTo("Resume"));
+			Assert.That(child.State, Is.EqualTo(ViewState.Shown), "the fragment's state is restored with its parent's");
+			Assert.That(child.Interactable, Is.True, "the fragment's input is restored with its parent's");
 		}
 
 		[Test]
@@ -156,7 +158,6 @@ namespace AK.Tests
 		[TestCase(ViewStackBehaviour.DoNothing,          "",      true,  "")]
 		[TestCase(ViewStackBehaviour.HideBelow,          "Pause", false, "Resume")]
 		[TestCase(ViewStackBehaviour.PauseOnlyBelow,     "Pause", false, "Resume")]
-		[TestCase(ViewStackBehaviour.PauseAndHideBelow,  "Pause", false, "Resume")]
 		public void Fragment_SerializedPushThenClose_AppliesPolicyToFragmentBelow(ViewStackBehaviour behaviour, string expectedOnPush,
 		                                                                          bool interactableWhileCovered, string expectedOnClose)
 		{
@@ -263,7 +264,6 @@ namespace AK.Tests
 		}
 
 		[TestCase(ViewStackBehaviour.HideBelow)]
-		[TestCase(ViewStackBehaviour.PauseAndHideBelow)]
 		[TestCase(ViewStackBehaviour.PauseOnlyBelow)]
 		public void Fragment_MidStackClose_ResumesTheFragmentBelow_WhenNothingElseCoversIt(ViewStackBehaviour behaviour)
 		{

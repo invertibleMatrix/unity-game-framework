@@ -13,7 +13,8 @@
 		DoNothing,
 
 		/// <summary>
-		/// The view below is hidden (animation plays). When this view is closed, the view below is shown again.
+		/// The view below is paused (<see cref="UIView.OnPause"/> fires, input blocked) and then
+		/// hidden (animation plays); on close it is shown again and <see cref="UIView.OnResume"/> fires.
 		/// Good for full-screen takeover flows.
 		/// </summary>
 		HideBelow,
@@ -23,12 +24,6 @@
 		/// Good for popups and dialogs that dim the background.
 		/// </summary>
 		PauseOnlyBelow,
-
-		/// <summary>
-		/// The view below is fully paused and hidden (animation plays, input blocked).
-		/// Good for full-screen menus that completely replace the previous screen.
-		/// </summary>
-		PauseAndHideBelow,
 
 		/// <summary>
 		/// The view below is closed/destroyed when this view is shown.

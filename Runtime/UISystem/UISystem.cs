@@ -97,13 +97,19 @@ namespace AK.Systems
 			return view;
 		}
 
+		/// <summary>
+		/// Shows a view and completes when its presentation finishes. Cancellation abandons
+		/// the show: the task always ends canceled, and the view — if cancellation lands
+		/// while it is still presenting — is closed immediately instead of half-finishing.
+		/// </summary>
 		public async UniTask<TView> ShowAsync<TView>(ShowOptions options = default, Action<TView> onInit = null, CancellationToken ct = default)
 			where TView : UIView
 		{
-			var (view, presentation) = _show.Show(typeof(TView), options, onInit);
+			var (view, presentation) = _show.Show(typeof(TView), options, onInit, ct);
 			if (view == null) return null;
 
 			await presentation.AttachExternalCancellation(ct);
+			ct.ThrowIfCancellationRequested();
 			return view;
 		}
 

@@ -1,3 +1,4 @@
+using System.Threading;
 using AK.Systems;
 using AK.Tests.Support;
 using Cysharp.Threading.Tasks;
@@ -187,6 +188,54 @@ namespace AK.Tests
 
 			Assert.That(HoldOf(a).Starts, Is.EqualTo(1));
 			Assert.That(HoldOf(b).Starts, Is.EqualTo(1), "parallel shows enter together");
+		}
+
+		// ---------------------------------------------------------------
+		// Cancellation abandons the show
+		// ---------------------------------------------------------------
+
+		[Test]
+		public void ShowAsync_Cancellation_MidEntrance_ClosesTheView_AndReportsCanceled()
+		{
+			_h.MakePrefab<RecordingScreen>(screen: true);
+			_h.AddHoldAnimation(_h.MakePrefab<RecordingFragment>(allowMultiple: true));
+			var host = _h.System.Show<RecordingScreen>();
+
+			var cts = new CancellationTokenSource();
+			UniTask<RecordingFragment> pending = _h.System.ShowAsync<RecordingFragment>(Serialized(host), null, cts.Token);
+			var view = _h.System.GetView<RecordingFragment>();
+
+			Assert.That(HoldOf(view).Starts, Is.EqualTo(1), "the entrance is in flight");
+
+			cts.Cancel();
+
+			Assert.That(pending.Status, Is.EqualTo(UniTaskStatus.Canceled), "the await reports cancellation, not the view");
+			Assert.That(_h.System.GetView<RecordingFragment>(), Is.Null, "the abandoned show was closed, not left half-presented");
+			Assert.That(_h.System.RegisteredViewCount, Is.EqualTo(1), "only the host survives");
+			LogAssert.NoUnexpectedReceived();
+		}
+
+		[Test]
+		public void ShowAsync_Cancellation_WhileQueued_ClosesTheQueuedView_AndKeepsTheQueueMoving()
+		{
+			_h.MakePrefab<RecordingScreen>(screen: true);
+			_h.AddHoldAnimation(_h.MakePrefab<RecordingFragment>(allowMultiple: true));
+			var host = _h.System.Show<RecordingScreen>();
+
+			var a = _h.System.Show<RecordingFragment>(Serialized(host));
+
+			var cts = new CancellationTokenSource();
+			UniTask<RecordingFragment> pending = _h.System.ShowAsync<RecordingFragment>(Serialized(host), null, cts.Token);
+
+			Assert.That(_h.System.CountOfKind(typeof(RecordingFragment)), Is.EqualTo(2), "a plus the queued show");
+			Assert.That(HoldOf(a).Starts, Is.EqualTo(1), "the queued show is parked, not presenting");
+
+			cts.Cancel();
+
+			Assert.That(pending.Status, Is.EqualTo(UniTaskStatus.Canceled));
+			Assert.That(_h.System.CountOfKind(typeof(RecordingFragment)), Is.EqualTo(1), "the cancelled show closed; only a remains");
+			Assert.That(a.State, Is.EqualTo(ViewState.Showing), "a's entrance was not disturbed");
+			LogAssert.NoUnexpectedReceived();
 		}
 	}
 }

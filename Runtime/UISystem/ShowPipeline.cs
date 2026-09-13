@@ -40,8 +40,10 @@ namespace AK.Systems
 		/// <summary>
 		/// Prepares a view of <paramref name="type"/> and returns it with its presentation
 		/// task. The caller decides whether to await the presentation or fire and forget.
+		/// <paramref name="ct"/> abandons the show: cancellation closes the prepared view
+		/// immediately instead of leaving a half-presented one behind.
 		/// </summary>
-		public (TView view, UniTask presentation) Show<TView>(Type type, in ShowOptions options, Action<TView> onInit)
+		public (TView view, UniTask presentation) Show<TView>(Type type, in ShowOptions options, Action<TView> onInit, CancellationToken ct = default)
 			where TView : UIView
 		{
 			var key = new ViewKey(type, options.ViewId);
@@ -67,13 +69,13 @@ namespace AK.Systems
 				// Templates never show or get reused themselves — they are clone sources.
 				if (staticView.IsTemplate)
 				{
-					return ShowClone(staticView, host, context, stackBehaviour, onInit, immediate, serialized);
+					return ShowClone(staticView, host, context, stackBehaviour, onInit, immediate, serialized, ct);
 				}
 
 				onInit?.Invoke(staticView);
 				return (staticView, serialized
-					? ShowRegisteredAsync(staticView, host, context, stackBehaviour, immediate)
-					: ShowRegisteredParallelAsync(staticView, host, context));
+					? ShowRegisteredAsync(staticView, host, context, stackBehaviour, immediate, ct)
+					: ShowRegisteredParallelAsync(staticView, host, context, ct));
 			}
 
 			if (!_factory.TryGetPrefab(key, out ViewFactory.PrefabEntry entry) || entry.Prefab is not TView prefab)
@@ -105,8 +107,8 @@ namespace AK.Systems
 			        new ViewRecord(view, parent, isStatic: false) { ChannelOverride = channelOverride });
 
 			UniTask presentation = isScreen
-				? PresentScreenAsync(view, replaced, channelOverride, immediate)
-				: PresentFragmentAsync(view, replaced, parent, immediate, serialized);
+				? PresentScreenAsync(view, replaced, channelOverride, immediate, ct)
+				: PresentFragmentAsync(view, replaced, parent, immediate, serialized, ct);
 
 			return (view, presentation);
 		}
@@ -186,7 +188,7 @@ namespace AK.Systems
 		/// </summary>
 		private (TView view, UniTask presentation) ShowClone<TView>(TView template, UIView parent, UIContext context,
 		                                                            ViewStackBehaviour? stackBehaviour, Action<TView> onInit,
-		                                                            bool immediate, bool serialized)
+		                                                            bool immediate, bool serialized, CancellationToken ct = default)
 			where TView : UIView
 		{
 			if (parent == null)
@@ -203,7 +205,7 @@ namespace AK.Systems
 			TView clone = _factory.Clone(template);
 			Prepare(clone, parent, context, stackBehaviour, onInit, new ViewRecord(clone, parent, isStatic: false, isClone: true));
 
-			return (clone, PresentFragmentAsync(clone, null, parent, immediate, serialized));
+			return (clone, PresentFragmentAsync(clone, null, parent, immediate, serialized, ct));
 		}
 
 		private static void Prime(UIView view, UIContext context, ViewStackBehaviour? stackBehaviour)
@@ -247,10 +249,21 @@ namespace AK.Systems
 		private async UniTask PresentScreenAsync(UIView view, UIView replaced, UIChannel? channelOverride, bool immediate,
 		                                         CancellationToken ct = default)
 		{
-			if (replaced != null) await CloseReplacedAsync(replaced);
+			try
+			{
+				if (replaced != null) await CloseReplacedAsync(replaced);
 
-			ViewStack stack = _screens.Push(view, channelOverride ?? view.Channel.SortOrder);
-			await ShowOverAsync(view, stack.PeekBelowTopOrNull(), immediate, cascade: true, ct);
+				ViewStack stack = _screens.Push(view, channelOverride ?? view.Channel.SortOrder);
+				await ShowOverAsync(view, stack.PeekBelowTopOrNull(), immediate, cascade: true, ct);
+
+				// The animator settles a cancelled entrance itself instead of throwing — a
+				// cancelled show still abandons: the catch closes the view.
+				ct.ThrowIfCancellationRequested();
+			}
+			catch (OperationCanceledException) when (ct.IsCancellationRequested)
+			{
+				await AbandonAsync(view);
+			}
 		}
 
 		/// <summary>
@@ -261,34 +274,69 @@ namespace AK.Systems
 		private async UniTask PresentFragmentAsync(UIView view, UIView replaced, UIView parent, bool immediate, bool serialized,
 		                                           CancellationToken ct = default)
 		{
-			if (replaced != null) await CloseReplacedAsync(replaced);
-
-			if (!serialized)
-			{
-				view.Lifecycle().Conceal();
-				_histories.GetOrCreate(parent).MoveToTop(view);
-				await view.Lifecycle().ShowAsync(immediate, ct);
-				return;
-			}
-
-			// Join the queue before the first await so shows issued in one tick line up in call order.
-			using FragmentHistories.GateScope gate = _histories.EnterGate(parent);
 			try
 			{
-				await gate.WaitForTurnAsync(ct);
+				if (replaced != null) await CloseReplacedAsync(replaced);
+
+				if (!serialized)
+				{
+					view.Lifecycle().Conceal();
+					_histories.GetOrCreate(parent).MoveToTop(view);
+					await view.Lifecycle().ShowAsync(immediate, ct);
+
+					// See PresentScreenAsync — a cancelled entrance abandons the show.
+					ct.ThrowIfCancellationRequested();
+					return;
+				}
+
+				// Join the queue before the first await so shows issued in one tick line up in call order.
+				using FragmentHistories.GateScope gate = _histories.EnterGate(parent);
+				try
+				{
+					await gate.WaitForTurnAsync(ct);
 
 				// A parent that closed while this show was queued has already settled the view.
 				if (_registry.Contains(view))
 				{
 					await ShowInHistoryAsync(view, parent, immediate, ct);
+
+					// See PresentScreenAsync — a cancelled entrance abandons the show.
+					ct.ThrowIfCancellationRequested();
 				}
 
-				gate.Complete();
+					gate.Complete();
+				}
+				catch (OperationCanceledException) when (ct.IsCancellationRequested)
+				{
+					gate.Complete();
+					await AbandonAsync(view);
+				}
+				catch (Exception ex)
+				{
+					gate.Fail(ex);
+					throw;
+				}
+			}
+			catch (OperationCanceledException) when (ct.IsCancellationRequested)
+			{
+				await AbandonAsync(view);
+			}
+		}
+
+		/// <summary>
+		/// Cancellation abandons a prepared show: the view is closed immediately, whatever
+		/// state its presentation reached. The close runs on its own token — settlement is
+		/// never cut short by the same cancellation.
+		/// </summary>
+		private async UniTask AbandonAsync(UIView view)
+		{
+			try
+			{
+				await _closer.CloseAsync(view, CloseContext.Normal, immediate: true, CancellationToken.None);
 			}
 			catch (Exception ex)
 			{
-				gate.Fail(ex);
-				throw;
+				Debug.LogException(ex);
 			}
 		}
 
@@ -423,7 +471,7 @@ namespace AK.Systems
 			foreach (var fragment in history)
 			{
 				if (fragment != null && fragment.gameObject != null)
-					fragment.OnPause();
+					fragment.Lifecycle().Pause();
 			}
 		}
 

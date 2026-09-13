@@ -9,13 +9,10 @@ namespace AK.Systems
 		/// <summary>The view below loses input and gets OnPause; it gets them back when the one above closes.</summary>
 		public static bool Pauses(ViewStackBehaviour behaviour) =>
 			behaviour is ViewStackBehaviour.HideBelow
-				or ViewStackBehaviour.PauseAndHideBelow
 				or ViewStackBehaviour.PauseOnlyBelow;
 
 		/// <summary>The view below is also taken off screen until the one above closes.</summary>
-		public static bool Hides(ViewStackBehaviour behaviour) =>
-			behaviour is ViewStackBehaviour.HideBelow
-				or ViewStackBehaviour.PauseAndHideBelow;
+		public static bool Hides(ViewStackBehaviour behaviour) => behaviour == ViewStackBehaviour.HideBelow;
 
 		/// <summary>The view below is closed for good.</summary>
 		public static bool Closes(ViewStackBehaviour behaviour) => behaviour == ViewStackBehaviour.CloseBelow;
