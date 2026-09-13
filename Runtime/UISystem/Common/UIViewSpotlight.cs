@@ -135,11 +135,25 @@ namespace AK.Systems
 
 		public bool IsRaycastLocationValid(Vector2 screenPoint, Camera eventCamera)
 		{
+			// While the iris animates in, the hole still covers the whole screen —
+			// without this guard every tap would pass through to the UI beneath
+			// before the spotlight actually governs input.
+			if (_introActive)
+			{
+				return true;
+			}
+
 			return !IsInsideAnyHole(screenPoint);
 		}
 
 		public void OnPointerClick(PointerEventData eventData)
 		{
+			// Swallowed taps during the iris-in are not deliberate dim-taps.
+			if (_introActive)
+			{
+				return;
+			}
+
 			BackgroundTapped?.Invoke();
 		}
 

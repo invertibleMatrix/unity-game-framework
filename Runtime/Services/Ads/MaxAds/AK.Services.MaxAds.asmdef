@@ -1,0 +1,28 @@
+{
+    "name": "AK.Services.MaxAds",
+    "rootNamespace": "AK.Services",
+    "references": [
+        "AK.Core",
+        "AK.CoreDomain",
+        "AK.Services",
+        "UniTask",
+        "MaxSdk.Scripts"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "MAX_SDK"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.applovin.mediation.ads",
+            "expression": "",
+            "define": "MAX_SDK"
+        }
+    ],
+    "noEngineReferences": false
+}

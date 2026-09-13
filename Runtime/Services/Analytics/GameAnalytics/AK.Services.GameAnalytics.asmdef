@@ -1,0 +1,27 @@
+{
+    "name": "AK.Services.GameAnalytics",
+    "rootNamespace": "AK.Services",
+    "references": [
+        "AK.Core",
+        "AK.CoreDomain",
+        "AK.Services",
+        "GameAnalyticsSDK"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "GAME_ANALYTICS_SDK"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.gameanalytics.sdk",
+            "expression": "",
+            "define": "GAME_ANALYTICS_SDK"
+        }
+    ],
+    "noEngineReferences": false
+}

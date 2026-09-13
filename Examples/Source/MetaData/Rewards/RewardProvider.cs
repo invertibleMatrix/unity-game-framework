@@ -10,20 +10,18 @@ namespace AK.Examples.Rewards
 	/// </summary>
 	public abstract class RewardProvider : MetaDataAsset, IRewardProvider
 	{
-		[Tooltip("The RewardType UID asset this provider handles. Used by RewardService for dispatch.")]
+		[Tooltip("The RewardType asset this provider handles. Used by RewardService for dispatch.")]
 		public RewardType Type;
 
-		// IRewardProvider explicit implementation
-		UID IRewardProvider.RewardTypeUID => Type;
+		Uid IRewardProvider.RewardType => Type != null ? Type.Id : Uid.None;
 
 		/// <summary>
 		/// Whether this provider can handle the given reward.
-		/// Default: matches by RewardTypeUID reference equality.
-		/// Override for custom matching logic.
+		/// Default: matches by reward type identity. Override for custom matching logic.
 		/// </summary>
 		public virtual bool CanProvide(IReward reward)
 		{
-			return reward != null && reward.RewardTypeUID == Type;
+			return reward != null && Type != null && reward.RewardType == Type.Id;
 		}
 
 		/// <summary>

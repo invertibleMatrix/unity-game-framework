@@ -52,7 +52,7 @@ Assets/UGFW/Runtime/
     CoreDomain/     - Framework-core domain definitions: ads, analytics, notifications, remote config + service interfaces (IReward, ICostInfo, IPurchasable, IRewardProvider, ICostProvider)
     Services/       - SDK integrations: ads, analytics, IAP, purchasing, costs, rewards, remote config, notifications
     UISystem/       - Full UI framework: screens, fragments, animations, pooling
-Assets/UGFW/Editor/ - Editor tools: define symbols window, UI visualizer, UID editor, scene loader
+Assets/UGFW/Editor/ - Editor tools: define symbols window, UI visualizer, UID identity tooling, scene loader
 Assets/UGFW/Examples/ - Example implementations: game model, providers, game-specific MetaData domains (currency, rewards, costs, store, IAP, achievements, etc.)
 ```
 
@@ -68,6 +68,12 @@ Why this matters:
 - **Consistency with UGFW** — UGFW modules reference each other through asmdef references. Your game code should follow the same pattern.
 
 When creating an asmdef for your game code, reference the UGFW assemblies you need (e.g., `AK.Core`, `AK.UISystem`). The UGFW assemblies will already have their internal references set up correctly.
+
+### Tests
+
+The framework's own edit-mode tests live in `UGFW/Tests/EditMode` (assembly `AK.Tests.EditMode`, namespace `AK.Tests`) and depend only on UGFW assemblies, so they travel with the framework. `Support/UISystemHarness` builds a complete, headless `UISystem` (own Reflex container, in-memory `UIViewRepository`, synthetic view prefabs) — use it for tests that exercise view stacking, pooling or lifecycle without a scene. Play-mode tests that need the real player loop live in `UGFW/Tests/PlayMode` (assembly `AK.Tests.PlayMode`). Game-specific tests (ones that load game assets or reference game code) belong in the game's test assembly, not here.
+
+Allocation tests use `Support/GcAllocations.Count(body, allThreads)`, which counts the profiler's `GC.Alloc` samples while `body` runs — the same mechanism as Unity's `Is.Not.AllocatingGCMemory()`, with an all-threads mode for worker threads. Do not measure with `GC.GetAllocatedBytesForCurrentThread`: Unity's Mono returns 0 from it on every call, so a test built on it passes no matter what the code does. Warm the measured method itself before counting; the first execution of a call site can allocate once (generic lookups, type initialisers) even when the code under test is allocation-free. Run everything from *Window ▸ General ▸ Test Runner* or `unity command run_tests --mode editor`.
 
 ### Dependency Injection — No Managers, No Singletons
 
@@ -215,7 +221,9 @@ A unified view framework where **Screen** and **Fragment** are the same `UIView`
 
 ### Showing Views
 
-Every `Show` method has an async variant (`ShowAsync`) and a fire-and-forget variant (`Show`). Use `Show` when you don't need to wait for the animation to complete — it starts the show and returns the view instance immediately.
+Every `Show` method has an async variant (`ShowAsync`) and a fire-and-forget variant (`Show`). Use `Show` when you don't need to wait for the animation to complete — it starts the show and returns the view instance immediately. Cancelling a `ShowAsync` abandons the show: the task ends canceled and the view is closed immediately — a cancelled show never leaves a half-presented view behind.
+
+Everything a show can be told travels in one `ShowOptions` value: `Context`, `Parent`, `ViewId`, `Channel`, `StackBehaviour`, `Mode`. `default` is a plain show; the factories cover the common shapes and the fluent copies compose the rest. Setting `StackBehaviour` implies `ShowMode.Serialized` — there is no way to ask for a stack behaviour that is then ignored.
 
 The `onInit` callback runs **before any lifecycle event** — before `SetContext`, before `OnPrepareShow`, before `RegisterResources`. Use it to call an Init method on the view that must run first, e.g. injecting a dependency the view needs during its lifecycle hooks.
 
@@ -226,24 +234,40 @@ viewSystem.Show<MainMenuScreen>();
 // Show a screen and await animation completion
 await viewSystem.ShowAsync<MainMenuScreen>();
 
+// Typed context
+viewSystem.Show<RewardPopup>(ShowOptions.With(new RewardPopupContext { RewardId = rewardId }));
+
 // Show a screen on a specific channel
-viewSystem.Show<SettingsScreen>(channelOverride: UIChannel.Overlay);
+viewSystem.Show<SettingsScreen>(new ShowOptions(channel: UIChannel.Overlay));
 
-// Show a fragment inside a parent view
-var fragment = ShowFragment<CurrencyPanel>();
+// Variant prefab (multi-variant by ViewId)
+viewSystem.Show<UIViewBanner>(ShowOptions.Variant("banner2"));
 
-// Show a fragment with typed context
-var fragment = ShowFragment<RewardPopup>(new RewardPopupContext { RewardUID = rewardUID });
+// From inside a view: fragments hosted by this view
+var panel = ShowFragment<CurrencyPanel>();
+var popup = ShowFragment<RewardPopup>(ShowOptions.With(new RewardPopupContext { RewardId = rewardId }));
 
-// Show a fragment with custom stack behaviour
-var fragment = ShowFragment<SettingsPanel>(stackBehaviour: ViewStackBehaviour.HideBelow);
+// Negotiate with the fragment below (serialized behind pending shows on this parent)
+ShowFragment<SettingsPanel>(new ShowOptions(stackBehaviour: ViewStackBehaviour.HideBelow));
 
-// Use onInit to initialize the view before any lifecycle event fires
-var fragment = ShowFragment<RewardPopup>(
-    new RewardPopupContext { RewardUID = rewardUID },
-    onInit: view => view.Init(rewardService)  // runs before OnPrepareShow, RegisterResources, etc.
-);
+// No animation — tooltips and anything that relocates rapidly
+viewSystem.Show<UIViewTooltip>(ShowOptions.With(ctx).Immediate());
+
+// onInit runs before OnPrepareShow, RegisterResources, etc.
+ShowFragment<RewardPopup>(ShowOptions.With(ctx), view => view.Init(rewardService));
+
+// Close
+viewSystem.Close(view);                                  // animated
+viewSystem.Close(view, CloseOptions.Now);                // no animation
+viewSystem.Close(view, default, onClosed: RefreshHud);   // callback fires only if the view was open
+await viewSystem.CloseAsync(view);
+
+// Toasts and banners are extension helpers, not system members
+viewSystem.DisplayToast("Saved");
+viewSystem.DisplayBanner("Coming soon", UIViewBanner.DEFAULT_TOP_ID);
 ```
+
+`ShowMode.Parallel` (the default) pushes onto the parent's history and animates at once — sibling fragments do not negotiate. `ShowMode.Serialized` waits for any show already running on that parent, then applies the new view's stack behaviour to the view below. Screens always run serialized against their channel stack.
 
 ### ViewStackBehaviour — What Happens to the View Below
 
@@ -254,10 +278,9 @@ When a new view is shown on top of an existing one, `ViewStackBehaviour` control
 | `DoNothing` | Stays visible and interactive |
 | `HideBelow` | Paused → hidden with animation → input blocked |
 | `PauseOnlyBelow` | Paused → stays visible → input blocked |
-| `PauseAndHideBelow` | Paused → hidden with animation → input blocked |
 | `CloseBelow` | Fully closed and destroyed |
 
-When the top view is closed, the previous view is **automatically resumed** using the inverse logic — `HideBelow` and `PauseAndHideBelow` trigger resume animation, `PauseOnlyBelow` just restores interactivity.
+When the top view is closed, the previous view is **automatically resumed** using the inverse logic — `HideBelow` triggers resume animation, `PauseOnlyBelow` just restores interactivity.
 
 ### UIChannel — Sorting Layers
 
@@ -272,7 +295,50 @@ public enum UIChannel
 }
 ```
 
-Higher channels always render on top. Multiple screens on the same channel stack (e.g., two Menu screens) — the newer one gets `sortingOrder = 100 + stackDepth`. Override a screen's channel at show time with the `channelOverride` parameter.
+Higher channels always render on top. Multiple screens on the same channel stack (e.g., two Menu screens) — the newer one gets `sortingOrder = 100 + stackDepth`. Override a screen's channel at show time with `ShowOptions.OnChannel(...)` (or the `channel:` constructor argument).
+
+### Internals — How Lookups Stay Cheap
+
+The system answers three questions on every `Show`/`Close`/`GetView`: *is a static of this kind already registered?*, *is a dynamic of this kind already open on this parent?*, *which view sits below this one in its stack?* None of them scan the whole registry or copy a stack.
+
+- **`ViewKey`** — `(Type, ViewId)` identity of a view kind. Keys the prefab cache, the `ViewPool`, and the registry index.
+- **`ViewRegistry`** — every registered view is threaded onto a per-kind singly linked list (`ViewRecord.NextOfKind`, one head per `ViewKey`). Finding a static or a dynamic instance of `UIViewCloseBar` walks the two or three close bars that exist, not the ~50 registered views. `Add`/`Remove` maintain the chain and the parent's `Children`; `CountOfKind` exposes it for diagnostics.
+- **`ViewStack`** — list-backed navigation stack (bottom = index 0). `Remove`, `MoveToTop`, `BelowOrNull`, `IsCoveredAbove`, and `PeekBelowTopOrNull` run in place; there is no `ToArray()` or temporary stack anywhere on the show/close path. Enumeration is top-first, same as `Stack<T>`.
+- **Prefab cache** — `(prefab, isScreen)` per kind, so the show path never calls `GetComponent<UIViewChannel>()` on the prefab.
+
+Steady-state `GetView<T>()` is allocation-free (asserted by `UISystemTests.GetView_DoesNotAllocate_OnceWarm`). What still allocates per show is inherent to the design: the view instance on a pool miss, one `ViewRecord`, one `UniTaskCompletionSource` per serialized fragment show, and the UniTask async state machines.
+
+### Internals — The System/View Boundary
+
+`UISystem` and `UIView` talk to each other through two interfaces and nothing else — there are no `internal` fields or methods on `UIView`.
+
+- **`IViewLifecycle`** (internal, system → view). `UIView` implements it *explicitly*, so `Attach`, `ShowAsync`, `HideAsync(HideMode)`, `ResumeAsync`, `Pause`, `Resume`, `Conceal`, `Teardown`, `OverrideStackBehaviour`, `ArmDelayedStart` and `AttachStaticChildren` never appear on the type a view author subclasses. The system reaches them through `view.Lifecycle()`. `HideMode.Close` runs the close hooks; `HideMode.Pause` is animation only. `Pause()` is "input off, then `OnPause`"; `Resume()` is "input on, then `OnResume`".
+- **`IViewHost`** (public, view → system). Extends `IUISystem` with the five things a view asks of its owner: `IsRegistered`, `RegisterStatic`, `ShowStaticChildren`, `NotifyShown`, `NotifyDestroyedExternally`. A view holds an `IViewHost`, never the concrete system; `UIView.UISystem` returns that same object.
+- **Registry-owned state.** Whether an instance is a template clone (`IsClone`, decides pooling) and which channel a screen was shown on (`ChannelOverride`) live on the system's `ViewRecord`, not on the view.
+
+To observe shows from outside, subscribe to `IUISystem.ViewShown` — it fires after any view's `OnShow`, immediate and animated alike, and not on resume.
+
+`UIView` itself is now only the lifecycle: its animation plumbing lives in `ViewAnimator` (owns the lifetime and in-flight cancellation sources; a run reports whether it finished instead of throwing), the dim in `ViewBackgroundOverlay`, and the raise-above-everything behaviour in `ViewHighlight`.
+
+### Internals — How the System Is Put Together
+
+`UISystem` (the MonoBehaviour, ~200 lines) is a composition root: it holds the serialized references, wires the parts below in `EnsureInitialized`, forwards `IUISystem`, and implements `IViewHost`. Everything else is an `internal sealed class` in the same folder, built once and never exposed to game code:
+
+| Part | Owns | Answers |
+|------|------|---------|
+| `ViewRegistry` | `ViewRecord` per registered view + the per-kind index | *is X registered / static / dynamic / closing?* |
+| `ScreenStacks` | one `ViewStack` per `UIChannel` + the UI camera | push/pop/remove with canvas re-sorting, *which screen hosts a parentless fragment?* |
+| `FragmentHistories` | one `ViewStack` per parent + the per-parent show gate | *what is under this fragment?*, serialising rapid shows on one parent |
+| `StackPolicy` | four predicates over `ViewStackBehaviour` (`Pauses`, `Hides`, `Closes`, `Covers`) | the only place a behaviour's meaning is spelled out; `ViewStack.IsCoveredAbove` uses it too |
+| `ViewFactory` | prefab cache, `ViewPool`, the DI container | spawn, clone a template, release, destroy |
+| `ShowPipeline` | — | resolve → spawn → register → push → pause what is below → entrance |
+| `ClosePipeline` | — | pop → hide → cascade to children → pool/destroy/hide-in-place → resume what was uncovered |
+
+The two pipelines share one pause path and one resume path each — `PauseBelowAsync(above, below, immediate, cascade)` and `ResumeBelowAsync(behaviour, below, immediate, cascade)` — where `cascade` is the single screen/fragment difference (a screen also pauses/resumes the fragments in its history). Both read `StackPolicy`, so a new behaviour is added there, not in a switch. On the close side, `SettleAsync` is the one place a view leaves presentation and `CascadeChildren` the one place its children follow it: dynamic children are pooled or destroyed, static children are torn down and either hidden (parent stays registered) or left to the parent's fate.
+
+`ViewRecord.IsClosing` replaces the old closing set: a view mid-close is skipped by every lookup and a second `Close` is a no-op. The resume after a close uses the stack behaviour the view was *shown* with (captured before settle clears the per-show override), so a fragment shown with `ShowOptions(stackBehaviour: HideBelow)` over a `DoNothing` default still brings the view below back.
+
+**Editor tooling.** *AK ▸ UI ▸ View Stack Visualizer* renders the live state — channel stacks, per-parent histories, the pool, and a consistency check across them. It reads the internal parts directly (`UISystem.Registry/Screens/Histories/Pool`, visible via `InternalsVisibleTo("AK.UISystem.Editor")`); there is no reflection on field names left to break.
 
 ### Static vs Dynamic Fragments
 
@@ -310,14 +376,17 @@ Show:
   RegisterResources()          ← subscribe to events (called ONCE per lifecycle)
   [play show animation]
   OnShow()                     ← enable interactions, start timers
-  ShowStaticChildrenOnStart()  ← auto-show static fragments with ShowOnStart
+  IUISystem.ViewShown          ← fired for observers
+  [static fragments with ShowOnStart start their own show]
 
 Pause (a higher-priority view covers this one):
+  [input blocked]
   OnPause()                    ← pause game logic, timers
   [play hide animation - resources stay registered]
 
 Resume (the covering view is closed):
   [play show animation]
+  [input restored]
   OnResume()                   ← resume game logic, timers
 
 Close:
@@ -328,7 +397,16 @@ Close:
   [destroy / pool / hide depending on static/dynamic + CloseContext]
 ```
 
-**Key detail:** `RegisterResources` / `UnRegisterResources` are called exactly once per view lifecycle (guarded internally). On a normal pause/resume cycle, resources stay registered — the view is logically alive, just not visible.
+**Key detail:** `RegisterResources` / `UnRegisterResources` are called exactly once per view lifecycle. On a normal pause/resume cycle, resources stay registered — the view is logically alive, just not visible.
+
+`UIView.State` says where a view is: `Hidden → Showing → Shown → Paused → Hiding → Hidden`. Resources are registered in every state except `Hidden`, and the hooks above fire only on the transitions between states, which is what keeps them paired when things are interrupted:
+
+- A close (or teardown) during an entrance that has not reached `OnShow` releases the resources and skips `OnPrepareHide`/`OnHide` — hide hooks fire only for a view that was actually shown.
+- A show during an entrance restarts the animation and re-runs `OnPrepareShow` but does not re-register.
+- Anything interrupting an exit first finishes it (`OnHide`, `UnRegisterResources`), then proceeds.
+- Teardown runs whatever the current state still owes and is idempotent.
+
+`IsVisible` is separate from `State`: a paused view under `PauseOnlyBelow` is still drawn, under `HideBelow` it is not. Pinned by `ViewStateTests`.
 
 ### Typed Context — UIView\<TContext\>
 
@@ -338,7 +416,7 @@ Pass data to views using `UIContext` subclasses:
 // Define a context
 public class RewardPopupContext : UIContext
 {
-    public UID RewardUID;
+    public Uid<RewardDefinition> RewardId;
     public int Amount;
 }
 
@@ -353,16 +431,16 @@ public class RewardPopup : UIView<RewardPopupContext>
 }
 
 // Show with context
-ShowFragment<RewardPopup>(new RewardPopupContext { RewardUID = uid, Amount = 100 });
+ShowFragment<RewardPopup>(new RewardPopupContext { RewardId = rewardId, Amount = 100 });
 ```
 
-### Fragment Navigation — GoBack
+### Fragment Navigation — closing the top fragment
 
-Fragments maintain a per-parent history stack. `GoBack()` pops the current fragment and resumes the previous one:
+Fragments maintain a per-parent history stack. Closing the fragment on top pops it and resumes the one beneath — there is no separate back call:
 
 ```csharp
 // User navigates: HomePanel → SettingsPanel → SoundPanel
-// Calling GoBack() on SoundPanel:
+// soundPanel.Close():
 //   SoundPanel closes (destroyed)
 //   SettingsPanel resumes (animation plays)
 ```
@@ -379,7 +457,7 @@ Animations are ScriptableObject strategies. Assign a `UIAnimationConfig` to any 
 //   _playInParallelWithPrevious — true = crossfade, false = sequential
 ```
 
-30+ built-in strategies including Fade, Slide, Scale, Bounce, Elastic, PopSnap, CardDeal, ConfettiBurst, and more. All use DOTween under the hood. Create your own by extending `AnimationStrategy`:
+30+ built-in strategies including Fade, Slide, Scale, Bounce, Elastic, PopSnap, CardDeal, ConfettiBurst, and more, kept as assets so designers can try them out. All use DOTween under the hood. Create your own by extending `AnimationStrategy`:
 
 ```csharp
 [CreateAssetMenu(menuName = "UISystem/Animations/MyCustomAnimation")]
@@ -397,13 +475,15 @@ public class MyCustomAnimation : AnimationStrategy
 }
 ```
 
+A strategy returns tweens and nothing else — `IAnimationStrategy` is exactly the two methods above. The system awaits them through the `PlayShowAsync`/`PlayHideAsync` extension methods, which link every tween to the animated content (`SetLink(target.gameObject, KillOnDisable)`) so a tween can never finish on a view that was disabled, pooled or destroyed under it, and which turn cancellation into a killed tween plus `OperationCanceledException`. Return `null` for "nothing to animate". A component strategy that drives its own timing (an Animator, a Timeline) implements `IAsyncAnimationStrategy` on top and the system awaits that instead.
+
 ### Object Pooling
 
-Dynamic fragments with `ReturnToPoolOnClose = true` are returned to a `ViewPool` instead of destroyed. The pool keys by `(Type, ViewId)`, so you can have multiple variants of the same view type. Pooled views go through `OnBeforePool()` → `OnReset()` before returning to the pool, and are fully re-initialized on next show.
+Dynamic fragments with `ReturnToPoolOnClose = true` are returned to a `ViewPool` instead of destroyed. The pool keys by `(Type, ViewId)`, so you can have multiple variants of the same view type. The close pipeline settles a pooled view completely before the pool sees it: hide hooks, then `OnBeforePool()` while its children are still registered (close dynamic children there with `CloseOptions.Now` if you want them to see a normal close rather than the cascade), then the cascade, then `OnReset()` — whose base implementation resets the animated transform, cancels a pending delayed start and turns input back on. The pool itself only kills leftover tweens, deactivates and reparents; on the next show the view is re-attached and re-initialised like a fresh instance.
 
 ### Background Overlay
 
-Any UIView with `_showBackgroundOverlay = true` automatically shows a dark overlay at sibling index 0 (renders behind the view's content). The overlay fades in over 0.4s, fades out over 0.1s. Useful for modal-style screens and popups.
+Add a `ViewBackgroundOverlay` component next to a UIView and the view dims everything behind it: the overlay fades in when the show completes and out when a hide starts. Alpha, raycast blocking and both fade durations are serialized on the component (defaults 0.95 / block / 0.4s / 0.1s). The dim is a runtime-built Image at sibling index 0, oversized to cover the nearest Canvas. Useful for modal-style screens and popups.
 
 ### Common Components
 
@@ -416,14 +496,14 @@ Any UIView with `_showBackgroundOverlay = true` automatically shows a dark overl
 | **UIViewBanner** | Top banner with text, duration timer, and Animator support. |
 | **UITutorialArrow** | Oscillating arrow pointing at a target. Auto-rotates toward target. |
 
-### Tutorial Mode
+### Highlight
 
-Any UIView can enter tutorial mode via `SetupTutorialMode()`. This:
-1. Shows a very dark background overlay (0.95 alpha)
-2. Forces the view's Canvas to sort above everything (`Overlay + 1`)
-3. Fragments (which don't own a Canvas) get a temporary override Canvas + GraphicRaycaster
+`ViewHighlight.Enter(view)` raises a view above everything else and dims the rest — what a tutorial step uses to force attention on one control. It adds the `ViewHighlight` component on demand (a view knows nothing about being highlighted), then:
+1. Fades in a `ViewBackgroundOverlay` (reusing the view's own if it has one, otherwise adding a temporary one)
+2. Screens: forces the channel Canvas to sort at `Overlay + 1`
+3. Fragments (no Canvas of their own): adds a temporary override Canvas + GraphicRaycaster just above the parent Canvas
 
-Call `CleanupTutorialMode()` to revert.
+`ViewHighlight.Exit(view)` fades the dim out and restores sorting once it is gone; `Restore()` does the same immediately. The pool restores a highlighted view on release. (`UIViewSpotlight` is a different thing: the rounded cut-out view that tutorials point at a target.)
 
 ### Quick Reference
 
@@ -434,13 +514,15 @@ Call `CleanupTutorialMode()` to revert.
 | Show a screen | `viewSystem.ShowAsync<T>()` or `viewSystem.Show<T>()` |
 | Show a fragment | `parentView.ShowFragment<T>()` or `parentView.ShowFragmentAsync<T>()` |
 | Pass data to a view | Create a `UIContext` subclass, pass via show method or `UIView<TContext>` |
-| Navigate back | `view.GoBack()` — pops from per-parent history stack |
+| Navigate back | `topFragment.Close()` — pops from the parent's history and resumes the one below |
 | Make a fragment auto-close when parent closes | It already does — child fragments auto-cleanup on parent close |
 | Pre-place a fragment that survives close | Add it to parent's `_staticViews` list — statics are hidden, not destroyed |
 | Pool a frequently-spawned fragment | Set `_returnToPoolOnClose = true` on the UIView |
 | Allow multiple instances of same fragment | Set `_allowMultipleInstances = true` |
-| Add a dark overlay behind a screen | Set `_showBackgroundOverlay = true` |
+| Add a dark overlay behind a screen | Add a `ViewBackgroundOverlay` component to the UIView |
+| Highlight one view for a tutorial | `ViewHighlight.Enter(view)` … `ViewHighlight.Exit(view)` |
 | Create a custom animation | Extend `AnimationStrategy`, override `PlayShowAnimation` and `PlayHideAnimation` |
+| See what is on the stacks right now | *AK ▸ UI ▸ View Stack Visualizer* (editor window, live in Play Mode) |
 
 ---
 
@@ -546,7 +628,7 @@ Pass data between states by subclassing `TransitionContext`:
 ```csharp
 public class LevelLoadContext : TransitionContext
 {
-    public UID LevelUID;
+    public Uid<LevelDefinition> LevelId;
     public bool IsRestart;
 }
 
@@ -555,13 +637,13 @@ public class GameplayState : AppState<LevelLoadContext>
 {
     protected override void OnEnter()
     {
-        var levelUID = _context.LevelUID;   // strongly typed
+        var levelId = _context.LevelId;     // strongly typed
         var isRestart = _context.IsRestart;
     }
 }
 
 // Pass context when transitioning
-AppStateMachine.ChangeState(_gameplayState, context: new LevelLoadContext { LevelUID = uid, IsRestart = false });
+AppStateMachine.ChangeState(_gameplayState, context: new LevelLoadContext { LevelId = levelId, IsRestart = false });
 ```
 
 #### Setup
@@ -690,19 +772,22 @@ Formatting helpers: `remaining.ToMMSS()` → `"05:30"`, `remaining.ToCompactForm
 
 ### AudioSpawner
 
-A registry-driven, pooled audio system. Create `AudioConfigBase` ScriptableObjects for each sound type, register them in an `AudioRegistry`, and the `AudioSpawner` handles pooling, playback, and cleanup.
+A registry-driven, pooled audio system. Create `AudioConfig` ScriptableObjects for each sound type, register them in an `AudioRegistry`, and the `AudioSpawner` handles pooling, playback, and cleanup.
 
 ```csharp
-// Primary API — play any sound by UID (covers 99% of use cases)
-audioSpawner.PlayAudio(coinPickupUID);
-audioSpawner.PlayAudio(explosionUID, position: hitPoint);  // 3D spatial
+// Primary API — play a held AudioConfig (covers 99% of use cases)
+audioSpawner.PlayAudio(audioIds.CoinPickup);
+audioSpawner.PlayAudio(audioIds.Explosion, position: hitPoint);  // 3D spatial
+
+// Or by identity, resolved through the registry
+audioSpawner.PlayAudio(coinPickupId);   // Uid<AudioConfig>
 
 // Type-safe spawn — returns AudioComponent without auto-playing
-var audio = audioSpawner.Spawn<MusicAudioComponent>(variantUID);
+var audio = audioSpawner.Spawn<MusicAudioComponent>(variantId);
 audio.Play();
 ```
 
-#### AudioConfigBase — Sound Configuration
+#### AudioConfig — Sound Configuration
 
 Each sound is an SO with:
 - **Clips** — list of AudioClips (one is picked randomly, or play all sequentially)
@@ -733,7 +818,10 @@ var explosion = particleSpawner.Spawn<ExplosionParticle>();
 explosion.Show(hitPoint);
 
 // Spawn with position + rotation + color override
-var firework = particleSpawner.Spawn<FireworkParticle>(variantUID);
+var firework = particleSpawner.Spawn<FireworkParticle>(variantId);   // Uid<ParticleConfigBase>
+
+// Or from a held config
+var confetti = particleSpawner.Spawn(particleIds.Confetti);
 firework.Show(position, rotation, color: Color.red);
 
 // Async variant (uses InstantiateAsync)
@@ -751,122 +839,6 @@ effect.Show(transform.position);
 #### Auto-Return to Pool
 
 `ParticleComponent` sets `ParticleSystemStopAction.Callback` — when the particle system finishes, `OnParticleSystemStopped()` fires, the `onStop` callback runs, and the component returns to the pool automatically. You never manually return particles.
-
-### JobDispatcher
-
-A lock-free, multi-threaded job scheduling system with frame-level precision. Three threads work in lock-step: **Main Thread** (Unity API jobs), **Worker Thread** (background computation), and **Handler Thread** (buffer preparation). The system uses a "one frame ahead" double-buffer strategy — while threads execute from the front buffer, the handler prepares the back buffer for the next frame, eliminating contention.
-
-```csharp
-// Inject IJobDispatcher
-[Inject] private readonly IJobDispatcher _jobDispatcher;
-```
-
-#### Execute on Main Thread (Unity API safe)
-
-```csharp
-// Immediate — runs this frame
-_jobDispatcher.UnityThread.Execute(() => transform.position = newPos);
-
-// Next frame
-_jobDispatcher.UnityThread.ExecuteInNextFrame(() => RefreshUI());
-
-// After delay
-_jobDispatcher.UnityThread.ExecuteAfterDelay(() => ShowResult(), 2.0f);
-
-// Every Update
-var handle = _jobDispatcher.UnityThread.ExecuteEveryUpdate(() => PollInput());
-
-// Every FixedUpdate
-var handle = _jobDispatcher.UnityThread.ExecuteEveryFixedUpdate(() => ProcessPhysics());
-
-// Repeating at interval
-var handle = _jobDispatcher.UnityThread.InvokeRepeating(() => SyncState(), 1.0f, 0.5f);
-
-// At specific frame
-_jobDispatcher.UnityThread.ExecuteAtFrame(() => FrameExactAction(), targetFrame);
-
-// Cancel a repeating/scheduled job
-handle.CancelJob();
-```
-
-#### Execute on Worker Thread (offload heavy work)
-
-```csharp
-// Run on background thread — NO Unity API access in the job
-_jobDispatcher.WorkerThread.Execute(() =>
-{
-    var result = HeavyComputation();     // pure C# computation
-    // Cannot touch GameObject, Transform, etc. here
-});
-
-// Get result back on main thread — use callCompleteOnMainThread
-_jobDispatcher.WorkerThread.Execute(
-    job: () =>
-    {
-        var data = ComputePathfinding();   // background thread
-    },
-    onComplete: () =>
-    {
-        RenderPath(data);                  // main thread — safe to use Unity API
-    },
-    callCompleteOnMainThread: true
-);
-```
-
-#### IDispatchableJob — Structured Jobs
-
-For more complex jobs, implement `IDispatchableJob`:
-
-```csharp
-public class PathfindJob : IDispatchableJob
-{
-    private Vector3 _start, _end;
-    private List<Vector3> _path;
-
-    public void OnExecute()
-    {
-        // Runs on worker thread — heavy computation
-        _path = AStar.Compute(_start, _end);
-    }
-
-    public void OnComplete()
-    {
-        // Runs on the thread that dispatched the job
-        // (or main thread if callCompleteOnMainThread was true)
-        RenderPath(_path);
-    }
-
-    public void OnStop() { /* cleanup */ }
-}
-
-// Dispatch
-_jobDispatcher.WorkerThread.ExecuteJob(new PathfindJob(), callCompleteOnMainThread: true);
-```
-
-#### How the Pipeline Works
-
-```
-Frame N:   Threads execute from FrontBuffer[N]
-           Handler prepares BackBuffer[N+1] from backlog
-
-Frame N+1: Buffers swap atomically
-           Threads execute from FrontBuffer[N+1] (prepared last frame)
-           Handler prepares BackBuffer[N+2]
-```
-
-**Three-tier job classification:**
-- **Immediate** (`CurrentFrameJobs`) — bypass handler, execute this frame
-- **Near future** (`NextFrameJobs`) — bypass handler, execute next frame
-- **Distant future** (handler backlog) — handler schedules into back buffer
-
-This means immediate jobs have zero scheduling overhead, and the handler never becomes a bottleneck.
-
-**Key rules:**
-- Workers run on a background thread — never access Unity API from `OnExecute()`
-- Use `callCompleteOnMainThread: true` to safely use Unity API in `OnComplete()`
-- Keep jobs short (< 16ms) to avoid frame drops
-- Use `IDispatchedJobHandle.CancelJob()` to cancel scheduled/repeating jobs
-- Access frame timing via `IJobDispatcher.FrameCounter`, `.UnityTime`, `.Dt`
 
 ### NumberFormatter
 
@@ -1025,29 +997,146 @@ int val = _highScore; // same as _highScore.Read()
 
 ### UID System
 
-Unique identifiers as ScriptableObject assets. The backbone of the MetaData system.
+> Full guide — setup, field-type decisions, redirects, namespaces, tooling, FAQ: [`Runtime/Core/UID/UID-GUIDE.md`](Runtime/Core/UID/UID-GUIDE.md).
+
+Identity for game content, split into two things that are easy to confuse and must not be:
+
+| Thing | What it is | Where it lives |
+|---|---|---|
+| `Uid` | A 16-byte **value** (two `ulong`s). Cannot be null, cannot dangle, means the same thing on disk, on a server, in a save file, and in a dictionary key. Serializes as one 32-hex string field. | Everywhere identity is stored, compared, hashed, or transmitted. |
+| `UID` (asset) | A ScriptableObject that **carries** one `Uid`. It is the thing a designer drags into a field. Immutable identity, assigned once at creation by the editor and never changed. Reference equality only. | Only in the asset database. Never in persisted state, never on the wire. |
 
 ```csharp
-// UID is a ScriptableObject with an auto-generated GUID
-// Equality is value-based (by GUID string), not reference-based
-uidA == uidB;           // true if same GUID
-uidA == "some-guid";    // compare with string
-string id = uidA;       // implicit conversion to string
+// Asset -> identity (one direction, explicit)
+Uid id = factType.Id;
+Uid<FactType> typed = factType.IdAs<FactType>();
+
+// Identity -> asset (the other direction, through a registry or the repository)
+if (registry.TryResolve(typed, out FactType asset)) { ... }
+if (metaDataRepository.TryResolve(id, out UID any)) { ... }
+
+// There are NO implicit conversions to or from string or UID. Every crossing is visible.
 ```
 
-**Registry lookup:**
-- `UIDRegistry` -- global registry of all UID assets, lookup by GUID or asset name
-- `TypedUIDRegistry<T>` -- maps UID to typed objects (where `T : UID`), bidirectional lookup
-- `TypedUIDRegistryAsset<T>` -- ScriptableObject wrapper with editor validation buttons
+**`Uid<T>`** is a phantom-typed `Uid` — same 16 bytes, but `Uid<AudioConfig>` cannot be passed where `Uid<FactType>` is expected, and the inspector filters its picker to `T` assets with no attribute. Use untyped `Uid` only where identities are genuinely polymorphic (aggregate resolvers, redirect tables, wire formats). For an untyped field that should still get a filtered picker, use `[UidOf(typeof(MetaDataAsset))]`.
+
+**Minting.** `Uid.NewRandom()` (UUIDv4) for ordinary content. `Uid.Deterministic(namespace, name)` (UUIDv5-style) for closed vocabularies that must agree across projects and servers — create a `UidNamespace` asset in a folder and every UID asset created under it derives its identity from the folder namespace and its file name. `UidProvenance` records which path produced the identity (Minted / Imported / Derived) and governs what tooling may do to it.
+
+**Registries.** `UidRegistryAsset<T>` is one asset per domain that maps `Uid -> T`. Lookups are a single hash probe; `UidHandle<T>` turns a hot-path lookup into one array index. Registries are kept in sync by the editor automatically — an asset that appears is tracked, one that disappears is untracked. Nothing calls `Initialize()`; the lookup builds lazily and rebuilds on mutation. A miss returns `false` and never logs: the caller knows what a missing definition means.
+
+**Persistence.** Ledgers (`FactService`, `TransactionService`, `CurrencyModel`) store `Uid` values, never asset references or names. When content is deliberately replaced, the old identity lives on in saves; a human records `old -> new` in a `UidRedirectTable` and every resolver follows it on a miss. Ledgers apply redirects once at load and rewrite the file. An identity that no longer resolves is reported as an orphan (`FindOrphans`), never healed by name.
+
+**Analytics and external systems.** The `Uid` is internal. What goes on the wire is the definition's external key (`EventID`, `ProductID`, `VariableKey`). An unresolvable identity is dropped with a one-time warning, never sent as hex.
+
+**Editor tooling** (`Tools -> UGFW -> UID`):
+
+| Tool | What it does |
+|---|---|
+| Identity authority | Mints on asset creation (before first save) and on import of identity-less assets. A Ctrl+D duplicate is re-minted immediately. Two imported assets sharing a Uid are a **collision**: recorded, surfaced, and blocked from building until a human picks the survivor. Imported identities are never re-minted. |
+| Audit Project | One pass over identities, registries, redirects, Addressables groups, persisted types, and external keys. Errors block the build (`UidBuildValidator`). CI: `-executeMethod AK.Core.Editor.UidAuditMenu.AuditForCI`. |
+| Resolve Collisions | Choose which asset keeps a shared identity; the others receive fresh ones. |
+| Inspect Identity | Paste a hex from a save/log/server row, see the owning asset (following redirects). |
+| Export Catalog | `uid-catalog.json` — every identity with type, path, provenance, external key, plus all redirects. The contract sibling projects and servers consume. |
+| Registries / Refresh All From Project | Full resync when you do not trust the auto-tracker. |
+
+**Rules the tooling enforces:**
+- Every UID asset has a non-empty identity.
+- Every identity is owned by exactly one asset.
+- No UID asset lives in an Addressables group (bundle duplication would create two live instances of one identity).
+- No `PersistableState` field holds a `UID` asset reference — store `Uid`/`Uid<T>`.
+- Redirect chains terminate at an identity a live asset owns.
 
 **The MetaData identity chain:**
 ```
-UID (ScriptableObject with GUID)
+UID (ScriptableObject carrying one Uid)
   -> MetaDataAsset (UID + Name, DisplayName, Description, Icon)
     -> CurrencyDefinition, RewardDefinition, etc. (game-specific definitions)
 ```
 
-Every definition extends `MetaDataAsset` which extends `UID`. This means every definition has a stable GUID identity AND display metadata.
+### SlotMap & Handles
+
+`AK.Core.Collections.SlotMap<T>` is generational slot storage: `Add` returns a `Handle<T>` (`{Index, Generation}`, 8 bytes, value-equal), `Remove` frees the slot and bumps its generation, and any handle from the previous lifetime stops resolving. Add/Remove/TryGet are O(1) and allocate nothing at steady state; `foreach` uses a struct enumerator and tolerates removal mid-walk.
+
+Use it wherever code keeps a reference to something that can be recycled underneath it — pooled objects, active tweens, timers, VFX bookkeeping, AI targets. A stale `Handle<T>` answers `false`; a stale C# reference points at whoever got the slot next.
+
+```csharp
+var map = new SlotMap<Enemy>();
+Handle<Enemy> h = map.Add(enemy);
+
+if (map.TryGet(h, out Enemy e)) e.TakeDamage(5);   // false once removed, even if the slot was reused
+
+foreach (Enemy alive in map) alive.Tick();          // zero-alloc; skips dead slots
+
+var walker = map.GetEnumerator();
+while (walker.MoveNext())
+    if (walker.Current.IsDead) map.Remove(walker.CurrentHandle);
+```
+
+### Object Pooling (GameObjects)
+
+`ObjectPoolService` (`IObjectPoolService`) pools prefab instances per `PoolableObjectDefinition` (a `UID` asset: prefab, initial size, max size, prewarm flag), registered through an `ObjectPoolRegistry`. Every checked-out instance lives in one `SlotMap<PooledInstance>`.
+
+Two APIs over the same pool:
+
+```csharp
+// Reference API — you own a GameObject; do not touch it after release.
+Bullet b = _pools.Get<Bullet>(bulletDef, muzzle.position, muzzle.rotation);
+b.ReturnToPool();                        // or _pools.Release(b.gameObject)
+
+// Lease API — for anything that outlives a frame. A stale lease resolves to nothing.
+Handle<PooledInstance> lease = _pools.Lease(bulletDef, muzzle.position, muzzle.rotation);
+if (_pools.TryGet(lease, out Bullet bullet)) bullet.Fire();
+_pools.Release(lease);                   // false (no log) if already released
+```
+
+Get/Lease/Release are O(1) and allocate nothing once a pool has reached its working size; `IPoolable` components are captured once per instance. Double release by reference logs a warning; double release by lease is a silent `false`.
+
+### Result & ErrorCode
+
+Expected failures are values, not exceptions and not `null`. `Result` (no payload) and `Result<T>` are `readonly struct`s carrying an `ErrorCode` and an optional `Detail` string that is `null` on the happy path — so success allocates nothing. Bugs still throw; only outcomes the caller is expected to handle travel as `Result`.
+
+```csharp
+Result<Transaction> recorded = _transactions.Record(type, amount);
+if (recorded.IsFailed) return recorded.Untyped;         // propagate the code, drop the payload
+Transaction tx = recorded.Value;
+
+Result granted = _rewards.Grant(reward);
+if (!granted) Debug.LogWarning($"reward skipped: {granted}");   // implicit bool; ToString prints Fail(Code: Detail)
+
+// Inside a method returning Result<T>:
+return value;                          // implicit Ok
+return Result.Fail(ErrorCode.NotFound); // implicit failure conversion
+```
+
+`ErrorCode` is grouped in blocks of 100 by domain (1xx argument/state, 2xx providers, 3xx cost, 4xx reward, 5xx transaction, 6xx store/IAP, 9xx internal). Games add their own codes from `ErrorCode.GameDefined` (10000) upward via `Result.Fail(int, string)`. UI switches on `Code`; nothing parses `Detail`.
+
+Services returning `Result`: `ICostService.CanAfford/Deduct`, `IRewardService.Grant`, `ITransactionService.Record/RecordPending/CreditAsync/Reverse`, `IPurchaseService.Purchase`.
+
+### Scope Guards (`ref struct` + `using`)
+
+Three guards give RAII-style "runs on every exit path" semantics. Each is a `ref struct`, so the compiler forbids storing it in a field, capturing it in a lambda, boxing it, or holding it across an `await` — the scope *is* the stack frame.
+
+```csharp
+// One disk flush instead of one per Record. Counts and Changed events still fire immediately.
+using (_facts.BeginBatch())
+{
+    _facts.Record(districtButtonPressed);
+    _facts.Record(districtEntered);
+}
+
+// Scratch list from a pool; returned cleared when the scope ends.
+using PooledList<IReward> rewards = ListPool<IReward>.Rent();
+item.CollectRewards(rewards.List);
+for (int i = 0; i < rewards.Count; i++) _rewards.Grant(rewards[i]);
+
+// Profiler region; compiles to nothing without ENABLE_PROFILER.
+using (ProfilerScope.Begin(Markers.ShopRefresh))
+{
+    RebuildShopList();
+}
+```
+
+`LedgerBatch` is exposed by `IFactService.BeginBatch()` and `ITransactionService.BeginBatch()`; scopes nest and flush once at the outermost dispose. Both services persist through `PersistableState.Commit`, which serializes to JSON and calls `PlayerPrefs.Save()` — a disk flush — so batching matters anywhere more than one record happens in a frame.
 
 ### EventBus
 
@@ -1085,9 +1174,9 @@ Registry-driven multi-camera management with URP camera stacking. Cameras can be
 
 | Concept | Description |
 |---------|-------------|
-| **CameraType** | UID-based ScriptableObject that identifies a camera kind (e.g., "Main", "UI", "Effects"). Acts as the shared identity bridge between definitions and runtime instances. |
+| **CameraType** | Identity asset (extends UID) that identifies a camera kind (e.g., "Main", "UI", "Effects"). Acts as the shared identity bridge between definitions and runtime instances. |
 | **CameraDefinition** | MetaDataAsset defining a camera's prefab, CameraType, role, layer order, and base camera reference. The single source of truth for spawned cameras. |
-| **CameraRegistry** | `TypedUIDRegistryAsset<CameraDefinition>` — lookup definitions by CameraType UID. Assigned to `CameraSystem` via Inspector. |
+| **CameraRegistry** | `UidRegistryAsset<CameraDefinition>` — lookup definitions by CameraType identity. Assigned to `CameraSystem` via Inspector. |
 | **CameraRole** | `Base` (renders to screen) or `Overlay` (stacks on top of a Base camera's URP output). |
 | **BaseCamera** | Abstract `StateEntity` implementing `IGameCamera`. All cameras extend this. |
 | **CinemachineBaseCamera** | Adds Cinemachine integration with impulse-based shake. |
@@ -1142,20 +1231,20 @@ Base Camera (CameraType: "Main")
        └─ Overlay Camera (CameraType: "Effects", LayerOrder: 20)
 ```
 
-The `CameraType` SO acts as the shared identity bridge — both the Overlay camera's `_baseCameraType` field and the Base camera's `_cameraType` field reference the same CameraType asset, so they match by GUID.
+The `CameraType` SO acts as the shared identity bridge — both the Overlay camera's `_baseCameraType` field and the Base camera's `_cameraType` field reference the same CameraType asset, so they match by identity.
 
 #### API Reference
 
 ```csharp
 // --- Get cameras ---
 var mainCam = cameraSystem.Get<MainCamera>();           // by type
-var uiCam = cameraSystem.GetCamera(uiCameraTypeUID);    // by CameraType UID
+var uiCam = cameraSystem.GetCamera(uiCameraType);       // by CameraType asset (or Uid<CameraType>)
 
 // --- Enable / Disable ---
 cameraSystem.EnableCamera<MainMenuCamera>();
 cameraSystem.DisableCamera<GameplayCamera>();
-cameraSystem.EnableCamera(uiCameraTypeUID);             // by UID
-cameraSystem.DisableCamera(effectsCameraTypeUID);        // by UID
+cameraSystem.EnableCamera(uiCameraType);                // by asset or identity
+cameraSystem.DisableCamera(effectsCameraType);
 
 // --- Spawn / Remove ---
 var cam = cameraSystem.SpawnCamera<UICamera>(uiCameraType);  // spawn from registry
@@ -1181,6 +1270,92 @@ cameraSystem.ReorderCameraStack();
 6. For dynamic cameras: set `SpawnOnStart = true` on definitions that should auto-spawn, or call `SpawnCamera<T>()` at runtime
 
 
+## Module: Jobs
+
+Assembly `AK.Jobs` (namespace `AK.Jobs`, not auto-referenced — add it to your asmdef). A lock-free, frame-synchronous job system for per-frame managed work that has no business on the main thread: simulation ticks, steering, influence maps, procedural generation, scoring. It schedules **where** work runs; **when** stays with UniTask (`await UniTask.Delay(...)` then schedule). This section is the summary; the ownership model, worked use cases, anti-patterns, internals and open decisions are in [`Runtime/Jobs/README.md`](Runtime/Jobs/README.md), and [`Runtime/Jobs/GUIDE.md`](Runtime/Jobs/GUIDE.md) teaches the underlying concepts — threads, races, ownership, batches, chunks, phases — for programmers new to job systems.
+
+### The frame contract
+
+```
+frame N      Schedule(job) / batch.Add()        → appended to main-owned pending buffers
+top of N+1   barrier (EarlyUpdate, before any Update)
+             workers idle? → deliver N-1's completions, swap pending ⇄ executing, kick workers
+             workers busy? → skip: nothing swapped, pending keeps accumulating, one frame of latency
+frame N+1    workers run the frozen executing set in parallel with the whole main-thread frame
+top of N+2   completions on the main thread; batch Results readable for the whole frame
+```
+
+Nothing is locked. Every buffer has one owner at a time and ownership changes only at the barrier, when every worker is provably parked; the two barrier events are the memory fences. Workers read the frozen buffers and write only their own job data, so there is no line for two cores to fight over. The only atomics are the chunk cursor and two counters.
+
+### Setup
+
+```csharp
+// GameBindings
+var scheduler = new JobScheduler(new JobSchedulerOptions { WorkerCount = 2 });
+scheduler.AttachToPlayerLoop();                                        // ticks at the start of EarlyUpdate
+builder.RegisterValue(scheduler, new[] { typeof(IJobScheduler) });     // Reflex disposes it with the container
+```
+
+`WorkerCount` defaults to `clamp(cores - 2, 1, 4)`. Unity already runs a render thread and its own job workers, so more managed workers oversubscribe a phone; measure on device before raising it.
+
+### Batches — the fast path
+
+Homogeneous struct jobs stored contiguously. The element's fields are the inputs and the outputs, so a worker streams through the array with a direct call per element and no object to chase.
+
+```csharp
+struct SteerJob : IJob
+{
+    public Vector3 Position, Target;   // in
+    public Vector3 Velocity;           // out
+    public void Execute(in FrameContext ctx) => Velocity = (Target - Position).normalized * ctx.DeltaTime;
+}
+
+var batch = new JobBatch<SteerJob>(capacity: 512);
+scheduler.Register(batch);
+
+// every frame
+foreach (var agent in agents) { ref SteerJob j = ref batch.Add(); j.Position = agent.Position; j.Target = agent.Target; }
+foreach (ref readonly SteerJob r in batch.Results) Apply(r);   // last finished frame; stays until a newer frame with elements completes
+```
+
+`Results` becomes readable two frames after `Add` (one frame to hand off, one to run). The three buffers rotate at the barrier — fill, execute, read — so reading last frame's results and filling this frame's inputs never touch the same array.
+
+A per-frame producer should add only when `batch.PendingCount == 0`. If the workers overran and the barrier skipped a frame, last frame's elements are still pending; adding another frame's worth on top just makes the next hand-off twice as long, and the overrun feeds itself. Skipping the add re-simulates from the latest `Results` next frame, which is what a simulation wants anyway. `Stats.SkippedFrames` tells you it is happening; `Stats.LastFrameCriticalTicks` tells you by how much.
+
+### Reference jobs
+
+```csharp
+sealed class BakeJob : IJob, IJobCallback
+{
+    public void Execute(in FrameContext ctx) { /* worker: pure C# */ }
+    public void OnComplete(bool cancelled)   { /* main thread, exactly once */ }
+}
+
+JobHandle h = scheduler.Schedule(new BakeJob());          // runs next frame
+scheduler.Cancel(h);                                       // before hand-off: never runs; after: may run once, OnComplete(true)
+scheduler.ScheduleRepeating(job);                          // every frame until cancelled
+scheduler.Schedule(ctx => Work(), done => Refresh());      // delegate form; allocates a wrapper, not for per-frame use
+```
+
+`JobHandle` is an 8-byte generational value: a handle whose job completed is rejected by every call instead of aliasing a later job in the same slot. Completions are delivered in schedule order regardless of how many workers ran them.
+
+### Phases
+
+`JobSchedulerOptions.PhaseCount = 2` splits each frame into ordered phases: every chunk of phase 0 finishes before any chunk of phase 1 starts, so a phase-1 job may read what phase 0 wrote. Pass `phase:` to `Schedule`, `ScheduleRepeating`, or the `JobBatch` constructor. This covers integrate → resolve → post-process pipelines without a dependency graph.
+
+### Rules for job code
+
+1. **No Unity API** — engine objects are main-thread-only. Read time from `FrameContext`, not `Time`.
+2. **No `ListPool<T>`** or any other main-thread pool. In the editor `ListPool.Rent` logs an error if a worker calls it.
+3. **Own your scratch memory** — allocate it once on the job object or in the batch element and reuse it.
+
+A job that throws is logged, counted in `Stats.LastFrameFaults` / `batch.ResultFaults`, and never stops the other jobs or the worker. `Stats` also reports the slowest worker's time per frame (`LastFrameCriticalTicks`) so a game can tune `WorkerCount` at runtime.
+
+### What it deliberately is not
+
+No timers or delays (UniTask), no main-thread scheduling (UniTask), no dependency graph (phases), no work stealing (the executing set is frozen for the frame, so a chunk cursor is enough), no `unsafe`. Tests: `UGFW/Tests/EditMode/Jobs` drive the barrier by hand; `UGFW/Tests/PlayMode/Jobs` (assembly `AK.Tests.PlayMode`) check the real player loop.
+
+
 ## Module: CoreDomain
 
 Game data layer built around the **MetaData system** -- a ScriptableObject-driven architecture for defining all game content as data assets.
@@ -1191,7 +1366,7 @@ Every game domain follows a consistent four-part pattern:
 
 ```
 [Domain]Meta          -- ScriptableObject container (e.g., CurrencyMeta, RewardsMeta)
-  -> [Domain]Registry    -- TypedUIDRegistry<Definition> for UID-based lookup
+  -> [Domain]Registry    -- UidRegistryAsset<Definition> for identity lookup
   -> [Domain]Definition  -- The actual data asset (extends MetaDataAsset extends UID)
   -> [Domain]Type        -- ScriptableObject categorizing the domain (e.g., CurrencyType, RewardType)
 ```
@@ -1202,19 +1377,23 @@ Every game domain follows a consistent four-part pattern:
 
 ```
 CurrencyMeta (ScriptableObject)
-  -> CurrencyRegistry (TypedUIDRegistry<CurrencyDefinition>)
+  -> CurrencyRegistry (UidRegistryAsset<CurrencyDefinition>)
   -> CurrencyDefinition : MetaDataAsset   // fields: Type (CurrencyType SO), MaxAmount, StartingAmount, etc.
   -> CurrencyType : MetaDataAsset         // Create instances: "SoftCurrency", "HardCurrency", "Energy", etc.
 ```
 
 ### The MetaDataRepository
 
-`MetaDataRepository` is a single ScriptableObject that holds a `UIDRegistry` and provides a **type-keyed registry** for all domain metas. There are no hardcoded convenience properties — every domain is accessed uniformly through `GetMeta<T>()`:
+`MetaDataRepository` is a single ScriptableObject that provides a **type-keyed registry** for all domain metas and acts as the aggregate `IUidResolver` over every registered registry (plus the optional `UidRedirectTable`). There are no hardcoded convenience properties — every domain is accessed uniformly through `GetMeta<T>()`:
 
 ```csharp
 public class MetaDataRepository : ScriptableObject, IMetaDataRepository
 {
-    public UIDRegistry UIDRegistry;
+    public UidRedirectTable Redirects { get; }
+
+    // IUidResolver — resolves any identity across every registered registry
+    public bool TryResolve(Uid id, out UID asset);
+    public bool TryResolve<T>(Uid<T> id, out T asset) where T : UID;
 
     // Type-keyed registry — extensible without modifying framework code
     public void RegisterMeta<T>(T meta) where T : class, IMeta;
@@ -1235,8 +1414,11 @@ public void InstallBindings(ContainerBuilder builder)
     if (_rewardsMeta != null) _metaDataRepository.RegisterMeta(_rewardsMeta);
     if (_shopMeta != null) _metaDataRepository.RegisterMeta(_shopMeta);
 
+    // Build the aggregate resolver BEFORE anything loads persisted identities
+    _metaDataRepository.InitializeRegistries();
+
     // Then register the repository in DI
-    builder.RegisterValue(_metaDataRepository, new[] { typeof(MetaDataRepository), typeof(IMetaDataRepository) });
+    builder.RegisterValue(_metaDataRepository, new[] { typeof(MetaDataRepository), typeof(IMetaDataRepository), typeof(IUidResolver) });
 }
 ```
 
@@ -1252,11 +1434,11 @@ var shopMeta = repository.GetMeta<ShopMeta>();
 // Safe access with TryGetMeta
 if (repository.TryGetMeta<RewardsMeta>(out var rewards))
 {
-    var rewardDef = rewards.Registry.GetObjectByUID(uid);
+    rewards.TryGetReward(rewardId, out var rewardDef);   // Uid<RewardDefinition>
 }
 ```
 
-**The `IMeta` interface** — all Meta containers implement `IMeta` (defined in `AK.Core`). `MetaDataAsset` already implements `IMeta`, so any Meta class extending `MetaDataAsset` is automatically compatible. For Meta classes that extend `ScriptableObject` directly (like `NotificationsMeta`), implement `IMeta` explicitly with an `InitializeMeta()` method.
+**The `IMeta` interface** — all Meta containers implement `IMeta` (defined in `AK.Core`). `MetaDataAsset` already implements `IMeta`, so any Meta class extending `MetaDataAsset` is automatically compatible. A Meta that owns a registry implements `IMetaWithRegistry` and exposes it through `RegistryAsset`; the repository registers it automatically in `InitializeRegistries()`.
 
 Place ONE `MetaDataRepository` in your bootstrap scene. It's registered in DI and injected everywhere.
 
@@ -1321,7 +1503,7 @@ These domains are **not part of the framework core** — they are example implem
 
 - `IAPProductDefinition` -- store product ID, product type (Consumable/NonConsumable/Subscription)
 - `IAPProductType` enum
-- `ShopCategoryDefinition` -- categories of shop items with cost type, product UIDs
+- `ShopCategoryDefinition` -- categories of shop items with cost type and product identities (`List<Uid<ShopItemDefinition>>`)
 - `ShopItemDefinition` -- individual shop items with rarity, cost, rewards
 - `ShopMeta` / `ShopRegistry` -- container and registry
 
@@ -1382,8 +1564,8 @@ public class MyGameModel : PersistableState<MyGameModel>
     [NonSerialized] private List<CurrencyModel> _currencies = new();
     [SerializeField] private List<SerializableCurrency> _serializedCurrencies = new();
 
-    public CurrencyModel GetCurrencyModel(CurrencyDefinition def) { /* lookup by UID */ }
-    public override void OnInitialized(bool isFirstLaunch) { /* resolve UIDs */ }
+    public CurrencyModel GetCurrencyModel(CurrencyDefinition def) { /* lookup by identity */ }
+    public override void OnInitialized(bool isFirstLaunch) { /* re-resolve identities; quarantine orphans */ }
     public override void OnBeforeSerialize() { /* serialize currencies */ }
     public override void OnAfterDeserialize() { /* deserialize currencies */ }
 }
@@ -1498,7 +1680,7 @@ Multi-provider analytics facade with metadata-driven event definitions.
 analyticsService.TrackEvent("level_complete", new Dictionary<string, object> { { "level", 5 } });
 
 // Track metadata-driven events (validates parameters, maps provider names)
-analyticsService.TrackEvent(eventUID, parameters);
+analyticsService.TrackEvent(analyticsMeta.Ids.LevelComplete, parameters);   // AnalyticsEventDefinition or Uid<AnalyticsEventDefinition>
 
 // Track monetization
 analyticsService.TrackPurchase("com.game.coinpack", 0.99, "USD");
@@ -1516,7 +1698,14 @@ Two-layer system: `IIAPService` (raw store operations) and `IPurchaseService` (b
 var purchaseService = new PurchaseService(costService, rewardService, iapService: null);
 
 // High-level purchase (handles cost deduction and reward delivery)
-var status = await purchaseService.Purchase(purchasableItemDefinition, immediateCredit: true);
+Result purchase = await purchaseService.Purchase(purchasableItemDefinition, immediateCredit: true);
+switch (purchase.Code)
+{
+    case ErrorCode.None:          ShowSuccess(); break;
+    case ErrorCode.CannotAfford:  ShowNotEnoughCurrency(); break;
+    case ErrorCode.Cancelled:     break;                       // user backed out of the store sheet
+    default:                      ShowStoreError(purchase.Code); break;
+}
 
 // Check IAP ownership (only when IAP is enabled)
 if (purchaseService.IAPService != null)
@@ -1548,14 +1737,14 @@ await remoteConfigService.FetchAndActivateAsync();
 
 ### Notification Service
 
-Local push notifications with UID-based scheduling from MetaData definitions.
+Local push notifications scheduled from MetaData definitions (by asset or `Uid<NotificationDefinition>`).
 
 ```csharp
 // Request permission
 notificationService.RequestPermission(status => { /* ... */ });
 
 // Schedule from MetaData definition
-notificationService.ScheduleNotification(welcomeUID, delaySeconds: 86400);
+notificationService.ScheduleNotification(notificationsMeta.Welcome, delaySeconds: 86400);
 
 // Schedule custom
 notificationService.ScheduleNotification("Title", "Message", fireTime, "id", data, repeatInterval);
@@ -1569,7 +1758,7 @@ notificationService.ScheduleNotification("Title", "Message", fireTime, "id", dat
 |------|-----------|-------------|
 | **Define Symbols Window** | Tools > UGFW > Define Symbols | Toggle preprocessor symbols for optional SDKs |
 | **View Stack Visualizer** | AK > UI > V2 - View Stack Visualizer | Inspect live UI channel/fragment stacks, validate consistency |
-| **UID Editor** | Context menu on null UID fields | Create UID assets in-place from inspector |
+| **UID tooling** | `Tools -> UGFW -> UID` | Identity authority, audit + build gate, collision resolver, identity inspector, catalog export (see UID System) |
 | **Missing Scripts Finder** | Tools > Missing Scripts | Find and remove missing script references |
 | **Always Start From Scene 0** | Tools > AK > AlwaysStartsFromScene0 | Force Play mode to start from bootstrap scene |
 | **Inspector Ping Button** | Automatic on all inspectors | Ping button in every Inspector header |

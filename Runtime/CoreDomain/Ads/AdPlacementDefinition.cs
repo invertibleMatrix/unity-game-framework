@@ -35,11 +35,11 @@ namespace AK.CoreDomain.Ads
 		[Tooltip("Priority for this placement when multiple placements of the same type exist.")] [Range(0, 100)]
 		public int Priority = 50;
 
-		[Header("Reward Configuration")] [Tooltip("If single reward then use Plain Definition")]
-		public UID Reward;
+		[Header("Reward Configuration")] [Tooltip("Identity of the reward granted when this ad completes. The framework does not know the game's reward type; resolve through the game's reward registry at grant time.")]
+		public Uid Reward;
 
-		[Tooltip("Optional reward bundle for multiple rewards.")]
-		public UID RewardBundle;
+		[Tooltip("Optional identity of a reward bundle for multiple rewards.")]
+		public Uid RewardBundle;
 
 		[Header("Frequency Control")] [Tooltip("Maximum times this ad can be shown per session (0 = unlimited).")] [Range(0, 100)]
 		public int MaxPerSession = 0;
@@ -83,7 +83,6 @@ namespace AK.CoreDomain.Ads
 		[Tooltip("Tags for categorization and filtering.")]
 		public List<string> Tags = new();
 
-		public UID UniqueID => this;
 
 		public string AdUnitID
 		{
@@ -204,7 +203,7 @@ namespace AK.CoreDomain.Ads
 		/// </summary>
 		public bool HasRewards()
 		{
-			return Reward != null;
+			return Reward.IsSet || RewardBundle.IsSet;
 		}
 
 		/// <summary>

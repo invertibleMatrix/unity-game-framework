@@ -10,47 +10,35 @@ namespace AK.CoreDomain.RemoteConfig
 	/// This is the main entry point for remote config operations.
 	/// </summary>
 	[CreateAssetMenu(fileName = "RemoteConfigMeta", menuName = "AK/MetaData/RemoteConfig/RemoteConfigMeta")]
-	public class RemoteConfigMeta : MetaDataAsset, IMeta
+	public class RemoteConfigMeta : MetaDataAsset, IMetaWithRegistry
 	{
 		[SerializeField] private RemoteVariablesRegistry _registry;
 
 		/// <summary>
 		/// The registry containing all remote variables.
 		/// </summary>
-		public RemoteVariablesRegistry Registry => _registry;
+		public RemoteVariablesRegistry Registry      => _registry;
+		public UidRegistryAssetBase    RegistryAsset => _registry;
 
-		#region Initialization
-
-		public override void InitializeMeta()
-		{
-			if (_registry != null)
-			{
-				_registry.Initialize();
-			}
-		}
-
-		#endregion
+		public override void InitializeMeta() { }
 
 		#region Query Methods
 
 		/// <summary>
-		/// Gets a remote variable by its UID.
+		/// Resolves the registry's live instance for an identity. Pass the identity of the
+		/// asset you hold; the instance returned is the one remote config writes into, which
+		/// matters when the held reference came from a different bundle.
 		/// </summary>
-		public RemoteVariableBase GetVariableByUID(UID uid)
+		public RemoteVariableBase GetVariable(Uid id)
 		{
-			if (_registry == null || uid == null || uid.IsEmpty())
-				return null;
-
-			return _registry.GetObjectByUID(uid);
+			return _registry != null && _registry.TryResolve(id, out RemoteVariableBase variable) ? variable : null;
 		}
 
-		/// <summary>
-		/// Gets a typed remote variable by its UID.
-		/// </summary>
-		public RemoteVariable<T> GetVariableByUID<T>(UID uid)
-		{
-			return GetVariableByUID(uid) as RemoteVariable<T>;
-		}
+		public RemoteVariableBase GetVariable(RemoteVariableBase asset) => asset != null ? GetVariable(asset.Id) : null;
+
+		public RemoteVariable<T> GetVariable<T>(Uid id) => GetVariable(id) as RemoteVariable<T>;
+
+		public RemoteVariable<T> GetVariable<T>(RemoteVariableBase asset) => GetVariable(asset) as RemoteVariable<T>;
 
 		/// <summary>
 		/// Gets a remote variable by its VariableKey.
@@ -60,10 +48,10 @@ namespace AK.CoreDomain.RemoteConfig
 			if (_registry == null || string.IsNullOrEmpty(variableKey))
 				return null;
 
-			var allVariables = _registry.GetAllObjects();
+			var allVariables = _registry.Objects;
 			foreach (var variable in allVariables)
 			{
-				if (variable.VariableKey == variableKey)
+				if (variable != null && variable.VariableKey == variableKey)
 					return variable;
 			}
 
@@ -88,6 +76,33 @@ namespace AK.CoreDomain.RemoteConfig
 		}
 
 		/// <summary>
+		/// Resolves the live <see cref="RemoteJson{T}"/> for the given asset. Pass the assigned
+		/// asset (e.g. RemoteAdsConfig); the registry instance is the one RC writes into.
+		/// </summary>
+		public RemoteJson<T> GetJsonVariable<T>(RemoteVariableBase asset) where T : class, new()
+		{
+			return GetVariable(asset) as RemoteJson<T>;
+		}
+
+		public RemoteJson<T> GetJsonVariable<T>(Uid id) where T : class, new()
+		{
+			return GetVariable(id) as RemoteJson<T>;
+		}
+
+		/// <summary>Deserialized JSON value for the given asset, or default when unresolved.</summary>
+		public T GetJsonValue<T>(RemoteVariableBase asset) where T : class, new()
+		{
+			RemoteJson<T> variable = GetJsonVariable<T>(asset);
+			return variable != null ? variable.Value : default;
+		}
+
+		public T GetJsonValue<T>(Uid id) where T : class, new()
+		{
+			RemoteJson<T> variable = GetJsonVariable<T>(id);
+			return variable != null ? variable.Value : default;
+		}
+
+		/// <summary>
 		/// Gets all enabled remote variables.
 		/// </summary>
 		public List<RemoteVariableBase> GetEnabledVariables()
@@ -96,7 +111,7 @@ namespace AK.CoreDomain.RemoteConfig
 			if (_registry == null)
 				return result;
 
-			var allVariables = _registry.GetAllObjects();
+			var allVariables = _registry.Objects;
 			foreach (var variable in allVariables)
 			{
 				if (variable.IsEnabled)
@@ -114,7 +129,7 @@ namespace AK.CoreDomain.RemoteConfig
 			if (_registry == null)
 				return new List<RemoteVariableBase>();
 
-			return _registry.GetAllObjects();
+			return _registry.Objects;
 		}
 		#endregion
 
@@ -208,7 +223,7 @@ namespace AK.CoreDomain.RemoteConfig
 			if (_registry == null)
 				return;
 
-			var allVariables = _registry.GetAllObjects();
+			var allVariables = _registry.Objects;
 			foreach (var variable in allVariables)
 			{
 				variable.ClearRemoteValue();
@@ -224,7 +239,7 @@ namespace AK.CoreDomain.RemoteConfig
 			if (_registry == null)
 				return;
 
-			var allVariables = _registry.GetAllObjects();
+			var allVariables = _registry.Objects;
 			foreach (var variable in allVariables)
 			{
 				if (variable.CacheValue)
@@ -242,7 +257,7 @@ namespace AK.CoreDomain.RemoteConfig
 			if (_registry == null)
 				return;
 
-			var allVariables = _registry.GetAllObjects();
+			var allVariables = _registry.Objects;
 			foreach (var variable in allVariables)
 			{
 				if (variable.CacheValue)
@@ -260,7 +275,7 @@ namespace AK.CoreDomain.RemoteConfig
 			if (_registry == null)
 				return;
 
-			var allVariables = _registry.GetAllObjects();
+			var allVariables = _registry.Objects;
 			foreach (var variable in allVariables)
 			{
 				variable.ClearCachedValue();
@@ -277,7 +292,7 @@ namespace AK.CoreDomain.RemoteConfig
 		{
 			if (_registry != null)
 			{
-				_registry.RefreshAllObjects();
+				_registry.Editor_RefreshFromProject();
 				UnityEditor.EditorUtility.SetDirty(this);
 			}
 		}
@@ -291,7 +306,7 @@ namespace AK.CoreDomain.RemoteConfig
 				return;
 			}
 
-			var allVariables = _registry.GetAllObjects();
+			var allVariables = _registry.Objects;
 			var keySet = new HashSet<string>();
 			int validCount = 0;
 			int enabledCount = 0;

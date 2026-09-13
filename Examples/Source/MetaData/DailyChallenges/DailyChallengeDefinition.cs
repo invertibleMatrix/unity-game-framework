@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AK.Core;
+using AK.CoreDomain.Analytics;
 using AK.Examples.Rewards;
 using UnityEngine;
 
@@ -74,10 +75,10 @@ namespace AK.Examples.DailyChallenges
 
         [Header("Analytics")]
         [Tooltip("Analytics event to track when this challenge is completed")]
-        public string CompletionEventID;
+        public AnalyticsEventDefinition CompletionEvent;
 
         [Header("Additional Data")]
-        [Tooltip("Game-specific data (e.g., required powerup, theme, booster UIDs)")]
+        [Tooltip("Game-specific data (e.g., required powerup, theme, booster identities as hex)")]
         public Dictionary<string, string> CustomData;
 
         public bool IsCompleted => CurrentProgress >= TargetValue;
@@ -108,7 +109,6 @@ namespace AK.Examples.DailyChallenges
 
         public bool IsEligibleForEarlyCompletion(float elapsedTime) => elapsedTime < EarlyCompletionTimeLimit * 3600f;
 
-        public UID UniqueID => this;
     }
 
     public enum ChallengeDifficulty { Easy, Medium, Hard, Expert, Master }

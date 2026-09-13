@@ -36,15 +36,8 @@ namespace AK.Systems
         public Camera     Camera     => _camera;
         public GameObject GameObject => gameObject;
 
-        /// <summary>
-        /// UID identifying what kind of camera this is.
-        /// </summary>
-        public UID CameraTypeUID => _cameraType;
-
-        /// <summary>
-        /// If this is an Overlay camera, which Base CameraType UID does it belong to?
-        /// </summary>
-        public UID DefaultBaseCameraUID => _baseCameraType;
+        public Uid<CameraType> CameraTypeId        => _cameraType != null ? _cameraType.IdAs<CameraType>() : default;
+        public Uid<CameraType> DefaultBaseCameraId => _baseCameraType != null ? _baseCameraType.IdAs<CameraType>() : default;
 
 #if UNITY_EDITOR
         protected virtual void OnValidate()

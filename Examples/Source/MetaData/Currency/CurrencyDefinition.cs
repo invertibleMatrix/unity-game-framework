@@ -1,5 +1,6 @@
 using System;
 using AK.Core;
+using AK.CoreDomain.Analytics;
 using UnityEngine;
 
 namespace AK.Examples.Currency
@@ -10,10 +11,7 @@ namespace AK.Examples.Currency
 	[CreateAssetMenu(fileName = "CurrencyDefinition", menuName = "AK/MetaData/Currency/CurrencyDefinition")]
 	public class CurrencyDefinition : MetaDataAsset
 	{
-		[Header("Basic Information")] [Tooltip("Unique identifier for this currency.")]
-		public string CurrencyID;
-
-		[Tooltip("Short code for display (e.g., 'Coins', 'Gems').")]
+		[Header("Basic Information")] [Tooltip("Short code for display (e.g., 'Coins', 'Gems').")]
 		public string ShortCode;
 
 		[Header("Currency Type")] [Tooltip("The type of currency. References a CurrencyType SO asset.")]
@@ -46,8 +44,10 @@ namespace AK.Examples.Currency
 		[Tooltip("Decimal places to show (if ShowDecimals is true).")] [Range(0, 4)]
 		public int DecimalPlaces = 0;
 
-		[Header("Analytics")] [Tooltip("Custom analytics event name for tracking currency changes.")]
-		public string AnalyticsEventName;
+		[Header("Analytics")] [Tooltip("Analytics event fired when this currency's balance changes.")]
+		public AnalyticsEventDefinition BalanceChangedEvent;
+
+		public Uid<CurrencyDefinition> CurrencyId => IdAs<CurrencyDefinition>();
 
 		/// <summary>
 		/// Formats the amount for display.
@@ -80,6 +80,5 @@ namespace AK.Examples.Currency
 			return Math.Min(amount, MaxAmount);
 		}
 
-		public UID UniqueID => this;
 	}
 }

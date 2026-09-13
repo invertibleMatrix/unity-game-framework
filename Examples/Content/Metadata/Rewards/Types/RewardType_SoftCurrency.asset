@@ -12,8 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 148fb753f1c9afb4da3cbc73850fd6c5, type: 3}
   m_Name: RewardType_SoftCurrency
   m_EditorClassIdentifier: AK.Examples::AK.CoreDomain.RewardType
-  _id: 
-  _description: 
+  _id:
+    _value: ada422434edd40db920a7e98b3feac06
+  _provenance: 0
+  _provenanceSource: 
+  _notes: 
   Name: 
   DisplayName: 
   Description: 

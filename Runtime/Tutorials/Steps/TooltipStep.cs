@@ -37,19 +37,30 @@ namespace AK.Tutorials
 				return;
 			}
 
-			var tooltip = context.UiSystem.Show<UIViewTooltip>(new UIViewTooltipContext(Title, Description, target, Position)
+			var tooltip = context.UiSystem.Show<UIViewTooltip>(ShowOptions.Variant(TooltipId, new UIViewTooltipContext(Title, Description, target, Position)
 			{
 				Icon = Icon,
 				Offset = Offset,
 				TapAnywhereToClose = false,
 				CloseTime = CloseTime
-			}, viewId: TooltipId);
+			}));
 
-			if (CloseTime > 0)
+			// The tooltip doesn't govern input - open the gate so the player
+			// can act on what it points at.
+			context.InputGate.Release();
+
+			try
 			{
-				await UniTask.WaitForSeconds(CloseTime, cancellationToken: ct);
-				await tooltip.CloseAsync(ct: ct);
+				if (CloseTime > 0)
+				{
+					await UniTask.WaitForSeconds(CloseTime, cancellationToken: ct);
+				}
+			}
+			finally
+			{
+				// Cancellation (view destroyed mid-step) must not leak the tooltip.
+				if (tooltip != null) tooltip.Close();
 			}
 		}
 	}
-}
+}

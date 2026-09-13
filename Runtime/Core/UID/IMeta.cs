@@ -1,16 +1,20 @@
 namespace AK.Core
 {
 	/// <summary>
-	/// Common interface for all Meta containers registered in MetaDataRepository.
-	/// Enables type-keyed lookup via GetMeta<T>() without hardcoding
-	/// every domain as a field on the repository.
+	/// A Meta container registered in the metadata repository and looked up by type.
 	/// </summary>
 	public interface IMeta
 	{
-		/// <summary>
-		/// Initialize the meta's internal registries. Called by MetaDataRepository
-		/// during InitializeRegistries().
-		/// </summary>
+		/// <summary>Build internal caches. Called once by MetaDataRepository.InitializeRegistries().</summary>
 		void InitializeMeta();
+	}
+
+	/// <summary>
+	/// A Meta that owns a domain registry. The repository registers it for aggregate
+	/// identity resolution automatically — no separate list to maintain.
+	/// </summary>
+	public interface IMetaWithRegistry : IMeta
+	{
+		UidRegistryAssetBase RegistryAsset { get; }
 	}
 }

@@ -1,4 +1,4 @@
-﻿using AK.Core;
+using AK.Core;
 using UnityEngine;
 
 namespace AK.Systems
@@ -11,16 +11,16 @@ namespace AK.Systems
         GameObject GameObject { get; }
 
         /// <summary>
-        /// UID identifying what kind of camera this is (e.g., Main, UI, Effects).
-        /// Used for UID-based lookups in CameraSystem.
+        /// Identity of this camera's kind (Main, UI, Effects...). None when the camera is
+        /// unaddressed and found only as "first of its type".
         /// </summary>
-        UID CameraTypeUID { get; }
+        Uid<CameraType> CameraTypeId { get; }
 
         /// <summary>
-        /// If this is an Overlay camera, which Base CameraType UID does it belong to?
-        /// Returns null if it has no specific parent or is a Base itself.
+        /// For Overlay cameras: the kind of Base camera this overlay stacks on. None when it
+        /// has no specific parent or is itself a Base.
         /// </summary>
-        UID DefaultBaseCameraUID { get; }
+        Uid<CameraType> DefaultBaseCameraId { get; }
 
         void Enable(bool enableGameObject = true);
         void Disable(bool disableGameObject = true);

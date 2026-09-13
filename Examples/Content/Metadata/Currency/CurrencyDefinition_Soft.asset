@@ -12,8 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 73ea0e52d26121e4f94d1d1537a0fbbc, type: 3}
   m_Name: CurrencyDefinition_Soft
   m_EditorClassIdentifier: AK.Examples::AK.Examples.Currency.CurrencyDefinition
-  _id: c0d454b4-6d66-40d5-b270-d19d61817d79
-  _description: UID_CurrencyDefinition_Soft
+  _id:
+    _value: c0d454b46d6640d5b270d19d61817d79
+  _provenance: 0
+  _provenanceSource: 
+  _notes: 
   Name: 
   DisplayName: 
   Description: 

@@ -1,13 +1,22 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using DG.Tweening;
 using UnityEngine;
 
 namespace AK.Systems
 {
+	/// <summary>
+	/// Shelves closed view instances by kind for reuse. A view arrives here already settled by
+	/// the close pipeline — hooks run, children cascaded, state reset — so the pool only makes
+	/// the object inert (kills what still tweens inside it, deactivates, reparents) and hands
+	/// it back on the next spawn of the same kind.
+	/// </summary>
 	public class ViewPool
 	{
-		private readonly Dictionary<PoolKey, Stack<UIView>> _pools = new();
+		private readonly Dictionary<ViewKey, Stack<UIView>> _pools  = new();
+		private readonly HashSet<UIView>                    _pooled = new();
+
+		private readonly List<CanvasGroup>   _canvasGroupScratch   = new();
+		private readonly List<RectTransform> _rectTransformScratch = new();
 
 		private readonly Transform _viewsContainer;
 		private          Transform _poolRoot;
@@ -16,6 +25,9 @@ namespace AK.Systems
 		{
 			_viewsContainer = viewsContainer;
 		}
+
+		/// <summary>Idle instances by kind. Diagnostics and editor tooling.</summary>
+		internal IReadOnlyDictionary<ViewKey, Stack<UIView>> Pools => _pools;
 
 		private Transform PoolRoot
 		{
@@ -34,29 +46,18 @@ namespace AK.Systems
 			}
 		}
 
-		private struct PoolKey : IEquatable<PoolKey>
-		{
-			public Type   Type;
-			public string ViewId;
-
-			public bool Equals(PoolKey other) => Type == other.Type && ViewId == other.ViewId;
-			public override bool Equals(object obj) => obj is PoolKey other && Equals(other);
-			public override int GetHashCode() => HashCode.Combine(Type, ViewId);
-		}
-
 		public TView Get<TView>(TView prefab, Transform parent) where TView : UIView
 		{
-			var key = new PoolKey { Type = prefab.GetType(), ViewId = prefab.ViewId };
-
-			if (_pools.TryGetValue(key, out var stack) && stack.Count > 0)
+			if (_pools.TryGetValue(ViewKey.Of(prefab), out var stack) && stack.Count > 0)
 			{
 				var view = stack.Pop();
+				_pooled.Remove(view);
 				var rect = view.transform as RectTransform;
 
 				if (rect == null)
 				{
 					Debug.LogError($"[ViewPool] Pooled view '{view.name}' has no RectTransform - cannot re-parent. Instantiating instead.");
-					return UnityEngine.Object.Instantiate(prefab, parent);
+					return Object.Instantiate(prefab, parent);
 				}
 
 				rect.SetParent(parent, false);
@@ -68,14 +69,20 @@ namespace AK.Systems
 				return view as TView;
 			}
 
-			return UnityEngine.Object.Instantiate(prefab, parent);
+			return Object.Instantiate(prefab, parent);
 		}
 
 		public void Release(UIView view)
 		{
 			if (view == null) return;
 
-			var key = new PoolKey { Type = view.GetType(), ViewId = view.ViewId };
+			if (!_pooled.Add(view))
+			{
+				Debug.LogWarning($"[ViewPool] View '{view.name}' released twice - ignoring the second release.");
+				return;
+			}
+
+			var key = ViewKey.Of(view);
 
 			if (!_pools.TryGetValue(key, out var stack))
 			{
@@ -83,44 +90,24 @@ namespace AK.Systems
 				_pools[key] = stack;
 			}
 
-			if (stack.Contains(view))
+			// Strategy tweens are linked to the content and die with it; this catches what is
+			// not — per-view leftovers such as toast floaters, whose completion callbacks would
+			// otherwise fire on a shelved view.
+			view.GetComponentsInChildren(true, _canvasGroupScratch);
+			for (int i = 0; i < _canvasGroupScratch.Count; i++)
 			{
-				Debug.LogWarning($"[ViewPool] View '{view.name}' released twice - ignoring the second release.");
-				return;
+				DOTween.Kill(_canvasGroupScratch[i]);
 			}
 
-			// Let the view close its dynamic children before pooling
-			// This prevents orphaned child views when parent is pooled
-			view.OnBeforePool();
+			_canvasGroupScratch.Clear();
 
-			// InternalCleanup runs full close lifecycle (OnPrepareHide → OnHide → UnRegisterResources → NullifyContext).
-			// Idempotent — safe even if InternalHideAsync already ran the close hooks.
-			view.InternalCleanup();
-
-			// OnReset lets the view clear custom state (text, images, references) for reuse.
-			view.OnReset();
-
-			// Kill any tweens still targeting this view's hierarchy. InternalCleanup handles the
-			// view's own animation targets, but per-view leftovers (e.g. toast floaters) and
-			// animation-strategy ambient loops can survive that - a surviving sequence that
-			// completes later would call Close() on an unregistered view.
-			foreach (var canvasGroup in view.GetComponentsInChildren<CanvasGroup>(true))
+			view.GetComponentsInChildren(true, _rectTransformScratch);
+			for (int i = 0; i < _rectTransformScratch.Count; i++)
 			{
-				DOTween.Kill(canvasGroup);
+				DOTween.Kill(_rectTransformScratch[i]);
 			}
 
-			foreach (var rectTransform in view.GetComponentsInChildren<RectTransform>(true))
-			{
-				DOTween.Kill(rectTransform);
-			}
-
-			// Restore interaction state: pause-behaviours (PauseOnlyBelow etc.) flip
-			// interactable/blocksRaycasts off, and nothing restored them on the reuse path.
-			if (view.CanvasGroup != null)
-			{
-				view.CanvasGroup.interactable = true;
-				view.CanvasGroup.blocksRaycasts = true;
-			}
+			_rectTransformScratch.Clear();
 
 			view.gameObject.SetActive(false);
 			view.transform.SetParent(PoolRoot, false);
@@ -137,12 +124,14 @@ namespace AK.Systems
 					var view = kvp.Value.Pop();
 					if (view != null && view.gameObject != null)
 					{
-						UnityEngine.Object.Destroy(view.gameObject);
+						if (Application.isPlaying) Object.Destroy(view.gameObject);
+						else Object.DestroyImmediate(view.gameObject);
 					}
 				}
 			}
 
 			_pools.Clear();
+			_pooled.Clear();
 		}
 	}
 }

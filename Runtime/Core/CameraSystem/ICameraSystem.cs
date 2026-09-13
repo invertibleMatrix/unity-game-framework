@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using AK.Core;
@@ -6,22 +6,20 @@ using Cysharp.Threading.Tasks;
 
 namespace AK.Systems
 {
+    /// <summary>
+    /// Camera identities are OPTIONAL throughout: <see cref="Uid{T}.None"/> means "the first
+    /// bound camera" (or first assignable to T). Pass an identity only to pick a specific
+    /// variant when several cameras share a type.
+    /// </summary>
     public interface ICameraSystem
     {
         T Get<T>() where T : class, IGameCamera;
 
-        /// <summary>
-        /// Get a camera by its CameraType UID.
-        /// The UID is OPTIONAL: pass null (or an empty UID) to get the first bound camera.
-        /// Use a UID only to pick a specific variant when several cameras share a type.
-        /// </summary>
-        IGameCamera GetCamera(UID cameraTypeUID = null);
+        IGameCamera GetCamera(Uid<CameraType> cameraType = default);
+        IGameCamera GetCamera(CameraType cameraType);
 
-        /// <summary>
-        /// Get the first bound camera assignable to <typeparamref name="T"/>.
-        /// Pass a UID only to disambiguate between multiple variants of the same type.
-        /// </summary>
-        T GetCamera<T>(UID cameraTypeUID = null) where T : class, IGameCamera;
+        T GetCamera<T>(Uid<CameraType> cameraType = default) where T : class, IGameCamera;
+        T GetCamera<T>(CameraType cameraType) where T : class, IGameCamera;
 
         /// <summary>All bound cameras assignable to <typeparamref name="T"/>.</summary>
         IReadOnlyList<T> GetCameras<T>() where T : class, IGameCamera;
@@ -35,18 +33,15 @@ namespace AK.Systems
         void UnbindCamera(IGameCamera gameCamera);
 
         /// <summary>
-        /// Spawn a camera from the CameraRegistry.
-        /// The UID is OPTIONAL: with a UID, the matching CameraDefinition is used; with null,
-        /// the first definition whose prefab has a <typeparamref name="T"/> component is used.
-        /// Instantiates the prefab, binds it to the system, and returns the IGameCamera.
+        /// Spawn a camera from the CameraRegistry. With an identity, the matching
+        /// CameraDefinition is used; with None, the first definition whose prefab has a
+        /// <typeparamref name="T"/> component is used.
         /// </summary>
-        T SpawnCamera<T>(UID cameraTypeUID = null) where T : class, IGameCamera;
+        T SpawnCamera<T>(Uid<CameraType> cameraType = default) where T : class, IGameCamera;
+        T SpawnCamera<T>(CameraType cameraType) where T : class, IGameCamera;
 
-        /// <summary>
-        /// Remove a camera by CameraType UID (null = first bound camera).
-        /// Unbinds and optionally destroys the GameObject.
-        /// </summary>
-        void RemoveCamera(UID cameraTypeUID, bool destroy = true);
+        void RemoveCamera(Uid<CameraType> cameraType, bool destroy = true);
+        void RemoveCamera(CameraType cameraType, bool destroy = true);
 
         void EnableCamera<T>(bool enableGameObject = true) where T : class, IGameCamera;
         void DisableCamera<T>(bool disableGameObject = true) where T : class, IGameCamera;
@@ -54,17 +49,13 @@ namespace AK.Systems
         void EnableCamera(Type cameraType, bool enableGameObject = true);
         void DisableCamera(Type cameraType, bool disableGameObject = true);
 
-        /// <summary>
-        /// Enable a camera by its CameraType UID (null = first bound camera).
-        /// Virtual cameras are ACTIVATED (priority boost) instead of merely enabled.
-        /// </summary>
-        void EnableCamera(UID cameraTypeUID, bool enableGameObject = true);
+        /// <summary>Virtual cameras are ACTIVATED (priority boost) instead of merely enabled.</summary>
+        void EnableCamera(Uid<CameraType> cameraType, bool enableGameObject = true);
+        void EnableCamera(CameraType cameraType, bool enableGameObject = true);
 
-        /// <summary>
-        /// Disable a camera by its CameraType UID (null = first bound camera).
-        /// Virtual cameras are demoted to standby (the default camera takes over with a smooth blend).
-        /// </summary>
-        void DisableCamera(UID cameraTypeUID, bool disableGameObject = true);
+        /// <summary>Virtual cameras are demoted to standby (the default camera takes over with a smooth blend).</summary>
+        void DisableCamera(Uid<CameraType> cameraType, bool disableGameObject = true);
+        void DisableCamera(CameraType cameraType, bool disableGameObject = true);
 
         // =================================================================
         // VIRTUAL CAMERAS (Cinemachine, single-brain priority workflow)
@@ -78,16 +69,14 @@ namespace AK.Systems
 
         /// <summary>
         /// Makes a virtual camera live: its priority is boosted above all others and the (single)
-        /// Cinemachine brain blends to it. Pass null to activate the default camera.
+        /// Cinemachine brain blends to it. None activates the default camera.
         /// </summary>
-        /// <param name="cameraTypeUID">Optional UID to pick a variant. Null = default, else first bound virtual camera.</param>
         /// <param name="explicitCamera">Skip lookup entirely and activate this exact instance.</param>
-        void ActivateVirtualCamera(UID cameraTypeUID = null, IVirtualGameCamera explicitCamera = null);
+        void ActivateVirtualCamera(Uid<CameraType> cameraType = default, IVirtualGameCamera explicitCamera = null);
+        void ActivateVirtualCamera(CameraType cameraType, IVirtualGameCamera explicitCamera = null);
 
-        /// <summary>
-        /// Makes a virtual camera live and awaits until the brain's blend to it completes.
-        /// </summary>
-        UniTask<IVirtualGameCamera> ActivateVirtualCameraAsync(UID cameraTypeUID = null, IVirtualGameCamera explicitCamera = null,
+        /// <summary>Makes a virtual camera live and awaits until the brain's blend to it completes.</summary>
+        UniTask<IVirtualGameCamera> ActivateVirtualCameraAsync(Uid<CameraType> cameraType = default, IVirtualGameCamera explicitCamera = null,
                                                                CancellationToken ct = default);
 
         /// <summary>

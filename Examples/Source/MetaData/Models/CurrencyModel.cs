@@ -1,30 +1,41 @@
 using System;
 using AK.Core;
-using AK.CoreDomain;
 using AK.Examples.Currency;
 using UnityEngine;
 
 namespace AK.Examples.Models
 {
+	/// <summary>
+	/// Persisted balance of one currency. The save holds only the currency's identity;
+	/// the definition is re-resolved at load through an <see cref="IUidResolver"/>.
+	/// An unresolvable identity is reported as an orphan, never healed by name.
+	/// </summary>
 	[Serializable]
-	public class CurrencyModel : EntityModel, ISerializationCallbackReceiver
+	public class CurrencyModel : EntityModel
 	{
-		[SerializeField] private string _uidID;
-		[SerializeField] private string _uidName;
+		[SerializeField] private Uid<CurrencyDefinition> _currencyId;
+
+		public int Amount;
+		public int RefillCycles;
 
 		public virtual CurrencyDefinition CurrencyDefinition { get; private set; }
 		public virtual event Action<int>  OnChanged;
 		public virtual event Action<int>  OnAmountAdded;
 		public virtual event Action<int>  OnAmountDeducted;
 
-		public UID UniqueID;
-		public int Amount;
-		public int RefillCycles;
+		public Uid<CurrencyDefinition> CurrencyId => _currencyId;
+		public bool IsResolved => CurrencyDefinition != null;
 
-		/// <summary>
-		/// Whether this model needs UID resolution after deserialization.
-		/// </summary>
-		public bool NeedsResolution { get; private set; }
+		public CurrencyModel() { }
+
+		public CurrencyModel(CurrencyDefinition definition, int amount = 0)
+		{
+			if (definition == null) throw new ArgumentNullException(nameof(definition));
+
+			_currencyId = definition.IdAs<CurrencyDefinition>();
+			CurrencyDefinition = definition;
+			Amount = amount;
+		}
 
 		/// <summary>
 		/// Adds the specified amount. Respects MaxAmount from CurrencyDefinition.
@@ -53,8 +64,7 @@ namespace AK.Examples.Models
 		/// <summary>
 		/// Deducts the specified amount. Cannot go below zero.
 		/// </summary>
-		/// <param name="amount">The amount to deduct.</param>
-		/// <returns>True if the full amount was deducted. False if insufficient balance (partial or no deduction).</returns>
+		/// <returns>True if the full amount was deducted. False if insufficient balance (no deduction).</returns>
 		public bool Deduct(int amount)
 		{
 			if (amount <= 0) return false;
@@ -85,11 +95,6 @@ namespace AK.Examples.Models
 			return actual;
 		}
 
-		public void SetDefinition(CurrencyDefinition definition)
-		{
-			CurrencyDefinition = definition;
-		}
-
 		public float GetFillProgress()
 		{
 			if (CurrencyDefinition == null || CurrencyDefinition.MaxAmount <= 0) return 0f;
@@ -102,63 +107,19 @@ namespace AK.Examples.Models
 			RefillCycles++;
 		}
 
-		public void OnBeforeSerialize()
+		/// <summary>
+		/// Re-binds the definition after load. Returns false when the persisted identity
+		/// is None or no longer resolves; the caller decides whether to drop or quarantine.
+		/// </summary>
+		public bool TryResolve(IUidResolver resolver)
 		{
-			if (UniqueID != null)
-			{
-				_uidID = UniqueID.Id;
-				_uidName = UniqueID.name;
-			}
-		}
+			CurrencyDefinition = null;
 
-		public void OnAfterDeserialize()
-		{
-			NeedsResolution = !string.IsNullOrEmpty(_uidID) || !string.IsNullOrEmpty(_uidName);
-		}
+			if (resolver == null || _currencyId.IsNone) return false;
+			if (!resolver.TryResolve(_currencyId, out CurrencyDefinition definition)) return false;
 
-		public void ResolveUID(IMetaDataRepository repository)
-		{
-			if (!string.IsNullOrEmpty(_uidID))
-			{
-				UniqueID = repository.UIDRegistry.GetUID(_uidID);
-				if (UniqueID != null)
-				{
-					ResolveDefinition(repository);
-					NeedsResolution = false;
-					return;
-				}
-			}
-
-			if (!string.IsNullOrEmpty(_uidName))
-			{
-				UniqueID = repository.UIDRegistry.GetUIDByName(_uidName);
-				if (UniqueID != null)
-				{
-					Debug.LogWarning($"CurrencyModel UID resolved via name fallback: {_uidName}");
-					ResolveDefinition(repository);
-					NeedsResolution = false;
-					return;
-				}
-			}
-
-			if (NeedsResolution)
-			{
-				Debug.LogWarning($"CurrencyModel UID could not be resolved. GUID: '{_uidID}', Name: '{_uidName}'");
-				NeedsResolution = false;
-			}
-		}
-
-		private void ResolveDefinition(IMetaDataRepository repository)
-		{
-			var currencyMeta = repository.GetMeta<CurrencyMeta>();
-			if (UniqueID != null && currencyMeta != null)
-			{
-				var definition = currencyMeta.Registry.GetObjectByUID(UniqueID) as CurrencyDefinition;
-				if (definition != null)
-				{
-					SetDefinition(definition);
-				}
-			}
+			CurrencyDefinition = definition;
+			return true;
 		}
 	}
 }

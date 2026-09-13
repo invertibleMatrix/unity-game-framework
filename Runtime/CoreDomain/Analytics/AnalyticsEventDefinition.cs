@@ -51,10 +51,27 @@ namespace AK.CoreDomain.Analytics
 		[Header("Integration")] [Tooltip("Custom analytics provider event name (e.g., Firebase, GameAnalytics).")]
 		public string ProviderEventName;
 
+		[Tooltip("Native event kind. Unspecified lets the runtime infer.")]
+		public AnalyticsEventKind Kind = AnalyticsEventKind.Unspecified;
+
+		[Tooltip("GameAnalytics design event id (colon hierarchy, max 5 parts). Empty = EventID / ProviderEventName.")]
+		public string DesignEventId;
+
+		[Tooltip("Progression part 1 when Kind is Progression.")]
+		public string Progression01;
+
+		[Tooltip("Progression part 2 when Kind is Progression.")]
+		public string Progression02;
+
+		[Tooltip("Progression part 3 when Kind is Progression.")]
+		public string Progression03;
+
+		[Tooltip("If true, missing required parameters drop the event. Default is fail-open: warn and still send.")]
+		public bool FailClosed = false;
+
 		[Tooltip("Additional provider-specific configuration.")] [TextArea(2, 4)]
 		public string ProviderConfig;
 
-		public UID UniqueID => this;
 
 		/// <summary>
 		/// Checks if this event should be tracked based on sampling rate.

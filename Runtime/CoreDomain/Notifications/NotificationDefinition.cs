@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using AK.Core;
+using AK.CoreDomain.Analytics;
 using UnityEngine;
+using Utilities.AudioSpawner;
 
 namespace AK.CoreDomain.Notifications
 {
@@ -75,8 +77,8 @@ namespace AK.CoreDomain.Notifications
 		[Tooltip("Action button text")]
 		public string ActionButtonText = "Claim";
 
-		[Tooltip("Action button target (UID of screen or action)")]
-		public UID ActionTarget;
+		[Tooltip("Identity of the screen or action this button opens. Game-defined; resolve through the game's own registry.")]
+		public Uid ActionTarget;
 
 		[Tooltip("Has secondary action button")]
 		public bool HasSecondaryAction = false;
@@ -85,7 +87,7 @@ namespace AK.CoreDomain.Notifications
 		public string SecondaryActionButtonText = "Dismiss";
 
 		[Tooltip("Secondary action button target")]
-		public UID SecondaryActionTarget;
+		public Uid SecondaryActionTarget;
 
 		[Tooltip("Reward multiplier")] [Range(0.5f, 3f)]
 		public float RewardMultiplier = 1f;
@@ -94,7 +96,7 @@ namespace AK.CoreDomain.Notifications
 		public bool PlaySound = true;
 
 		[Tooltip("Sound to play")]
-		public UID SoundId;
+		public AudioConfig Sound;
 
 		[Tooltip("Sound volume")] [Range(0f, 1f)]
 		public float SoundVolume = 1f;
@@ -106,18 +108,17 @@ namespace AK.CoreDomain.Notifications
 		public int VibrationPattern = 0;
 
 		[Header("Analytics")] [Tooltip("Analytics event when notification shows")]
-		public UID ShowEvent;
+		public AnalyticsEventDefinition ShowEvent;
 
 		[Tooltip("Analytics event when action is clicked")]
-		public UID ActionEvent;
+		public AnalyticsEventDefinition ActionEvent;
 
 		[Tooltip("Analytics event when notification is dismissed")]
-		public UID DismissEvent;
+		public AnalyticsEventDefinition DismissEvent;
 
 		[Tooltip("Analytics event when notification is snoozed")]
-		public UID SnoozeEvent;
+		public AnalyticsEventDefinition SnoozeEvent;
 
-		public UID UniqueID => this;
 		
 		/// <summary>
 		/// Checks if this notification should be shown based on player level.

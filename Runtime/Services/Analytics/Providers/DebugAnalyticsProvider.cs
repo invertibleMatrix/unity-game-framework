@@ -1,6 +1,6 @@
-using System;
 using System.Collections.Generic;
 using AK.CoreDomain;
+using AK.CoreDomain.Analytics;
 using UnityEngine;
 
 namespace AK.Services.Analytics.Providers
@@ -20,6 +20,17 @@ namespace AK.Services.Analytics.Providers
 			// and the provider silently drops every event.
 			_isInitialized = true;
 			Debug.Log($"[{ProviderName}] Initialized");
+		}
+
+		public override void Track(AnalyticsEvent evt)
+		{
+			if (evt == null)
+			{
+				return;
+			}
+
+			string paramString = ParametersToString(evt.Parameters);
+			Debug.Log($"[{ProviderName}] {evt.Kind} {evt.Id} value={evt.Value} {paramString}");
 		}
 
 		public override void TrackEvent(string eventName, Dictionary<string, object> parameters)

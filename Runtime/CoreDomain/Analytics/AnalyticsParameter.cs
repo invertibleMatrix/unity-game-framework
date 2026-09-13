@@ -12,6 +12,9 @@ namespace AK.CoreDomain.Analytics
 		[Tooltip("Parameter name (e.g., 'level_number', 'score', 'currency_amount').")]
 		public ParameterName Name;
 
+		[Tooltip("Optional string key. When set, this is used instead of ParameterName so games are not locked to the UGFW enum.")]
+		public string Key;
+
 		[Tooltip("Parameter type.")]
 		public AnalyticsParameterType Type;
 

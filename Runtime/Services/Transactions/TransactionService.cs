@@ -15,38 +15,64 @@ namespace AK.Services.Transactions
 	/// (counts permanent, entries capped per type) and credits reward payloads through
 	/// IRewardService when one is provided — games using their own grant path can pass
 	/// null and listen to the lifecycle events instead.
+	///
+	/// Every identity in the ledger is a value. Recovery resolves reward identities through
+	/// the IUidResolver; a reward that no longer resolves is reported and dropped from the
+	/// recovered payload — never substituted.
+	///
+	/// Every mutation commits the ledger to disk unless inside a <see cref="BeginBatch"/> scope.
 	/// </summary>
-	public class TransactionService : ITransactionService
+	public class TransactionService : ITransactionService, IBatchable
 	{
 		private const int MaxEntriesPerType = 100;
 
-		private readonly IRewardService          _rewardService;
-		private readonly IMetaDataRepository     _metaDataRepository;
-		private readonly TransactionLedgerState  _state;
-		private readonly Dictionary<string, int> _counts         = new();
-		private readonly List<Transaction>       _sessionEntries = new();
+		private readonly IRewardService         _rewardService;
+		private readonly IUidResolver           _resolver;
+		private readonly TransactionLedgerState _state;
+		private readonly DeferredCommit         _commit;
+		private readonly Dictionary<Uid, int>   _counts         = new();
+		private readonly List<Transaction>      _sessionEntries = new();
 
 		public event Action<Transaction> Recorded;
 		public event Action<Transaction> Credited;
 		public event Action<Transaction> Reversed;
 
-		public TransactionService(IRewardService rewardService = null, IMetaDataRepository metaDataRepository = null)
+		public TransactionService(IRewardService rewardService = null, IUidResolver resolver = null, UidRedirectTable redirects = null)
 		{
 			_rewardService = rewardService;
-			_metaDataRepository = metaDataRepository;
-			_state = TransactionLedgerState.Load();
+			_resolver      = resolver;
+			_state         = TransactionLedgerState.Load();
+			_commit        = new DeferredCommit(_state.Commit);
 
-			foreach (var entry in _state.Counts)
+			bool rewritten = ApplyRedirects(redirects);
+
+			foreach (TypeCountEntry entry in _state.Counts)
 			{
-				_counts[entry.TypeId] = entry.Count;
+				if (entry.TypeId.IsSet) _counts[entry.TypeId] = entry.Count;
 			}
+
+			if (rewritten) _commit.Commit();
 		}
 
-		public Transaction Record(UID type, float amount = 1f, string source = null)
-		{
-			var transaction = CreateTransaction(type, amount, source, TransactionStatus.Credited, null);
-			if (transaction == null) return null;
+		// ---------------------------------------------------------------- batching
 
+		public LedgerBatch BeginBatch() => new(this);
+
+		void IBatchable.Suspend() => _commit.Suspend();
+		void IBatchable.Resume()  => _commit.Resume();
+
+		// ---------------------------------------------------------------- record
+
+		public Result<Transaction> Record(TransactionType type, float amount = 1f, string source = null)
+		{
+			return type != null ? Record(type.IdAs<TransactionType>(), amount, source) : Result.Fail(ErrorCode.NullArgument, "type");
+		}
+
+		public Result<Transaction> Record(Uid<TransactionType> type, float amount = 1f, string source = null)
+		{
+			if (type.IsNone) return Result.Fail(ErrorCode.NoIdentity, "type");
+
+			Transaction transaction = CreateTransaction(type, amount, source, TransactionStatus.Credited, null);
 			Persist(transaction, creditDelta: 1);
 
 			Recorded?.Invoke(transaction);
@@ -54,53 +80,57 @@ namespace AK.Services.Transactions
 			return transaction;
 		}
 
-		public Transaction RecordPending(UID type, IReadOnlyList<IReward> rewards = null, string source = null)
+		public Result<Transaction> RecordPending(TransactionType type, IReadOnlyList<IReward> rewards = null, string source = null)
 		{
-			var transaction = CreateTransaction(type, 1f, source, TransactionStatus.Pending, rewards);
-			if (transaction == null) return null;
+			return type != null ? RecordPending(type.IdAs<TransactionType>(), rewards, source) : Result.Fail(ErrorCode.NullArgument, "type");
+		}
 
+		public Result<Transaction> RecordPending(Uid<TransactionType> type, IReadOnlyList<IReward> rewards = null, string source = null)
+		{
+			if (type.IsNone) return Result.Fail(ErrorCode.NoIdentity, "type");
+
+			Transaction transaction = CreateTransaction(type, 1f, source, TransactionStatus.Pending, rewards);
 			Persist(transaction, creditDelta: 0);
 
 			Recorded?.Invoke(transaction);
 			return transaction;
 		}
 
-		public UniTask<bool> CreditAsync(UID type, IReadOnlyList<IReward> rewards, string source = null, CancellationToken ct = default)
+		public async UniTask<Result<Transaction>> CreditAsync(Uid<TransactionType> type, IReadOnlyList<IReward> rewards, string source = null, CancellationToken ct = default)
 		{
-			return CreditAsync(RecordPending(type, rewards, source), ct);
+			Result<Transaction> pending = RecordPending(type, rewards, source);
+			if (pending.IsFailed) return pending;
+
+			Result credited = await CreditAsync(pending.Value, ct);
+			return credited.IsOk ? pending : credited.As<Transaction>();
 		}
 
-		public UniTask<bool> CreditAsync(Transaction transaction, CancellationToken ct = default)
+		public UniTask<Result> CreditAsync(Transaction transaction, CancellationToken ct = default)
 		{
-			if (transaction == null)
-			{
-				Debug.LogError("[TransactionService] Cannot credit a null transaction.");
-				return UniTask.FromResult(false);
-			}
+			if (transaction == null) return UniTask.FromResult(Result.Fail(ErrorCode.NullArgument, "transaction"));
 
-			if (transaction.Status == TransactionStatus.Credited)
-			{
-				return UniTask.FromResult(true);
-			}
+			if (transaction.Status == TransactionStatus.Credited) return UniTask.FromResult(Result.Ok);
 
 			if (transaction.Status != TransactionStatus.Pending)
 			{
-				Debug.LogWarning($"[TransactionService] Cannot credit transaction '{transaction.Id}' — status is {transaction.Status}.");
-				return UniTask.FromResult(false);
+				return UniTask.FromResult(Result.Fail(ErrorCode.TransactionNotPending, transaction.Status.ToString()));
 			}
 
 			if (transaction.Rewards != null && transaction.Rewards.Count > 0)
 			{
 				if (_rewardService == null)
 				{
-					Debug.LogWarning(
-						$"[TransactionService] Transaction '{transaction.Id}' carries rewards but no IRewardService was provided — marking credited without granting.");
+					Debug.LogWarning($"[TransactionService] Transaction {transaction.Id.ToShortString()} carries rewards but no IRewardService was provided — marking credited without granting.");
 				}
 				else
 				{
-					foreach (var reward in transaction.Rewards)
+					for (int i = 0; i < transaction.Rewards.Count; i++)
 					{
-						_rewardService.TryGrantReward(reward);
+						Result granted = _rewardService.Grant(transaction.Rewards[i]);
+						if (granted.IsFailed)
+						{
+							Debug.LogWarning($"[TransactionService] Reward {i} of transaction {transaction.Id.ToShortString()} was not granted: {granted}.");
+						}
 					}
 				}
 			}
@@ -109,54 +139,50 @@ namespace AK.Services.Transactions
 			UpdatePersistedStatus(transaction, creditDelta: 1);
 
 			Credited?.Invoke(transaction);
-			return UniTask.FromResult(true);
+			return UniTask.FromResult(Result.Ok);
 		}
 
-		public bool Reverse(string transactionId)
+		public Result Reverse(Uid transactionId)
 		{
-			var entry = _state.Entries.Find(e => e.Id == transactionId);
-			if (entry == null)
-			{
-				Debug.LogWarning($"[TransactionService] Cannot reverse unknown transaction '{transactionId}'.");
-				return false;
-			}
+			PersistedTransactionEntry entry = FindEntry(transactionId);
+			if (entry == null) return Result.Fail(ErrorCode.NotFound, transactionId.ToShortString());
 
 			if (entry.Status != (int)TransactionStatus.Credited)
 			{
-				Debug.LogWarning($"[TransactionService] Cannot reverse transaction '{transactionId}' — only credited transactions can be reversed.");
-				return false;
+				return Result.Fail(ErrorCode.TransactionNotCredited, ((TransactionStatus)entry.Status).ToString());
 			}
 
 			entry.Status = (int)TransactionStatus.Reversed;
 			AddCount(entry.TypeId, -1);
-			_state.Commit();
+			_commit.Commit();
 
-			var transaction = _sessionEntries.Find(t => t.Id == transactionId);
+			Transaction transaction = FindSession(transactionId);
 			if (transaction != null)
 			{
 				transaction.Status = TransactionStatus.Reversed;
 				Reversed?.Invoke(transaction);
 			}
 
-			return true;
+			return Result.Ok;
 		}
 
-		public int Count(UID type)
-		{
-			return type != null && _counts.TryGetValue(type.Id, out int count) ? count : 0;
-		}
+		// ---------------------------------------------------------------- query
 
-		public bool HasOccurred(UID type)
-		{
-			return Count(type) > 0;
-		}
+		public int Count(TransactionType type) => type != null ? Count(type.Id) : 0;
 
-		public IReadOnlyList<Transaction> Query(UID type, TransactionStatus? status = null)
+		public int Count(Uid<TransactionType> type) => Count(type.Value);
+
+		public bool HasOccurred(TransactionType type) => Count(type) > 0;
+
+		public bool HasOccurred(Uid<TransactionType> type) => Count(type) > 0;
+
+		public IReadOnlyList<Transaction> Query(Uid<TransactionType> type, TransactionStatus? status = null)
 		{
 			var result = new List<Transaction>();
-			foreach (var transaction in _sessionEntries)
+			for (int i = 0; i < _sessionEntries.Count; i++)
 			{
-				if (type != null && transaction.Type.Id != type.Id) continue;
+				Transaction transaction = _sessionEntries[i];
+				if (type.IsSet && transaction.Type != type) continue;
 				if (status.HasValue && transaction.Status != status.Value) continue;
 				result.Add(transaction);
 			}
@@ -168,30 +194,23 @@ namespace AK.Services.Transactions
 		{
 			var result = new List<Transaction>();
 
-			if (_metaDataRepository == null)
-			{
-				Debug.LogWarning("[TransactionService] GetPendingTransactions requires an IMetaDataRepository for UID resolution.");
-				return result;
-			}
-
 			bool dirty = false;
 
-			foreach (var entry in _state.Entries)
+			for (int i = 0; i < _state.Entries.Count; i++)
 			{
+				PersistedTransactionEntry entry = _state.Entries[i];
 				if (entry.Status != (int)TransactionStatus.Pending) continue;
 
-				var existing = _sessionEntries.Find(t => t.Id == entry.Id);
+				Transaction existing = FindSession(entry.Id);
 				if (existing != null)
 				{
 					result.Add(existing);
 					continue;
 				}
 
-				UID type = _metaDataRepository.UIDRegistry.GetUID(entry.TypeId);
-				if (type == null)
+				if (entry.TypeId.IsNone)
 				{
-					Debug.LogWarning(
-						$"[TransactionService] Pending transaction '{entry.Id}' has unresolvable type '{entry.TypeId}' — marking failed.");
+					Debug.LogWarning($"[TransactionService] Pending transaction {entry.Id.ToShortString()} has no type identity — marking failed.");
 					entry.Status = (int)TransactionStatus.Failed;
 					dirty = true;
 					continue;
@@ -199,12 +218,12 @@ namespace AK.Services.Transactions
 
 				var transaction = new Transaction
 				{
-					Id = entry.Id,
-					Type = type,
-					Amount = entry.Amount,
-					Source = entry.Source,
-					Time = entry.Time,
-					Status = TransactionStatus.Pending,
+					Id      = entry.Id,
+					Type    = new Uid<TransactionType>(entry.TypeId),
+					Amount  = entry.Amount,
+					Source  = entry.Source,
+					Time    = entry.Time,
+					Status  = TransactionStatus.Pending,
 					Rewards = ResolveRewards(entry.Rewards)
 				};
 
@@ -212,64 +231,75 @@ namespace AK.Services.Transactions
 				result.Add(transaction);
 			}
 
-			if (dirty)
-			{
-				_state.Commit();
-			}
+			if (dirty) _commit.Commit();
 
 			return result;
 		}
 
-		private List<IReward> ResolveRewards(List<PersistedRewardRef> refs)
+		// ---------------------------------------------------------------- internals
+
+		private int Count(Uid id)
 		{
-			if (refs == null || refs.Count == 0) return null;
+			return id.IsSet && _counts.TryGetValue(id, out int count) ? count : 0;
+		}
 
-			var rewards = new List<IReward>();
-			foreach (var rewardRef in refs)
+		private PersistedTransactionEntry FindEntry(Uid id)
+		{
+			for (int i = 0; i < _state.Entries.Count; i++)
 			{
-				UID uid = _metaDataRepository.UIDRegistry.GetUID(rewardRef.Id);
+				if (_state.Entries[i].Id == id) return _state.Entries[i];
+			}
 
-				if (uid == null && !string.IsNullOrEmpty(rewardRef.Name))
-				{
-					uid = _metaDataRepository.UIDRegistry.GetUIDByName(rewardRef.Name);
-					if (uid != null)
-					{
-						Debug.LogWarning(
-							$"[TransactionService] Reward resolved via name fallback: '{rewardRef.Name}'. Update the saved GUID '{rewardRef.Id}' to '{uid.Id}'.");
-					}
-				}
+			return null;
+		}
 
-				if (uid is IReward reward)
+		private Transaction FindSession(Uid id)
+		{
+			for (int i = 0; i < _sessionEntries.Count; i++)
+			{
+				if (_sessionEntries[i].Id == id) return _sessionEntries[i];
+			}
+
+			return null;
+		}
+
+		private List<IReward> ResolveRewards(List<Uid> ids)
+		{
+			if (ids == null || ids.Count == 0) return null;
+
+			if (_resolver == null)
+			{
+				Debug.LogWarning("[TransactionService] Pending transaction carries rewards but no IUidResolver was provided — rewards cannot be recovered.");
+				return null;
+			}
+
+			var rewards = new List<IReward>(ids.Count);
+			for (int i = 0; i < ids.Count; i++)
+			{
+				if (_resolver.TryResolve(ids[i], out UID asset) && asset is IReward reward)
 				{
 					rewards.Add(reward);
 				}
 				else
 				{
-					Debug.LogWarning(
-						$"[TransactionService] Reward could not be resolved. GUID: '{rewardRef.Id}', Name: '{rewardRef.Name}'. The asset may have been deleted.");
+					Debug.LogWarning($"[TransactionService] Reward {UidDebugNames.Describe(ids[i])} could not be resolved — the definition was removed without a redirect. Dropped from recovery.");
 				}
 			}
 
 			return rewards.Count > 0 ? rewards : null;
 		}
 
-		private Transaction CreateTransaction(UID type, float amount, string source,
+		private Transaction CreateTransaction(Uid<TransactionType> type, float amount, string source,
 		                                      TransactionStatus status, IReadOnlyList<IReward> rewards)
 		{
-			if (type == null)
-			{
-				Debug.LogError("[TransactionService] Cannot record a transaction with a null type.");
-				return null;
-			}
-
 			var transaction = new Transaction
 			{
-				Id = Guid.NewGuid().ToString(),
-				Type = type,
-				Amount = amount,
-				Source = source,
-				Time = PersistableState.GetFormattedTime(DateTime.UtcNow),
-				Status = status,
+				Id      = Uid.NewRandom(),
+				Type    = type,
+				Amount  = amount,
+				Source  = source,
+				Time    = PersistableState.GetFormattedTime(DateTime.UtcNow),
+				Status  = status,
 				Rewards = rewards
 			};
 
@@ -281,49 +311,48 @@ namespace AK.Services.Transactions
 		{
 			_state.Entries.Add(new PersistedTransactionEntry
 			{
-				Id = transaction.Id,
-				TypeId = transaction.Type.Id,
-				Amount = transaction.Amount,
-				Source = transaction.Source,
-				Time = transaction.Time,
-				Status = (int)transaction.Status,
-				Rewards = ExtractRewardRefs(transaction.Rewards)
+				Id      = transaction.Id,
+				TypeId  = transaction.Type.Value,
+				Amount  = transaction.Amount,
+				Source  = transaction.Source,
+				Time    = transaction.Time,
+				Status  = (int)transaction.Status,
+				Rewards = ExtractRewardIds(transaction.Rewards)
 			});
 
-			TrimEntries(transaction.Type.Id);
+			TrimEntries(transaction.Type.Value);
 
 			if (creditDelta != 0)
 			{
-				AddCount(transaction.Type.Id, creditDelta);
+				AddCount(transaction.Type.Value, creditDelta);
 			}
 
-			_state.Commit();
+			_commit.Commit();
 		}
 
-		private static List<PersistedRewardRef> ExtractRewardRefs(IReadOnlyList<IReward> rewards)
+		private static List<Uid> ExtractRewardIds(IReadOnlyList<IReward> rewards)
 		{
-			var refs = new List<PersistedRewardRef>();
-			if (rewards == null) return refs;
+			var ids = new List<Uid>();
+			if (rewards == null) return ids;
 
-			foreach (var reward in rewards)
+			for (int i = 0; i < rewards.Count; i++)
 			{
-				if (reward is UID uid && !uid.IsEmpty())
+				if (rewards[i] is UID asset && asset.HasIdentity)
 				{
-					refs.Add(new PersistedRewardRef { Id = uid.Id, Name = uid.name });
+					ids.Add(asset.Id);
 				}
 				else
 				{
-					Debug.LogWarning(
-						$"[TransactionService] Reward '{reward}' is not a UID-bearing asset — it will not be persisted for crash recovery.");
+					Debug.LogWarning($"[TransactionService] Reward '{rewards[i]}' has no identity — it will not be persisted for crash recovery.");
 				}
 			}
 
-			return refs;
+			return ids;
 		}
 
 		private void UpdatePersistedStatus(Transaction transaction, int creditDelta)
 		{
-			var entry = _state.Entries.Find(e => e.Id == transaction.Id);
+			PersistedTransactionEntry entry = FindEntry(transaction.Id);
 			if (entry != null)
 			{
 				entry.Status = (int)transaction.Status;
@@ -331,13 +360,13 @@ namespace AK.Services.Transactions
 
 			if (creditDelta != 0)
 			{
-				AddCount(transaction.Type.Id, creditDelta);
+				AddCount(transaction.Type.Value, creditDelta);
 			}
 
-			_state.Commit();
+			_commit.Commit();
 		}
 
-		private void TrimEntries(string typeId)
+		private void TrimEntries(Uid typeId)
 		{
 			int count = 0;
 			for (int i = _state.Entries.Count - 1; i >= 0; i--)
@@ -352,19 +381,67 @@ namespace AK.Services.Transactions
 			}
 		}
 
-		private void AddCount(string typeId, int delta)
+		private void AddCount(Uid typeId, int delta)
 		{
-			_counts[typeId] = _counts.TryGetValue(typeId, out int current) ? current + delta : delta;
+			int next = _counts.TryGetValue(typeId, out int current) ? current + delta : delta;
+			_counts[typeId] = next;
 
-			var entry = _state.Counts.Find(e => e.TypeId == typeId);
-			if (entry != null)
+			for (int i = 0; i < _state.Counts.Count; i++)
 			{
-				entry.Count = _counts[typeId];
+				if (_state.Counts[i].TypeId == typeId)
+				{
+					_state.Counts[i].Count = next;
+					return;
+				}
 			}
-			else
+
+			_state.Counts.Add(new TypeCountEntry { TypeId = typeId, Count = next });
+		}
+
+		private bool ApplyRedirects(UidRedirectTable redirects)
+		{
+			if (redirects == null) return false;
+
+			bool changed = false;
+
+			foreach (PersistedTransactionEntry entry in _state.Entries)
 			{
-				_state.Counts.Add(new TypeCountEntry { TypeId = typeId, Count = _counts[typeId] });
+				if (redirects.TryFollow(entry.TypeId, out Uid newType))
+				{
+					entry.TypeId = newType;
+					changed = true;
+				}
+
+				for (int i = 0; i < entry.Rewards.Count; i++)
+				{
+					if (redirects.TryFollow(entry.Rewards[i], out Uid newReward))
+					{
+						entry.Rewards[i] = newReward;
+						changed = true;
+					}
+				}
 			}
+
+			var merged = new Dictionary<Uid, int>(_state.Counts.Count);
+			foreach (TypeCountEntry entry in _state.Counts)
+			{
+				if (entry.TypeId.IsNone) continue;
+
+				Uid target = redirects.Follow(entry.TypeId);
+				if (target != entry.TypeId) changed = true;
+				merged[target] = merged.TryGetValue(target, out int existing) ? existing + entry.Count : entry.Count;
+			}
+
+			if (changed)
+			{
+				_state.Counts.Clear();
+				foreach (KeyValuePair<Uid, int> kvp in merged)
+				{
+					_state.Counts.Add(new TypeCountEntry { TypeId = kvp.Key, Count = kvp.Value });
+				}
+			}
+
+			return changed;
 		}
 	}
 }

@@ -6,13 +6,12 @@ using UnityEngine;
 namespace AK.Services.Rewards
 {
 	/// <summary>
-	/// Dispatches reward granting to the appropriate IRewardProvider based on RewardTypeUID.
+	/// Dispatches reward granting to the IRewardProvider registered for the reward's type.
 	/// </summary>
 	public class RewardService : IRewardService
 	{
-		private readonly Dictionary<UID, IRewardProvider> _providers = new();
+		private readonly Dictionary<Uid, IRewardProvider> _providers = new();
 
-		/// <inheritdoc />
 		public void RegisterProvider(IRewardProvider provider)
 		{
 			if (provider == null)
@@ -21,53 +20,54 @@ namespace AK.Services.Rewards
 				return;
 			}
 
-			if (provider.RewardTypeUID == null)
+			if (provider.RewardType.IsNone)
 			{
-				Debug.LogWarning($"[RewardService] Cannot register provider with null RewardTypeUID.");
+				Debug.LogWarning("[RewardService] Cannot register a provider whose reward type has no identity.");
 				return;
 			}
 
-			if (_providers.ContainsKey(provider.RewardTypeUID))
+			if (_providers.ContainsKey(provider.RewardType))
 			{
-				Debug.LogWarning($"[RewardService] Replacing existing provider for RewardTypeUID '{provider.RewardTypeUID.name}'.");
+				Debug.LogWarning($"[RewardService] Replacing existing provider for reward type {UidDebugNames.Describe(provider.RewardType)}.");
 			}
 
-			_providers[provider.RewardTypeUID] = provider;
+			_providers[provider.RewardType] = provider;
 		}
 
-		/// <inheritdoc />
 		public bool UnregisterProvider(IRewardProvider provider)
 		{
-			if (provider?.RewardTypeUID == null) return false;
+			if (provider == null || provider.RewardType.IsNone) return false;
 
-			if (_providers.TryGetValue(provider.RewardTypeUID, out var existing) && existing == provider)
+			if (_providers.TryGetValue(provider.RewardType, out IRewardProvider existing) && existing == provider)
 			{
-				return _providers.Remove(provider.RewardTypeUID);
+				return _providers.Remove(provider.RewardType);
 			}
 
 			return false;
 		}
 
-		/// <inheritdoc />
-		public bool TryGrantReward(IReward reward)
+		public Result Grant(IReward reward)
 		{
-			if (reward?.RewardTypeUID == null) return false;
+			if (reward == null) return Result.Fail(ErrorCode.NullArgument);
+			if (reward.RewardType.IsNone) return Result.Fail(ErrorCode.NoIdentity);
 
-			if (_providers.TryGetValue(reward.RewardTypeUID, out var provider))
+			if (!_providers.TryGetValue(reward.RewardType, out IRewardProvider provider))
 			{
-				provider.GrantReward(reward);
-				return true;
+				return Result.Fail(ErrorCode.NoProvider, UidDebugNames.Describe(reward.RewardType));
 			}
 
-			Debug.LogWarning($"[RewardService] No provider registered for RewardTypeUID '{reward.RewardTypeUID.name}'. " +
-			                 $"Register an IRewardProvider for this type before granting rewards.");
-			return false;
+			if (!provider.CanProvide(reward))
+			{
+				return Result.Fail(ErrorCode.RewardDeclined);
+			}
+
+			provider.GrantReward(reward);
+			return Result.Ok;
 		}
 
-		/// <inheritdoc />
-		public IRewardProvider GetProvider(UID rewardTypeUID)
+		public IRewardProvider GetProvider(Uid rewardType)
 		{
-			return rewardTypeUID != null && _providers.TryGetValue(rewardTypeUID, out var provider) ? provider : null;
+			return rewardType.IsSet && _providers.TryGetValue(rewardType, out IRewardProvider provider) ? provider : null;
 		}
 	}
 }

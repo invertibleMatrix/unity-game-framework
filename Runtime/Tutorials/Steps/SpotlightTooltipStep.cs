@@ -44,36 +44,80 @@ namespace AK.Tutorials
 		public override async UniTask PresentAsync(TutorialStepContext context, CancellationToken ct)
 		{
 			await base.PresentAsync(context, ct);
-			if (TargetId == null || !context.Targets.TryGet(TargetId, out var target) || target == null)
+
+			var target = await WaitForTargetAsync(context, TargetId, ct);
+			if (target == null)
 			{
-				Debug.LogWarning($"[SpotlightTooltipStep] Target '{(TargetId != null ? TargetId.name : "null")}' is not registered — skipping presentation of '{name}'.");
-				return;
+				Debug.LogError($"[SpotlightTooltipStep] Target '{(TargetId != null ? TargetId.name : "null")}' not registered within {TargetWaitTimeout:0.#}s — declining presentation of '{name}'.");
+				throw new TutorialStepDeclinedException($"Step '{name}': target '{(TargetId != null ? TargetId.name : "null")}' not registered.");
 			}
 
-			var spotlight = context.UiSystem.Show<UIViewSpotlight>(
-				context: new UIViewSpotlightContext
+			var spotlight = context.UiSystem.Show<UIViewSpotlight>(ShowOptions.With(new UIViewSpotlightContext
 				{
 					Padding = SpotlightPadding,
 					Feather = SpotlightFeather,
 					IntroDuration = SpotlightIntroDuration,
 					IntroEase = SpotlightIntroEase
-				},
-				onInit: s => s.SetTargets(new[] { target }, animateSpotlight: true));
+				}), s => s.SetTargets(new[] { target }, animateSpotlight: true));
 
-			var tooltip = context.UiSystem.Show<UIViewTooltip>(new UIViewTooltipContext(Title, Description, target, Position)
+			var tooltip = context.UiSystem.Show<UIViewTooltip>(ShowOptions.With(new UIViewTooltipContext(Title, Description, target, Position)
 			{
 				Icon = Icon,
 				Offset = Offset,
 				TapAnywhereToClose = false,
 				CloseTime = 0f
-			});
+			}));
 
 			spotlight.AttachFurniture(tooltip.RectTransform);
 
-			await WaitForAdvanceAsync(context, spotlight, ct);
+			// Presentation is live: the spotlight now governs input (dim blocks,
+			// hole passes clicks to the target), so the gate opens and the
+			// spotlighted control is clickable.
+			context.InputGate.Release();
 
-			if (tooltip != null) tooltip.Close();
-			if (spotlight != null) spotlight.Close();
+			try
+			{
+				await WaitForAdvanceAsync(context, spotlight, ct);
+			}
+			finally
+			{
+				// Cancellation (view destroyed mid-step) must not leak the dim —
+				// a stray full-screen raycast view soft-locks the game.
+				if (tooltip != null) tooltip.Close();
+				if (spotlight != null) spotlight.Close();
+			}
+		}
+
+		// UITarget registers in Start(), which Unity runs before the next Update — a
+		// step presenting in the same frame its host view activates (checkpoint
+		// chains hop surfaces like this) must poll briefly instead of failing on
+		// the first lookup. Bounded: the input gate is held until presentation, so
+		// an unregistered target must never hang the game.
+		protected const float TargetWaitTimeout   = 3f;
+		protected const float TargetPollInterval  = 0.1f;
+
+		protected async UniTask<RectTransform> WaitForTargetAsync(TutorialStepContext context, UITargetId id, CancellationToken ct)
+		{
+			if (id == null)
+			{
+				return null;
+			}
+
+			float deadline = Time.realtimeSinceStartup + TargetWaitTimeout;
+			while (true)
+			{
+				if (context.Targets.TryGet(id, out var target) && target != null)
+				{
+					return target;
+				}
+
+				if (Time.realtimeSinceStartup >= deadline)
+				{
+					return null;
+				}
+
+				await UniTask.WaitForSeconds(TargetPollInterval, cancellationToken: ct);
+			}
 		}
 
 		// The advance seam: base completes on dim-tap; game subclasses override to

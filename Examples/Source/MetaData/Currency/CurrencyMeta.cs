@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using AK.Core;
@@ -10,70 +11,62 @@ namespace AK.CoreDomain
 	/// Container for all currency definitions and exchange rates.
 	/// </summary>
 	[CreateAssetMenu(fileName = "CurrencyMeta", menuName = "AK/MetaData/Currency/CurrencyMeta")]
-	public class CurrencyMeta : MetaDataAsset, IMeta
+	public class CurrencyMeta : MetaDataAsset, IMetaWithRegistry
 	{
 		[Header("Currencies")] [SerializeField]
 		private CurrencyRegistry _currencyRegistry;
 
 		[Header("Exchange Rates")] [Tooltip("All currency exchange rates.")]
-		public List<CurrencyExchangeRate> ExchangeRates;
+		public List<CurrencyExchangeRate> ExchangeRates = new();
 
 		public CurrencyRegistry Registry => _currencyRegistry;
 
-		public override void InitializeMeta()
-		{
-			_currencyRegistry.Initialize();
-		}
+		public UidRegistryAssetBase RegistryAsset => _currencyRegistry;
+
+		public override void InitializeMeta() { }
 
 		public IReadOnlyList<CurrencyDefinition> GetCurrencies()
 		{
-			return _currencyRegistry.GetAllObjects();
+			return _currencyRegistry != null ? _currencyRegistry.Objects : Array.Empty<CurrencyDefinition>();
 		}
 
-		/// <summary>
-		/// Gets a currency by its UID.
-		/// </summary>
-		public CurrencyDefinition GetCurrencyByID(UID currencyID)
+		public bool TryGetCurrency(Uid<CurrencyDefinition> id, out CurrencyDefinition currency)
 		{
-			return _currencyRegistry.GetObjectByUID(currencyID);
+			currency = null;
+			return _currencyRegistry != null && _currencyRegistry.TryResolve(id, out currency);
 		}
 
-		/// <summary>
-		/// Gets all currencies of a specific type.
-		/// </summary>
+		public CurrencyDefinition GetCurrency(Uid<CurrencyDefinition> id)
+		{
+			return TryGetCurrency(id, out var currency) ? currency : null;
+		}
+
+		public bool HasCurrency(Uid<CurrencyDefinition> id)
+		{
+			return _currencyRegistry != null && _currencyRegistry.Contains(id.Value);
+		}
+
 		public List<CurrencyDefinition> GetCurrenciesByType(CurrencyType type)
 		{
 			if (type == null) return new List<CurrencyDefinition>();
-			return _currencyRegistry.Registry.Objects.Where(c => c.Type == type).ToList();
+			return GetCurrencies().Where(c => c.Type == type).ToList();
 		}
 
-		/// <summary>
-		/// Gets all currencies that can be purchased.
-		/// </summary>
 		public List<CurrencyDefinition> GetPurchasableCurrencies()
 		{
-			return _currencyRegistry.Registry.Objects.Where(c => c.CanPurchase).ToList();
+			return GetCurrencies().Where(c => c.CanPurchase).ToList();
 		}
 
-		/// <summary>
-		/// Gets all currencies that can be earned.
-		/// </summary>
 		public List<CurrencyDefinition> GetEarnableCurrencies()
 		{
-			return _currencyRegistry.Registry.Objects.Where(c => c.CanEarn).ToList();
+			return GetCurrencies().Where(c => c.CanEarn).ToList();
 		}
 
-		/// <summary>
-		/// Gets all currencies that can be converted.
-		/// </summary>
 		public List<CurrencyDefinition> GetConvertibleCurrencies()
 		{
-			return _currencyRegistry.Registry.Objects.Where(c => c.CanConvert).ToList();
+			return GetCurrencies().Where(c => c.CanConvert).ToList();
 		}
 
-		/// <summary>
-		/// Gets the exchange rate between two currencies.
-		/// </summary>
 		public CurrencyExchangeRate GetExchangeRate(CurrencyDefinition fromCurrency, CurrencyDefinition toCurrency)
 		{
 			if (fromCurrency == null || toCurrency == null)
@@ -87,19 +80,11 @@ namespace AK.CoreDomain
 				e.IsAvailable());
 		}
 
-		/// <summary>
-		/// Gets the exchange rate between two currencies by ID.
-		/// </summary>
-		public CurrencyExchangeRate GetExchangeRate(UID fromCurrencyID, UID toCurrencyID)
+		public CurrencyExchangeRate GetExchangeRate(Uid<CurrencyDefinition> fromCurrencyId, Uid<CurrencyDefinition> toCurrencyId)
 		{
-			var fromCurrency = GetCurrencyByID(fromCurrencyID);
-			var toCurrency = GetCurrencyByID(toCurrencyID);
-			return GetExchangeRate(fromCurrency, toCurrency);
+			return GetExchangeRate(GetCurrency(fromCurrencyId), GetCurrency(toCurrencyId));
 		}
 
-		/// <summary>
-		/// Gets all available exchange rates for a currency.
-		/// </summary>
 		public List<CurrencyExchangeRate> GetExchangeRatesForCurrency(CurrencyDefinition currency)
 		{
 			if (currency == null)
@@ -112,50 +97,26 @@ namespace AK.CoreDomain
 				e.IsAvailable()).ToList();
 		}
 
-		/// <summary>
-		/// Gets all available exchange rates for a currency by ID.
-		/// </summary>
-		public List<CurrencyExchangeRate> GetExchangeRatesForCurrency(UID currencyID)
+		public List<CurrencyExchangeRate> GetExchangeRatesForCurrency(Uid<CurrencyDefinition> currencyId)
 		{
-			var currency = GetCurrencyByID(currencyID);
-			return GetExchangeRatesForCurrency(currency);
+			return GetExchangeRatesForCurrency(GetCurrency(currencyId));
 		}
 
-		/// <summary>
-		/// Gets all available exchange rates.
-		/// </summary>
 		public List<CurrencyExchangeRate> GetAvailableExchangeRates()
 		{
 			return ExchangeRates.Where(e => e.IsAvailable()).ToList();
 		}
 
-		/// <summary>
-		/// Checks if a currency exists by UID.
-		/// </summary>
-		public bool HasCurrency(UID currencyID)
-		{
-			return _currencyRegistry.Registry.Objects.Any(c => c.CurrencyID == currencyID);
-		}
-
-		/// <summary>
-		/// Checks if an exchange rate exists between two currencies.
-		/// </summary>
 		public bool HasExchangeRate(CurrencyDefinition fromCurrency, CurrencyDefinition toCurrency)
 		{
 			return GetExchangeRate(fromCurrency, toCurrency) != null;
 		}
 
-		/// <summary>
-		/// Checks if an exchange rate exists between two currencies by ID.
-		/// </summary>
-		public bool HasExchangeRate(UID fromCurrencyID, UID toCurrencyID)
+		public bool HasExchangeRate(Uid<CurrencyDefinition> fromCurrencyId, Uid<CurrencyDefinition> toCurrencyId)
 		{
-			return GetExchangeRate(fromCurrencyID, toCurrencyID) != null;
+			return GetExchangeRate(fromCurrencyId, toCurrencyId) != null;
 		}
 
-		/// <summary>
-		/// Converts an amount from one currency to another.
-		/// </summary>
 		public long ConvertCurrency(long amount, CurrencyDefinition fromCurrency, CurrencyDefinition toCurrency)
 		{
 			var exchangeRate = GetExchangeRate(fromCurrency, toCurrency);
@@ -167,22 +128,14 @@ namespace AK.CoreDomain
 			return exchangeRate.Convert(amount);
 		}
 
-		/// <summary>
-		/// Converts an amount from one currency to another by ID.
-		/// </summary>
-		public long ConvertCurrency(long amount, UID fromCurrencyID, UID toCurrencyID)
+		public long ConvertCurrency(long amount, Uid<CurrencyDefinition> fromCurrencyId, Uid<CurrencyDefinition> toCurrencyId)
 		{
-			var fromCurrency = GetCurrencyByID(fromCurrencyID);
-			var toCurrency = GetCurrencyByID(toCurrencyID);
-			return ConvertCurrency(amount, fromCurrency, toCurrency);
+			return ConvertCurrency(amount, GetCurrency(fromCurrencyId), GetCurrency(toCurrencyId));
 		}
 
-		/// <summary>
-		/// Gets all currencies that have daily bonuses.
-		/// </summary>
 		public List<CurrencyDefinition> GetCurrenciesWithDailyBonus()
 		{
-			return _currencyRegistry.Registry.Objects.Where(c => c.DailyBonusAmount > 0).ToList();
+			return GetCurrencies().Where(c => c.DailyBonusAmount > 0).ToList();
 		}
 	}
 }

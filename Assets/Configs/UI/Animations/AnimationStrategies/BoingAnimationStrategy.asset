@@ -12,5 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d3316c50b3579c34ebdfd87f60f47a82, type: 3}
   m_Name: BoingAnimationStrategy
   m_EditorClassIdentifier: AKMenuSystem::AKMenuSystem.Animations.BoingAnimationStrategy
-  Duration: 0.3
-  Ease: 9
+  EntryDuration: 1
+  EntryEase: 9
+  ExitDuration: 0.3
+  ExitEase: 8
+  _edgesOffset: {x: 250, y: 250}

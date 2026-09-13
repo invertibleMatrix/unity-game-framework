@@ -14,7 +14,9 @@ namespace AK.Services
 		/// <summary>
 		/// Purchase an item. Handles affordability check, cost deduction, and reward granting.
 		/// IAP items are identified by having a non-empty ProductID and IAPService being available.
+		/// Ok on success; otherwise a code the UI can map to a message — <see cref="ErrorCode.CannotAfford"/>,
+		/// <see cref="ErrorCode.Cancelled"/>, <see cref="ErrorCode.StoreNotInitialized"/>, and the other 6xx store codes.
 		/// </summary>
-		public UniTask<PurchaseStatus> Purchase(IPurchasable item, bool immediateCredit);
+		public UniTask<Result> Purchase(IPurchasable item, bool immediateCredit);
 	}
 }

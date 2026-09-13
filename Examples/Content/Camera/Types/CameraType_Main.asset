@@ -12,5 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d942c74dbea711144a639f1188f4bc0c, type: 3}
   m_Name: CameraType_Main
   m_EditorClassIdentifier: AK.Core::AK.Systems.CameraType
-  _id: 74fe2d73-7e60-49d0-9d8e-694393896fb3
-  _description: UID_CameraType_Main
+  _id:
+    _value: 74fe2d737e6049d09d8e694393896fb3
+  _provenance: 0
+  _provenanceSource: 
+  _notes: 

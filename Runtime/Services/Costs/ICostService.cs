@@ -4,38 +4,28 @@ using AK.CoreDomain;
 namespace AK.Services.Costs
 {
 	/// <summary>
-	/// Dispatches cost checking and deduction to the appropriate ICostProvider based on CostTypeUID.
+	/// Dispatches cost checking and deduction to the ICostProvider registered for the cost's type.
+	/// Outcomes are values the caller switches on: <see cref="ErrorCode.CannotAfford"/>,
+	/// <see cref="ErrorCode.NoProvider"/>, <see cref="ErrorCode.DeductDeclined"/>.
 	/// </summary>
 	public interface ICostService
 	{
-		/// <summary>
-		/// Register a cost provider. Replaces any existing provider for the same CostTypeUID.
-		/// </summary>
+		/// <summary>Register a cost provider. Replaces any existing provider for the same cost type.</summary>
 		void RegisterProvider(ICostProvider provider);
 
-		/// <summary>
-		/// Remove a registered provider.
-		/// </summary>
+		/// <summary>Remove a registered provider.</summary>
 		bool UnregisterProvider(ICostProvider provider);
 
 		/// <summary>
-		/// Check if the player can afford the given cost.
-		/// Dispatches to the registered ICostProvider for the cost's CostTypeUID.
-		/// Returns true if no provider is registered (treat unknown cost types as free)
-		/// or if the provider confirms affordability.
+		/// Ok when the cost can be paid right now. A cost with no type is free.
+		/// <see cref="ErrorCode.NoProvider"/> when nothing is registered for the type.
 		/// </summary>
-		bool CanAfford(ICostInfo cost);
+		Result CanAfford(ICostInfo cost);
 
-		/// <summary>
-		/// Deduct the cost from the player's resources.
-		/// Dispatches to the registered ICostProvider for the cost's CostTypeUID.
-		/// Returns true if deduction succeeded or no provider was registered.
-		/// </summary>
-		bool Deduct(ICostInfo cost);
+		/// <summary>Pays the cost. Ok only when the resource was actually deducted.</summary>
+		Result Deduct(ICostInfo cost);
 
-		/// <summary>
-		/// Get the provider for a given UID, or null if none registered.
-		/// </summary>
-		ICostProvider GetProvider(UID costTypeUID);
+		/// <summary>Get the provider for a cost type, or null if none registered.</summary>
+		ICostProvider GetProvider(Uid costType);
 	}
 }

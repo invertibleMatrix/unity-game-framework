@@ -7,9 +7,9 @@ namespace AK.Utilities
 	/// Defines one poolable prefab and its pool sizing. Registered in an
 	/// <see cref="ObjectPoolRegistry"/> and spawned through <see cref="IObjectPoolService"/>.
 	///
-	/// The UID (inherited) is OPTIONAL: pools are primarily addressed by this definition asset
-	/// directly. Assign a UID only when you need data-driven lookup (e.g. "spawn pool 'EnemyRed'"
-	/// from metadata) or when variants share prefab types.
+	/// Pools are primarily addressed by this definition asset directly. Use its identity
+	/// (<see cref="UID.Id"/>) only for data-driven lookup (e.g. "spawn pool 'EnemyRed'" from
+	/// metadata) or when variants share prefab types.
 	/// </summary>
 	[CreateAssetMenu(fileName = "PoolableObjectDefinition", menuName = "AK/Pooling/Poolable Object Definition")]
 	public class PoolableObjectDefinition : UID

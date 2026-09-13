@@ -11,7 +11,7 @@ namespace AK.CoreDomain
 	/// Similar to IAPMeta but for analytics events.
 	/// </summary>
 	[CreateAssetMenu(fileName = "AnalyticsMeta", menuName = "AK/MetaData/Analytics/AnalyticsMeta")]
-	public class AnalyticsMeta : MetaDataAsset, IMeta
+	public class AnalyticsMeta : MetaDataAsset, IMetaWithRegistry
 	{
 		[SerializeField] private AnalyticsRegistry _registry;
 
@@ -20,24 +20,49 @@ namespace AK.CoreDomain
 		[Header("Analytics Events")] [Tooltip("All analytics event definitions.")]
 		public List<AnalyticsEventDefinition> Events;
 
-		public AnalyticsRegistry Registry => _registry;
-		
-		public override void InitializeMeta()
+		public AnalyticsRegistry    Registry      => _registry;
+		public UidRegistryAssetBase RegistryAsset => _registry;
+
+		public override void InitializeMeta() { }
+
+		/// <summary>Resolves an event definition by identity. False when unknown — never falls back to a name.</summary>
+		public bool TryGetEvent(Uid<AnalyticsEventDefinition> eventId, out AnalyticsEventDefinition definition)
 		{
-			_registry.Initialize();
+			if (_registry != null)
+			{
+				return _registry.TryResolve(eventId, out definition);
+			}
+
+			definition = null;
+			return false;
 		}
 
 		/// <summary>
-		/// Gets an event by its EventID.
+		/// Looks up a definition by its EventID string (or ProviderEventName).
+		/// Used by the fail-open string API so games do not have to pass asset UIDs.
 		/// </summary>
-		public AnalyticsEventDefinition GetEventByID(UID eventID)
+		public AnalyticsEventDefinition GetEventByName(string eventName)
 		{
-			if (string.IsNullOrEmpty(eventID))
+			if (string.IsNullOrEmpty(eventName) || Events == null)
 			{
 				return null;
 			}
 
-			return _registry.GetObjectByUID(eventID);
+			for (int i = 0; i < Events.Count; i++)
+			{
+				AnalyticsEventDefinition def = Events[i];
+				if (def == null)
+				{
+					continue;
+				}
+
+				if (def.EventID == eventName || def.ProviderEventName == eventName || def.DesignEventId == eventName)
+				{
+					return def;
+				}
+			}
+
+			return null;
 		}
 
 		/// <summary>

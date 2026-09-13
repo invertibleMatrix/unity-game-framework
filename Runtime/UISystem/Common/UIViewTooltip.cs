@@ -258,7 +258,7 @@ namespace AK.Systems
 			RectTransform.localPosition.z);
 	}
 
-	// Same generous-coverage trick as UIView.ShowBackgroundOverlay — the button must catch
+	// Same generous-coverage trick as ViewBackgroundOverlay — the button must catch
 	// taps across the whole screen even when the tooltip lives inside a small parent.
 	private void SizeCloseButtonToCanvas()
 	{

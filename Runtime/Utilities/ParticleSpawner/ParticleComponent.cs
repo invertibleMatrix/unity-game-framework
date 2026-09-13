@@ -30,8 +30,8 @@ namespace Utilities.ParticleSpawner
 		// recycle path idempotent — the stop callback and a direct Stop() can race.
 		private bool _active;
 
-		public ParticleSystem RootParticle    => _rootParticle;
-		public UID            ConfigVariantId { get; private set; }
+		public ParticleSystem          RootParticle => _rootParticle;
+		public Uid<ParticleConfigBase> ConfigId     { get; private set; }
 
 		private void Awake()
 		{
@@ -98,7 +98,7 @@ namespace Utilities.ParticleSpawner
 			CancelPlay();
 
 			_configBase = configBase;
-			ConfigVariantId = configBase.VariantId;
+			ConfigId = configBase.IdAs<ParticleConfigBase>();
 			_onStop = onStop;
 			_active = false;
 

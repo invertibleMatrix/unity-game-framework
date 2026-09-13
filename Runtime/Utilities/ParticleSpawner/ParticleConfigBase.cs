@@ -1,4 +1,4 @@
-﻿using AK.Core;
+using AK.Core;
 using UnityEngine;
 
 namespace Utilities.ParticleSpawner
@@ -6,9 +6,6 @@ namespace Utilities.ParticleSpawner
 	[CreateAssetMenu(fileName = "ParticleConfigBase", menuName = "AK/Configs/ParticleConfigBase")]
 	public class ParticleConfigBase : UID
 	{
-		[Tooltip("ID for this specific variant of the particle. Can be shared across different particle types (e.g., 'small', 'large').")]
-		public UID VariantId => this;
-
 		public ParticleComponent Prefab;
 		public int               InitialPoolSize = 1;
 		public float             StartDelayInSeconds;

@@ -8,5 +8,5 @@ namespace AK.CoreDomain.Transactions
 	/// Use Refresh All Objects in the editor to repopulate.
 	/// </summary>
 	[CreateAssetMenu(fileName = "TransactionTypeRegistry", menuName = "AK/Transactions/Transaction Type Registry")]
-	public class TransactionTypeRegistry : TypedUIDRegistryAsset<TransactionType> { }
+	public class TransactionTypeRegistry : UidRegistryAsset<TransactionType> { }
 }

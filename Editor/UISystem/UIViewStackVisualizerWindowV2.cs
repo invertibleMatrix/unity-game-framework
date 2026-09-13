@@ -1,8 +1,5 @@
-using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using AK.Systems;
 using UnityEditor;
 using UnityEngine;
@@ -10,15 +7,15 @@ using UnityEngine;
 namespace AK.Systems.Editor
 {
 	/// <summary>
-	/// Editor window to visualize the current state of the V2 UI system.
-	/// Shows channel stacks, per-parent fragment history, view pool, and validation.
+	/// Live view of the UI system: channel stacks, per-parent fragment history, the view
+	/// pool, and a consistency check across them. Reads the system's own internals — no reflection.
 	/// </summary>
 	public class UIViewStackVisualizerWindowV2 : EditorWindow
 	{
-		[MenuItem("AK/UI/V2 - View Stack Visualizer")]
+		[MenuItem("AK/UI/View Stack Visualizer")]
 		public static void ShowWindow()
 		{
-			var window = GetWindow<UIViewStackVisualizerWindowV2>("V2 View Stack");
+			var window = GetWindow<UIViewStackVisualizerWindowV2>("View Stack");
 			window.Show();
 		}
 
@@ -42,22 +39,20 @@ namespace AK.Systems.Editor
 		private List<ValidationIssue> _validationIssues = new();
 		private int _lastValidationFrame = -1;
 
-		// Cached reflection data (resolved once per repaint, not per draw)
-		private Dictionary<UIChannel, Stack<UIView>> _channelStacks;
-		private Dictionary<UIView, Stack<UIView>> _historyStacks;
-		private Dictionary<UIView, ViewRecordInfo> _viewRegistry;
-		private HashSet<UIView> _closingViews;
-		private object _viewPool;
-		private bool _dataValid;
+		// System state, read once per repaint
+		private IReadOnlyDictionary<UIChannel, ViewStack> _channelStacks;
+		private IReadOnlyDictionary<UIView, ViewStack> _historyStacks;
+		private ViewRegistry _registry;
+		private ViewPool _pool;
 
 		private void OnGUI()
 		{
 			EditorGUILayout.BeginVertical();
 			EditorGUILayout.Space(10);
 
-			EditorGUILayout.LabelField("V2 View Stack Visualizer", EditorStyles.boldLabel);
+			EditorGUILayout.LabelField("View Stack Visualizer", EditorStyles.boldLabel);
 			EditorGUILayout.HelpBox(
-				"Visualizes the V2 UIView system state.\n" +
+				"Live state of the UI system.\n" +
 				"Channel stacks: views with UIViewChannel (screens).\n" +
 				"History stacks: views without UIViewChannel (fragments) per parent.\n" +
 				"Stack order: TOP (newest) to BOTTOM (oldest).",
@@ -110,7 +105,7 @@ namespace AK.Systems.Editor
 			if (viewSystem == null)
 			{
 				EditorGUILayout.HelpBox(
-					"No UIViewSystem found in scene. Make sure it is active.",
+					"No UISystem found in the scene. Make sure it is active.",
 					MessageType.Warning);
 			}
 			else
@@ -138,99 +133,24 @@ namespace AK.Systems.Editor
 		}
 
 		// ================================================================
-		// DATA EXTRACTION VIA REFLECTION
+		// DATA
 		// ================================================================
 
-		private void CacheReflectionData(UISystem uiSystem)
+		private void ReadSystemState(UISystem uiSystem)
 		{
-			_dataValid = false;
-			_channelStacks = null;
-			_historyStacks = null;
-			_viewRegistry = null;
-			_closingViews = null;
-			_viewPool = null;
-
-			try
-			{
-				var sysType = typeof(UISystem);
-
-				// _channelStacks
-				var channelStacksField = sysType.GetField("_channelStacks",
-					BindingFlags.NonPublic | BindingFlags.Instance);
-				_channelStacks = channelStacksField?.GetValue(uiSystem)
-					as Dictionary<UIChannel, Stack<UIView>>;
-
-				// _historyStacks
-				var historyStacksField = sysType.GetField("_historyStacks",
-					BindingFlags.NonPublic | BindingFlags.Instance);
-				_historyStacks = historyStacksField?.GetValue(uiSystem)
-					as Dictionary<UIView, Stack<UIView>>;
-
-				// _viewRegistry -> extract ViewRecord info
-				var viewRegistryField = sysType.GetField("_viewRegistry",
-					BindingFlags.NonPublic | BindingFlags.Instance);
-				var rawRegistry = viewRegistryField?.GetValue(uiSystem)
-					as Dictionary<UIView, object>;
-				if (rawRegistry != null)
-				{
-					_viewRegistry = new Dictionary<UIView, ViewRecordInfo>();
-					foreach (var kvp in rawRegistry)
-					{
-						_viewRegistry[kvp.Key] = ExtractViewRecordInfo(kvp.Value);
-					}
-				}
-
-				// _closingViews
-				var closingViewsField = sysType.GetField("_closingViews",
-					BindingFlags.NonPublic | BindingFlags.Instance);
-				_closingViews = closingViewsField?.GetValue(uiSystem) as HashSet<UIView>;
-
-				// _viewPool
-				var viewPoolField = sysType.GetField("_viewPool",
-					BindingFlags.NonPublic | BindingFlags.Instance);
-				_viewPool = viewPoolField?.GetValue(uiSystem);
-
-				_dataValid = true;
-			}
-			catch (Exception ex)
-			{
-				EditorGUILayout.HelpBox(
-					$"Reflection error: {ex.Message}", MessageType.Error);
-			}
+			_channelStacks = uiSystem.Screens?.Stacks;
+			_historyStacks = uiSystem.Histories?.Stacks;
+			_registry = uiSystem.Registry;
+			_pool = uiSystem.Pool;
 		}
 
-		private static ViewRecordInfo ExtractViewRecordInfo(object record)
+		private bool IsClosing(UIView view) => _registry != null && _registry.IsClosing(view);
+
+		private static List<UIView> TopFirst(ViewStack stack)
 		{
-			var info = new ViewRecordInfo();
-			if (record == null) return info;
-
-			var recordType = record.GetType();
-
-			var instanceProp = recordType.GetProperty("Instance");
-			if (instanceProp != null)
-				info.Instance = instanceProp.GetValue(record) as UIView;
-
-			var parentProp = recordType.GetProperty("Parent");
-			if (parentProp != null)
-				info.Parent = parentProp.GetValue(record) as UIView;
-
-			var isStaticProp = recordType.GetProperty("IsStatic");
-			if (isStaticProp != null)
-				info.IsStatic = (bool)isStaticProp.GetValue(record);
-
-			var isDynamicProp = recordType.GetProperty("IsDynamic");
-			if (isDynamicProp != null)
-				info.IsDynamic = (bool)isDynamicProp.GetValue(record);
-
-			var childrenProp = recordType.GetProperty("Children");
-			if (childrenProp != null)
-			{
-				var childList = childrenProp.GetValue(record) as List<UIView>;
-				if (childList != null)
-					info.Children = childList;
-			}
-
-			return info;
+			var list = new List<UIView>(stack.Count);
+			stack.CopyTopFirst(list);
+			return list;
 		}
 
 		// ================================================================
@@ -239,14 +159,14 @@ namespace AK.Systems.Editor
 
 		private void DrawV2Stack(UISystem uiSystem)
 		{
-			CacheReflectionData(uiSystem);
-			if (!_dataValid) return;
+			ReadSystemState(uiSystem);
+			if (_registry == null) return;
 
 			// Summary
 			int screenCount = _channelStacks?.Values.Sum(s => s?.Count ?? 0) ?? 0;
 			int fragmentCount = _historyStacks?.Values.Sum(s => s?.Count ?? 0) ?? 0;
-			int registeredCount = _viewRegistry?.Count ?? 0;
-			int closingCount = _closingViews?.Count ?? 0;
+			int registeredCount = _registry.Count;
+			int closingCount = _registry.Records.Count(r => r.IsClosing);
 
 			EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 			EditorGUILayout.LabelField("System Summary", EditorStyles.boldLabel);
@@ -301,7 +221,7 @@ namespace AK.Systems.Editor
 			var isCollapsed = EditorGUILayout.Toggle(wasCollapsed, GUILayout.Width(20));
 			_channelCollapsed[channel] = isCollapsed;
 
-			Stack<UIView> stack = null;
+			ViewStack stack = null;
 			int count = 0;
 			if (_channelStacks != null && _channelStacks.TryGetValue(channel, out stack))
 				count = stack?.Count ?? 0;
@@ -323,8 +243,8 @@ namespace AK.Systems.Editor
 
 			if (!isCollapsed)
 			{
-				var screenArray = stack.ToArray();
-				for (int i = 0; i < screenArray.Length; i++)
+				var screenArray = TopFirst(stack);
+				for (int i = 0; i < screenArray.Count; i++)
 				{
 					DrawView(screenArray[i], isTop: i == 0, isScreen: true);
 				}
@@ -381,8 +301,8 @@ namespace AK.Systems.Editor
 
 				if (!isCollapsed)
 				{
-					var fragArray = history.ToArray();
-					for (int i = 0; i < fragArray.Length; i++)
+					var fragArray = TopFirst(history);
+					for (int i = 0; i < fragArray.Count; i++)
 					{
 						DrawView(fragArray[i], isTop: i == 0, isScreen: false);
 					}
@@ -431,7 +351,7 @@ namespace AK.Systems.Editor
 			var nameStyle = new GUIStyle(EditorStyles.miniLabel);
 			if (isTop)
 				nameStyle.normal.textColor = Color.green;
-			else if (_closingViews != null && _closingViews.Contains(view))
+			else if (IsClosing(view))
 				nameStyle.normal.textColor = Color.red;
 
 			string icon = isTop ? "> " : "  ";
@@ -454,7 +374,7 @@ namespace AK.Systems.Editor
 				EditorGUILayout.LabelField("TOP", topStyle, GUILayout.Width(30));
 			}
 
-			if (_closingViews != null && _closingViews.Contains(view))
+			if (IsClosing(view))
 			{
 				var closeStyle = new GUIStyle(EditorStyles.miniLabel);
 				closeStyle.normal.textColor = Color.red;
@@ -505,8 +425,7 @@ namespace AK.Systems.Editor
 						$"BlocksRaycasts: {view.CanvasGroup.blocksRaycasts}", EditorStyles.miniLabel);
 				}
 
-				// ViewRegistry info
-				if (_viewRegistry != null && _viewRegistry.TryGetValue(view, out var record))
+				if (_registry.TryGet(view, out var record))
 				{
 					var tag = record.IsStatic ? "Static" : "Dynamic";
 					var tagStyle = new GUIStyle(EditorStyles.miniLabel);
@@ -538,17 +457,11 @@ namespace AK.Systems.Editor
 
 		private void DrawViewPool()
 		{
-			if (_viewPool == null)
+			if (_pool == null)
 				return;
 
-			var poolsField = _viewPool.GetType().GetField("_pools",
-				BindingFlags.NonPublic | BindingFlags.Instance);
-			if (poolsField == null)
-				return;
-
-			var pools = poolsField.GetValue(_viewPool);
-			var poolsDict = pools as IDictionary;
-			if (poolsDict == null || poolsDict.Count == 0)
+			IReadOnlyDictionary<ViewKey, Stack<UIView>> poolsDict = _pool.Pools;
+			if (poolsDict.Count == 0)
 			{
 				EditorGUILayout.HelpBox("View pool is empty.", MessageType.Info);
 				return;
@@ -572,29 +485,17 @@ namespace AK.Systems.Editor
 			{
 				int totalViews = 0;
 
-				foreach (DictionaryEntry entry in poolsDict)
+				foreach (var (poolKey, viewStack) in poolsDict)
 				{
-					var poolKey = entry.Key;
-					var viewStack = entry.Value as Stack<UIView>;
-
 					if (viewStack == null || viewStack.Count == 0)
 						continue;
 
 					totalViews += viewStack.Count;
 
-					// Extract PoolKey fields (Type + ViewId)
-					var keyType = poolKey.GetType();
-					var typeField = keyType.GetField("Type",
-						BindingFlags.Public | BindingFlags.Instance);
-					var viewIdField = keyType.GetField("ViewId",
-						BindingFlags.Public | BindingFlags.Instance);
-
-					var viewType = typeField?.GetValue(poolKey) as Type;
-					var viewId = viewIdField?.GetValue(poolKey) as string;
+					string viewId = poolKey.ViewId;
 
 					EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-					EditorGUILayout.LabelField(
-						$"{viewType?.Name ?? "Unknown"}", EditorStyles.boldLabel);
+					EditorGUILayout.LabelField(poolKey.Type.Name, EditorStyles.boldLabel);
 
 					if (!string.IsNullOrEmpty(viewId))
 						EditorGUILayout.LabelField($"ViewId: {viewId}", EditorStyles.miniLabel);
@@ -659,9 +560,6 @@ namespace AK.Systems.Editor
 			_lastValidationFrame = Time.frameCount;
 			_validationIssues.Clear();
 
-			if (_viewRegistry == null)
-				return;
-
 			// Gather all views in channel stacks
 			var viewsInChannels = new HashSet<UIView>();
 			if (_channelStacks != null)
@@ -691,21 +589,9 @@ namespace AK.Systems.Editor
 			}
 
 			// Validate view registry
-			foreach (var kvp in _viewRegistry)
+			foreach (var record in _registry.Records)
 			{
-				var view = kvp.Key;
-				var record = kvp.Value;
-
-				if (view == null)
-				{
-					_validationIssues.Add(new ValidationIssue
-					{
-						Severity = IssueSeverity.Error,
-						Category = "Registry",
-						Message = "Null view key in registry"
-					});
-					continue;
-				}
+				var view = record.Instance;
 
 				// Check if destroyed
 				if (!IsAlive(view))
@@ -714,15 +600,14 @@ namespace AK.Systems.Editor
 					{
 						Severity = IssueSeverity.Error,
 						Category = "Destroyed",
-						Message = $"View of type {view.GetType().Name} is destroyed but still in registry",
+						Message = $"View of type {record.Kind.Type.Name} is destroyed but still in registry",
 						View = view
 					});
 					continue;
 				}
 
 				// Check screen consistency: views with a channel should be in a channel stack
-				if (view.HasChannel && !viewsInChannels.Contains(view) &&
-				    _closingViews?.Contains(view) != true)
+				if (view.HasChannel && !viewsInChannels.Contains(view) && !record.IsClosing)
 				{
 					_validationIssues.Add(new ValidationIssue
 					{
@@ -734,8 +619,7 @@ namespace AK.Systems.Editor
 				}
 
 				// Check fragment consistency: views without channel should have a history or be static
-				if (!view.HasChannel && !viewsInHistory.Contains(view) && !record.IsStatic &&
-				    _closingViews?.Contains(view) != true)
+				if (!view.HasChannel && !viewsInHistory.Contains(view) && !record.IsStatic && !record.IsClosing)
 				{
 					_validationIssues.Add(new ValidationIssue
 					{
@@ -757,7 +641,7 @@ namespace AK.Systems.Editor
 						View = view
 					});
 				}
-				else if (record.Parent != null && !_viewRegistry.ContainsKey(record.Parent))
+				else if (record.Parent != null && !_registry.Contains(record.Parent))
 				{
 					_validationIssues.Add(new ValidationIssue
 					{
@@ -769,23 +653,20 @@ namespace AK.Systems.Editor
 				}
 
 				// Check child consistency
-				if (record.Children != null)
+				foreach (var child in record.Children)
 				{
-					foreach (var child in record.Children)
-					{
-						if (child == null) continue;
+					if (child == null) continue;
 
-						if (!_viewRegistry.ContainsKey(child))
+					if (!_registry.Contains(child))
+					{
+						_validationIssues.Add(new ValidationIssue
 						{
-							_validationIssues.Add(new ValidationIssue
-							{
-								Severity = IssueSeverity.Error,
-								Category = "Parent-Child",
-								Message =
-									$"View '{view.name}' has child '{child.name}' that is not in registry",
-								View = view
-							});
-						}
+							Severity = IssueSeverity.Error,
+							Category = "Parent-Child",
+							Message =
+								$"View '{view.name}' has child '{child.name}' that is not in registry",
+							View = view
+						});
 					}
 				}
 			}
@@ -793,7 +674,7 @@ namespace AK.Systems.Editor
 			// Check for views in history but not in registry
 			foreach (var v in viewsInHistory)
 			{
-				if (v != null && !_viewRegistry.ContainsKey(v))
+				if (v != null && !_registry.Contains(v))
 				{
 					_validationIssues.Add(new ValidationIssue
 					{
@@ -808,7 +689,7 @@ namespace AK.Systems.Editor
 			// Check for views in channel stacks but not in registry
 			foreach (var v in viewsInChannels)
 			{
-				if (v != null && !_viewRegistry.ContainsKey(v))
+				if (v != null && !_registry.Contains(v))
 				{
 					_validationIssues.Add(new ValidationIssue
 					{
@@ -958,15 +839,6 @@ namespace AK.Systems.Editor
 			public string Message;
 			public string Context;
 			public UIView View;
-		}
-
-		private class ViewRecordInfo
-		{
-			public UIView Instance;
-			public UIView Parent;
-			public bool IsStatic;
-			public bool IsDynamic;
-			public List<UIView> Children = new();
 		}
 	}
 }

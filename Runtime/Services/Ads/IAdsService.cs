@@ -38,6 +38,11 @@ namespace AK.Services
 		event Action<AdPlacementDefinition, AdErrorType, string> OnAdFailed;
 
 		/// <summary>
+		/// Raised after a show attempt finishes, success or failure, with the full result (including revenue when known).
+		/// </summary>
+		event Action<AdPlacementDefinition, AdResult> OnAdShowFinished;
+
+		/// <summary>
 		/// Event raised when a rewarded ad completes and reward should be granted.
 		/// </summary>
 		event Action<AdPlacementDefinition> OnAdRewardGranted;

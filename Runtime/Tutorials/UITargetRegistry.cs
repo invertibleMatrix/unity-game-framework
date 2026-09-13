@@ -1,15 +1,16 @@
 using System.Collections.Generic;
+using AK.Core;
 using UnityEngine;
 
 namespace AK.Tutorials
 {
 	public class UITargetRegistry : IUITargetRegistry
 	{
-		private readonly Dictionary<string, RectTransform> _targets = new();
+		private readonly Dictionary<Uid, RectTransform> _targets = new();
 
 		public void Register(UITargetId id, RectTransform target)
 		{
-			if (id == null || target == null) return;
+			if (id == null || !id.HasIdentity || target == null) return;
 
 			if (_targets.TryGetValue(id.Id, out var existing) && existing != null && existing != target)
 			{
@@ -21,7 +22,7 @@ namespace AK.Tutorials
 
 		public void Unregister(UITargetId id, RectTransform target)
 		{
-			if (id == null) return;
+			if (id == null || !id.HasIdentity) return;
 
 			if (_targets.TryGetValue(id.Id, out var existing) && existing == target)
 			{
@@ -31,7 +32,7 @@ namespace AK.Tutorials
 
 		public bool TryGet(UITargetId id, out RectTransform target)
 		{
-			if (id != null && _targets.TryGetValue(id.Id, out target) && target != null)
+			if (id != null && id.HasIdentity && _targets.TryGetValue(id.Id, out target) && target != null)
 			{
 				return true;
 			}

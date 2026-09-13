@@ -25,5 +25,8 @@ namespace AK.CoreDomain.Analytics
 		IAP,
 		InterstitialAd,
 		RewardedAd,
+		Ads,
+		Session,
+		Onboarding,
 	}
 }

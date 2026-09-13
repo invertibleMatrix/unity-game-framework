@@ -4,8 +4,8 @@ using UnityEngine;
 namespace AK.Examples.Achievements
 {
     /// <summary>
-    /// Registry for managing achievement definitions using UID-based lookup
+    /// Registry of achievement definitions with identity-keyed lookup.
     /// </summary>
     [CreateAssetMenu(fileName = "AchievementsRegistry", menuName = "AK/Examples/MetaData/Achievements/AchievementsRegistry")]
-    public class AchievementsRegistry : TypedUIDRegistryAsset<AchievementDefinition> { }
+    public class AchievementsRegistry : UidRegistryAsset<AchievementDefinition> { }
 }

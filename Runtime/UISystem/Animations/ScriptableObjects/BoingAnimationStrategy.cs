@@ -19,7 +19,7 @@ namespace AK.Systems.Animations
 			canvasGroup.alpha = 1; // Boing looks better without a fade
 
 			// Use OutElastic for the cheesy boing effect
-			sequence.Append(target.DOAnchorPos(Vector2.zero, EntryDuration).SetEase(Ease.OutElastic));
+			sequence.Append(target.DOAnchorPos(entryPos, EntryDuration).SetEase(Ease.OutElastic));
 
 			return sequence.Play();
 		}

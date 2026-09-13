@@ -20,8 +20,16 @@ namespace AK.Tutorials
 		[Tooltip("Seconds to wait after this step's conditions are met before it presents.")]
 		public float StartDelay;
 
+		[Tooltip("When true (default), the step freezes all UI input at the top of PresentAsync — before StartDelay — and holds until the step's presentation goes live. Set false for steps where an intermediate UI must stay interactive between conditions-met and presentation.")]
+		public bool BlockInputUntilPresented = true;
+
 		public virtual async UniTask PresentAsync(TutorialStepContext context, CancellationToken ct)
 		{
+			if (BlockInputUntilPresented)
+			{
+				context.InputGate.Hold();
+			}
+
 			if (StartDelay > 0f)
 			{
 				await UniTask.WaitForSeconds(StartDelay, cancellationToken: ct);

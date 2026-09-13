@@ -3,6 +3,7 @@
     "rootNamespace": "",
     "references": [
         "AK.Core",
+        "AK.Jobs",
         "AK.CoreDomain",
         "AK.UISystem",
         "Reflex",

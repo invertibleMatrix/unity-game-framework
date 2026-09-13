@@ -55,12 +55,15 @@ namespace AK.Services
 
 		public bool IsPermissionPermanentlyDenied() => false;
 
-		public void ScheduleNotification(UID notificationUID, DateTime fireTime)
-		{
-			Debug.LogWarning("[NullNotificationService] ScheduleNotification called with no notifications backend.");
-		}
+		public void ScheduleNotification(Uid<NotificationDefinition> notificationId, DateTime fireTime) => WarnNoBackend();
 
-		public void ScheduleNotification(UID notificationUID, int delaySeconds)
+		public void ScheduleNotification(Uid<NotificationDefinition> notificationId, int delaySeconds) => WarnNoBackend();
+
+		public void ScheduleNotification(NotificationDefinition definition, DateTime fireTime) => WarnNoBackend();
+
+		public void ScheduleNotification(NotificationDefinition definition, int delaySeconds) => WarnNoBackend();
+
+		private static void WarnNoBackend()
 		{
 			Debug.LogWarning("[NullNotificationService] ScheduleNotification called with no notifications backend.");
 		}

@@ -12,6 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b78053b013d22994fa0ee9b811829eb9, type: 3}
   m_Name: SFX_Success_AudioConfig
   m_EditorClassIdentifier: AK.Utilities::Utilities.AudioSpawner.AudioConfigBase
+  _id:
+    _value: b5e286ab74ad4f4fb5a729f45b461ffa
+  _provenance: 0
+  _provenanceSource: 
+  _notes: 
   Prefab: {fileID: 6845403440602122784, guid: 3533af4e5f38246428ec514dd327a0d9, type: 3}
   VariantId: {fileID: 11400000, guid: 2d17dbf2db78278489d6ee871a694109, type: 2}
   OutputGroup: {fileID: -7933399665858642236, guid: 01252c8adceea61448fbfa3abc2d02b8, type: 2}

@@ -1,39 +1,49 @@
 using System.Collections.Generic;
-using System.Linq;
 using AK.Core;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
-
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
 
 namespace AK.CoreDomain
 {
+	/// <summary>
+	/// Bootstrap-scene asset holding every Meta container and, through them, every domain
+	/// registry. Untyped resolution walks the registered registries — the aggregate is a
+	/// view over the typed registries, so it cannot drift from them.
+	///
+	/// The order of operations at startup matters: bindings register metas, then call
+	/// InitializeRegistries, which initializes each meta (they register their registries
+	/// here) and finally hands the redirect table to every registry it collected.
+	/// </summary>
 	[CreateAssetMenu(fileName = "MetaDataRepository", menuName = "AK/MetaData/MetaDataRepository")]
 	public class MetaDataRepository : ScriptableObject, IMetaDataRepository
 	{
-		[SerializeField] private UIDRegistry _uidRegistry;
+		[SerializeField, Tooltip("Optional. Human-authored identity replacements consulted on every registry miss.")]
+		private UidRedirectTable _redirects;
 
-		// Type-keyed registry for extensible Meta lookup
-		private readonly Dictionary<System.Type, IMeta> _metaRegistry = new();
+		[SerializeField, Tooltip("Registries with no owning Meta (audio, particles, cameras, pools) that should still resolve through this repository.")]
+		private List<UidRegistryAssetBase> _standaloneRegistries = new();
 
-		public UIDRegistry  UIDRegistry  => _uidRegistry;
+		private readonly Dictionary<System.Type, IMeta>  _metas      = new();
+		private readonly List<UidRegistryAssetBase>      _registries = new();
+		private readonly Dictionary<Uid, UID>            _cache      = new();
+
+		public UidRedirectTable Redirects => _redirects;
+
+		// ---------------------------------------------------------------- metas
 
 		public void RegisterMeta<T>(T meta) where T : class, IMeta
 		{
 			if (meta == null) return;
-			_metaRegistry[typeof(T)] = meta;
+			_metas[typeof(T)] = meta;
 		}
 
 		public T GetMeta<T>() where T : class, IMeta
 		{
-			return _metaRegistry.TryGetValue(typeof(T), out var meta) ? meta as T : null;
+			return _metas.TryGetValue(typeof(T), out IMeta meta) ? meta as T : null;
 		}
 
 		public bool TryGetMeta<T>(out T meta) where T : class, IMeta
 		{
-			if (_metaRegistry.TryGetValue(typeof(T), out var m))
+			if (_metas.TryGetValue(typeof(T), out IMeta m))
 			{
 				meta = m as T;
 				return meta != null;
@@ -43,41 +53,86 @@ namespace AK.CoreDomain
 			return false;
 		}
 
+		// ---------------------------------------------------------------- registries
+
+		public void RegisterRegistry(UidRegistryAssetBase registry)
+		{
+			if (registry == null || _registries.Contains(registry)) return;
+
+			_registries.Add(registry);
+			registry.SetRedirects(_redirects);
+			_cache.Clear();
+		}
+
 		public void InitializeRegistries()
 		{
-			if (_uidRegistry == null)
+			_registries.Clear();
+			_cache.Clear();
+
+			foreach (UidRegistryAssetBase standalone in _standaloneRegistries)
 			{
-				Debug.LogError("[MetaDataRepository] No UIDRegistry assigned — registry initialization skipped.", this);
-			}
-			else
-			{
-				_uidRegistry.Initialize();
+				RegisterRegistry(standalone);
 			}
 
-			foreach (var kvp in _metaRegistry)
+			foreach (KeyValuePair<System.Type, IMeta> kvp in _metas)
 			{
 				kvp.Value.InitializeMeta();
+
+				if (kvp.Value is IMetaWithRegistry withRegistry)
+				{
+					RegisterRegistry(withRegistry.RegistryAsset);
+				}
 			}
-		}
 
-		public T GetObjectByUID<T>(UID uid) where T : ScriptableObject
-		{
-			if (uid == null || uid.IsEmpty()) return null;
-
-			if (_uidRegistry == null)
+			foreach (UidRegistryAssetBase registry in _registries)
 			{
-				Debug.LogError("[MetaDataRepository] GetObjectByUID called but no UIDRegistry is assigned.", this);
-				return null;
+				foreach (UID tracked in registry.GetTrackedObjects())
+				{
+					UidDebugNames.Register(tracked);
+				}
+			}
+		}
+
+		// ---------------------------------------------------------------- resolve
+
+		public bool TryResolve(Uid id, out UID asset)
+		{
+			if (id.IsNone)
+			{
+				asset = null;
+				return false;
 			}
 
-			return _uidRegistry.GetUID(uid.Id) as T;
+			if (_cache.TryGetValue(id, out asset))
+			{
+				return asset != null;
+			}
+
+			for (int i = 0; i < _registries.Count; i++)
+			{
+				if (_registries[i].TryResolveUntyped(id, out asset))
+				{
+					_cache[id] = asset;
+					return true;
+				}
+			}
+
+			asset = null;
+			return false;
 		}
 
-#if UNITY_EDITOR
-		public void PerformDataRegistration()
+		public bool TryResolve<T>(Uid id, out T asset) where T : UID
 		{
-			_uidRegistry.RefreshAllUIDs();
+			if (TryResolve(id, out UID untyped) && untyped is T typed)
+			{
+				asset = typed;
+				return true;
+			}
+
+			asset = null;
+			return false;
 		}
-#endif
+
+		public bool TryResolve<T>(Uid<T> id, out T asset) where T : UID => TryResolve(id.Value, out asset);
 	}
 }

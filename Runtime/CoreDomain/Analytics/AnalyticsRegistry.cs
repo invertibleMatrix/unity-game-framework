@@ -9,5 +9,5 @@ namespace AK.CoreDomain
 	/// Similar to IAPRegistry but for analytics events.
 	/// </summary>
 	[CreateAssetMenu(fileName = "AnalyticsRegistry", menuName = "AK/MetaData/Analytics/AnalyticsRegistry")]
-	public class AnalyticsRegistry : TypedUIDRegistryAsset<AnalyticsEventDefinition> { }
+	public class AnalyticsRegistry : UidRegistryAsset<AnalyticsEventDefinition> { }
 }

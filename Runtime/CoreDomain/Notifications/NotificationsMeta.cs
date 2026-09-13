@@ -10,27 +10,23 @@ namespace AK.CoreDomain.Notifications
 	/// Provides centralized access to notification definitions and filtering capabilities.
 	/// </summary>
 	[CreateAssetMenu(fileName = "NotificationsMeta", menuName = "AK/MetaData/Notifications/NotificationsMeta")]
-	public class NotificationsMeta : ScriptableObject, IMeta
+	public class NotificationsMeta : ScriptableObject, IMetaWithRegistry
 	{
 		[Header("Registry")]
 		[SerializeField]
 		private NotificationsRegistry _registry;
-		
-		public NotificationsRegistry Registry => _registry;
+
+		public NotificationsRegistry Registry      => _registry;
+		public UidRegistryAssetBase  RegistryAsset => _registry;
 
 		public NotificationDefinition DailyRewardNotification;
 
-		public void InitializeMeta()
+		public void InitializeMeta() { }
+
+		/// <summary>Resolves a notification definition by identity. Null when unknown.</summary>
+		public NotificationDefinition GetNotification(Uid<NotificationDefinition> id)
 		{
-			if (_registry != null) _registry.Initialize();
-		}
-		
-		/// <summary>
-		/// Gets a notification by its UID.
-		/// </summary>
-		public NotificationDefinition GetNotification(UID uid)
-		{
-			return _registry.GetObjectByUID(uid);
+			return _registry != null && _registry.TryResolve(id, out NotificationDefinition definition) ? definition : null;
 		}
 		
 		/// <summary>

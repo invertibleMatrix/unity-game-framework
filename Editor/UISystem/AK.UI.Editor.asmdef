@@ -1,6 +1,6 @@
 {
     "name": "AK.UISystem.Editor",
-    "rootNamespace": "AK.UISystem.Editor",
+    "rootNamespace": "AK.Systems.Editor",
     "references": [
         "AK.UISystem"
     ],

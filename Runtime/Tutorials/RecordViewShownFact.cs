@@ -16,14 +16,40 @@ namespace AK.Tutorials
 
 		[Inject] private IFactService _facts;
 
+		private IUISystem _views;
+		private bool      _subscribed;
+
+		// Injection runs after Instantiate, so a root that is active in its prefab has already
+		// been through OnEnable when the system arrives; subscribe from whichever comes last.
+		[Inject]
+		private void Construct(IUISystem views)
+		{
+			_views = views;
+			if (isActiveAndEnabled) Subscribe();
+		}
+
 		private void OnEnable()
 		{
-			UIView.Shown += OnViewShown;
+			Subscribe();
 		}
 
 		private void OnDisable()
 		{
-			UIView.Shown -= OnViewShown;
+			Unsubscribe();
+		}
+
+		private void Subscribe()
+		{
+			if (_subscribed || _views == null) return;
+			_subscribed = true;
+			_views.ViewShown += OnViewShown;
+		}
+
+		private void Unsubscribe()
+		{
+			if (!_subscribed) return;
+			_subscribed = false;
+			_views.ViewShown -= OnViewShown;
 		}
 
 		private void OnViewShown(UIView view)

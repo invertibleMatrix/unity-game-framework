@@ -1,8 +1,5 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
-using AK.Systems.UI;
 using Cysharp.Threading.Tasks;
 using Reflex.Attributes;
 using Reflex.Core;
@@ -12,102 +9,32 @@ using UnityEngine.EventSystems;
 namespace AK.Systems
 {
 	/// <summary>
-	/// Unified UI system for V2. Replaces both UISystem and FragmentSystem from V1.
-	///
-	/// Architecture:
-	/// - Views with <see cref="UIViewChannel"/> component are "screens".
-	///   They get their own Canvas, are pushed onto channel-based stacks, and manage sorting.
-	/// - Views without UIChannel are "fragments".
-	///   They live inside a parent view's container and are tracked in per-parent history stacks.
-	/// - A DefaultChannel (sort order 0) always exists as a fallback.
-	/// - All animation is async via UniTask wrapping DOTween. Exceptions propagate through await.
-	/// - Show() is fire-and-forget (no compiler warnings). ShowAsync() awaits animation completion.
+	/// The UI system's scene presence and public face. Views with a <see cref="UIViewChannel"/>
+	/// are screens: each gets its own Canvas and lives on a per-channel stack. Views without
+	/// one are fragments: they live inside a parent view and are tracked in that parent's
+	/// history. The work is done by the show and close pipelines over a shared registry,
+	/// screen stacks, fragment histories and view factory; this class wires them together,
+	/// forwards <see cref="IUISystem"/>, and answers what a view may ask of its system
+	/// through <see cref="IViewHost"/>.
 	/// </summary>
-	public sealed class UISystem : MonoBehaviour, IUISystem, IDisposable
+	public sealed class UISystem : MonoBehaviour, IViewHost, IDisposable
 	{
-		// =================================================================
-		// SERIALIZED
-		// =================================================================
+		[SerializeField] private UIViewRepository _repository;
+		[SerializeField] private Transform        _viewsContainer;
+		[SerializeField] private Camera           _uiCamera;
+		[SerializeField] private bool             _spawnDefaultOverlayView = true;
+		[SerializeField] private bool             _ensureEventSystem       = true;
 
-		[SerializeField]
-		private UIViewRepository _repository;
+		[Inject] private Container _diContainer;
 
-		[SerializeField] private Transform _viewsContainer;
-		[SerializeField] private Camera    _uiCamera;
-		[SerializeField] private bool      _spawnDefaultOverlayView = true;
-		[SerializeField] private bool      _ensureEventSystem = true;
+		private ViewRegistry      _registry;
+		private ScreenStacks      _screens;
+		private FragmentHistories _histories;
+		private ViewFactory       _factory;
+		private ShowPipeline      _show;
+		private ClosePipeline     _close;
 
-		[Inject] internal Container _diContainer;
-
-		// =================================================================
-		// INTERNAL STATE
-		// =================================================================
-
-		/// <summary>
-		/// Channel stacks keyed by UIChannel.SortOrder.
-		/// The default channel (sort order 0) is always present.
-		/// </summary>
-		private readonly Dictionary<UIChannel, Stack<UIView>> _channelStacks = new();
-
-		/// <summary>
-		/// Per-parent history stacks for fragments (views without UIChannel).
-		/// </summary>
-		private readonly Dictionary<UIView, Stack<UIView>> _historyStacks = new();
-
-		/// <summary>
-		/// Per-parent pending show task. Serializes concurrent show operations on the same parent
-		/// to prevent two animations from fighting over the same CanvasGroup/history stack.
-		/// </summary>
-		private readonly Dictionary<UIView, UniTaskCompletionSource> _pendingShowTasks = new();
-
-		/// <summary>
-		/// Central registry of all active views.
-		/// </summary>
-		private readonly Dictionary<UIView, ViewRecord> _viewRegistry = new();
-
-		/// <summary>
-		/// Lookup cache for fast prefab resolution by (Type, ViewId).
-		/// Built lazily on first access and invalidated when repository changes.
-		/// </summary>
-		private Dictionary<(Type, string), UIView> _prefabLookup;
-
-		/// <summary>
-		/// Guards against double-close on screens (like V1's _closingScreens).
-		/// </summary>
-		private readonly HashSet<UIView> _closingViews = new();
-
-		private ViewPool _viewPool;
-
-		// =================================================================
-		// VIEW RECORD
-		// =================================================================
-
-		private class ViewRecord
-		{
-			public UIView       Instance  { get; }
-			public UIView       Parent    { get; }
-			public bool         IsStatic  { get; }
-			public bool         IsDynamic => !IsStatic;
-			public List<UIView> Children  { get; } = new();
-
-			public ViewRecord(UIView instance, UIView parent, bool isStatic)
-			{
-				Instance = instance;
-				Parent = parent;
-				IsStatic = isStatic;
-			}
-
-			public void AddChild(UIView child)
-			{
-				if (child != null && !Children.Contains(child))
-					Children.Add(child);
-			}
-
-			public void RemoveChild(UIView child)
-			{
-				Children.Remove(child);
-			}
-		}
+		public event Action<UIView> ViewShown;
 
 		// =================================================================
 		// LIFECYCLE
@@ -115,10 +42,20 @@ namespace AK.Systems
 
 		private void Awake()
 		{
-			_viewPool = new ViewPool(_viewsContainer);
+			EnsureInitialized();
+		}
 
-			// Ensure the default channel stack always exists
-			_channelStacks[UIChannel.HUD] = new Stack<UIView>();
+		/// <summary>Awake's body, callable from edit-mode tests where Unity does not run Awake. Idempotent.</summary>
+		internal void EnsureInitialized()
+		{
+			if (_registry != null) return;
+
+			_registry = new ViewRegistry();
+			_screens = new ScreenStacks(_uiCamera);
+			_histories = new FragmentHistories();
+			_factory = new ViewFactory(_repository, _viewsContainer, _diContainer);
+			_close = new ClosePipeline(_registry, _screens, _histories, _factory);
+			_show = new ShowPipeline(this, _registry, _screens, _histories, _factory, _close);
 
 			if (_ensureEventSystem && FindFirstObjectByType<EventSystem>() == null)
 			{
@@ -130,1895 +67,154 @@ namespace AK.Systems
 
 			if (_spawnDefaultOverlayView)
 			{
-				Show<UIViewOverlay>();	
+				Show<UIViewOverlay>();
 			}
 		}
 
 		public void Dispose()
 		{
-			_viewPool.Clear();
+			_factory?.Clear();
+		}
+
+		private void OnApplicationQuit()
+		{
+			if (_factory != null) _factory.IsShuttingDown = true;
 		}
 
 		// =================================================================
-		// IUIViewSystem — SHOW (Fire-and-Forget)
+		// IUISystem — SHOW
 		// =================================================================
 
-		public TView Show<TView>(UIContext context = null, UIView parent = null, string viewId = "",
-		                         UIChannel? channelOverride = null, ViewStackBehaviour? stackBehaviour = null, Action<TView> onInit = null,
-		                         bool waitForPrevious = false)
-			where TView : UIView
+		public TView Show<TView>(in ShowOptions options = default, Action<TView> onInit = null) where TView : UIView
 		{
-			return Show(typeof(TView), context, parent, viewId, channelOverride, stackBehaviour, onInit, waitForPrevious);
+			return Show(typeof(TView), options, onInit);
 		}
 
-		public TView Show<TView>(Type type, UIContext context = null, UIView parent = null, string viewId = "",
-		                         UIChannel? channelOverride = null, ViewStackBehaviour? stackBehaviour = null, Action<TView> onInit = null,
-		                         bool waitForPrevious = false)
-			where TView : UIView
+		public TView Show<TView>(Type type, in ShowOptions options = default, Action<TView> onInit = null) where TView : UIView
 		{
-			var (view, animationTask) = PrepareAndRegisterView(type, context, parent, viewId, channelOverride, stackBehaviour, onInit, waitForPrevious: waitForPrevious);
-			if (view != null)
-			{
-				animationTask.Forget();
-			}
-
+			var (view, presentation) = _show.Show(type, options, onInit);
+			if (view != null) presentation.Forget();
 			return view;
 		}
 
-		// =================================================================
-		// IUIViewSystem — SHOW ASYNC
-		// =================================================================
-
-		public async UniTask<TView> ShowAsync<TView>(UIContext context = null, UIView parent = null, string viewId = "",
-		                                             UIChannel? channelOverride = null, ViewStackBehaviour? stackBehaviour = null,
-		                                             Action<TView> onInit = null,
-		                                             bool waitForPrevious = false,
-		                                             CancellationToken ct = default)
+		/// <summary>
+		/// Shows a view and completes when its presentation finishes. Cancellation abandons
+		/// the show: the task always ends canceled, and the view — if cancellation lands
+		/// while it is still presenting — is closed immediately instead of half-finishing.
+		/// </summary>
+		public async UniTask<TView> ShowAsync<TView>(ShowOptions options = default, Action<TView> onInit = null, CancellationToken ct = default)
 			where TView : UIView
 		{
-			return await ShowAsync(typeof(TView), context, parent, viewId, channelOverride, stackBehaviour, onInit, waitForPrevious, ct);
-		}
-
-		public async UniTask<TView> ShowAsync<TView>(Type type, UIContext context = null, UIView parent = null, string viewId = "",
-		                                             UIChannel? channelOverride = null, ViewStackBehaviour? stackBehaviour = null,
-		                                             Action<TView> onInit = null,
-		                                             bool waitForPrevious = false,
-		                                             CancellationToken ct = default)
-			where TView : UIView
-		{
-			var (view, animationTask) = PrepareAndRegisterView(type, context, parent, viewId, channelOverride, stackBehaviour, onInit, waitForPrevious: waitForPrevious);
+			var (view, presentation) = _show.Show(typeof(TView), options, onInit, ct);
 			if (view == null) return null;
 
-			// Await the full animation pipeline — this is the key UniTask advantage.
-			// Exceptions propagate with full async stack traces.
-			await animationTask.AttachExternalCancellation(ct);
+			await presentation.AttachExternalCancellation(ct);
+			ct.ThrowIfCancellationRequested();
 			return view;
 		}
 
-		// =================================================================
-		// IUIViewSystem — CLOSE
-		// =================================================================
+		UniTask<TView> IUISystem.ShowAsync<TView>(in ShowOptions options, Action<TView> onInit, CancellationToken ct)
+			=> ShowAsync(options, onInit, ct);
 
-		public void Close(UIView view, Action onClose = null)
+		public void Show(UIView existing, in ShowOptions options = default)
 		{
-			// Only fire the callback when the close will actually do something - a double-close
-			// or unregistered view early-returns inside CloseInternalAsync and "closed" nothing.
-			bool willClose = view != null && _viewRegistry.ContainsKey(view) && !_closingViews.Contains(view);
-			CloseInternalAsync(view, CloseContext.Normal, false).ContinueWith(() =>
-			{
-				if (willClose) onClose?.Invoke();
-			}).Forget();
+			_show.ShowExistingAsync(existing, options).Forget();
 		}
 
-		public UniTask CloseAsync(UIView view, CancellationToken ct = default)
+		public UniTask ShowAsync(UIView existing, in ShowOptions options = default, CancellationToken ct = default)
 		{
-			return CloseInternalAsync(view, CloseContext.Normal, false, ct);
-		}
-
-		public void CloseImmediate(UIView view, Action onClose = null)
-		{
-			bool willClose = view != null && _viewRegistry.ContainsKey(view) && !_closingViews.Contains(view);
-			CloseInternalAsync(view, CloseContext.Normal, true).ContinueWith(() =>
-			{
-				if (willClose) onClose?.Invoke();
-			}).Forget();
+			return _show.ShowExistingAsync(existing, options, ct);
 		}
 
 		// =================================================================
-		// IUIViewSystem — RAPID SHOW/CLOSE (For tooltips)
+		// IUISystem — CLOSE
 		// =================================================================
 
-		public TView ShowImmediate<TView>(UIContext context = null, UIView parent = null, string viewId = "",
-		                                  UIChannel? channelOverride = null, ViewStackBehaviour? stackBehaviour = null, Action<TView> onInit = null)
-			where TView : UIView
+		public void Close(UIView view, in CloseOptions options = default, Action onClosed = null)
 		{
-			return ShowImmediate(typeof(TView), context, parent, viewId, channelOverride, stackBehaviour, onInit);
+			CloseThenNotifyAsync(view, options.Immediate, onClosed).Forget();
 		}
 
-		public TView ShowImmediate<TView>(Type type, UIContext context = null, UIView parent = null, string viewId = "",
-		                                  UIChannel? channelOverride = null, ViewStackBehaviour? stackBehaviour = null, Action<TView> onInit = null)
-			where TView : UIView
+		public UniTask CloseAsync(UIView view, in CloseOptions options = default, CancellationToken ct = default)
 		{
-			var (view, animTask) = PrepareAndRegisterView(type, context, parent, viewId, channelOverride, stackBehaviour, onInit, immediate: true);
-			if (view != null)
-			{
-				animTask.Forget();
-			}
-
-			return view;
+			return _close.CloseAsync(view, CloseContext.Normal, options.Immediate, ct);
 		}
 
-		public void DisplayToast(string text)
+		/// <summary>The callback fires only when the close does something — a double close or an unregistered view "closed" nothing.</summary>
+		private async UniTask CloseThenNotifyAsync(UIView view, bool immediate, Action onClosed)
 		{
-			Show<UIViewToast>(onInit: toast =>
-			{
-				toast.Init(0,text);
-			});
-		}
-
-		public void DisplayBanner(string text, string variantId = "")
-		{
-			Show<UIViewBanner>(viewId: variantId, onInit: banner =>
-			{
-				banner.Init(text);
-			});
+			bool willClose = view != null && _registry.TryGet(view, out var record) && !record.IsClosing;
+			await _close.CloseAsync(view, CloseContext.Normal, immediate);
+			if (willClose) onClosed?.Invoke();
 		}
 
 		// =================================================================
-		// IUIViewSystem — GO BACK
+		// IUISystem — QUERY
 		// =================================================================
 
-		public void GoBack(UIView parentView)
-		{
-			GoBackInternalAsync(parentView).Forget();
-		}
-
-		public UniTask GoBackAsync(UIView parentView, CancellationToken ct = default)
-		{
-			return GoBackInternalAsync(parentView, ct:ct);
-		}
-
-		// =================================================================
-		// IUIViewSystem — QUERY
-		// =================================================================
-
+		/// <summary>Screens on a channel stack first (top-most within a channel), then any registered instance that is not tearing down.</summary>
 		public TView GetView<TView>(string viewId = "") where TView : UIView
 		{
-			var id = viewId ?? string.Empty;
-			var type = typeof(TView);
+			var key = new ViewKey(typeof(TView), viewId);
 
-			// Check channel stacks first
-			foreach (var stack in _channelStacks.Values)
+			foreach (var stack in _screens.All)
 			{
-				var match = stack.FirstOrDefault(v => v != null && v.GetType() == type && v.ViewId == id);
-				if (match != null) return match as TView;
-			}
-
-			// Then check registry - exclude views currently closing to prevent operating on dying views
-			return _viewRegistry.Values
-			                    .FirstOrDefault(r => r.Instance != null && r.Instance.GetType() == type && r.Instance.ViewId == id && !_closingViews.Contains(r.Instance))?
-			                    .Instance as TView;
-		}
-
-		// =================================================================
-		// STATIC FRAGMENT REGISTRATION (Internal — not on IUIViewSystem)
-		// =================================================================
-
-		internal void RegisterStaticView(UIView view, UIView parent)
-		{
-			var record = new ViewRecord(view, parent, isStatic: true);
-
-			if (parent != null && _viewRegistry.TryGetValue(parent, out var parentRecord))
-			{
-				parentRecord.AddChild(view);
-			}
-
-			if (!_viewRegistry.TryAdd(view, record))
-			{
-				Debug.LogWarning($"Static view '{view.name}' is already registered.", view);
-			}
-		}
-
-		internal void ShowExistingView(UIView view, UIContext context = null,
-		                               ViewStackBehaviour? stackBehaviour = null)
-		{
-			if (view == null || view.gameObject == null)
-			{
-				Debug.LogError("Cannot show view: view or its GameObject is null.");
-				return;
-			}
-
-			if (view.IsTemplate)
-			{
-				Debug.LogWarning($"'{view.name}' is a template — call ShowFragment<{view.GetType().Name}>() to spawn a clone; the template itself never shows.", view);
-				return;
-			}
-
-			if (!_viewRegistry.TryGetValue(view, out var record))
-			{
-				Debug.LogError($"Cannot show view '{view.name}': not registered.", view);
-				return;
-			}
-
-			ShowRegisteredViewAsync(view, record.Parent, context, stackBehaviour).Forget();
-		}
-
-		internal UniTask ShowExistingViewAsync(UIView view, UIContext context = null,
-		                                       ViewStackBehaviour? stackBehaviour = null, CancellationToken ct = default)
-		{
-			if (view == null || view.gameObject == null)
-			{
-				Debug.LogError("Cannot show view: view or its GameObject is null.");
-				return UniTask.CompletedTask;
-			}
-
-			if (view.IsTemplate)
-			{
-				Debug.LogWarning($"'{view.name}' is a template — call ShowFragment<{view.GetType().Name}>() to spawn a clone; the template itself never shows.", view);
-				return UniTask.CompletedTask;
-			}
-
-			if (!_viewRegistry.TryGetValue(view, out var record))
-			{
-				Debug.LogError($"Cannot show view '{view.name}': not registered.", view);
-				return UniTask.CompletedTask;
-			}
-
-			return ShowRegisteredViewAsync(view, record.Parent, context, stackBehaviour, ct: ct);
-		}
-
-		/// <summary>
-		/// Shows a registered fragment without waiting for pending sibling shows, like
-		/// ShowStaticChildrenBatch does for ShowOnStart children. For independent sibling
-		/// pops with no stack behaviour between them — history is pushed synchronously,
-		/// then the animation runs. Returns the show task for awaiters.
-		/// </summary>
-		internal UniTask ShowExistingViewParallel(UIView view, UIContext context = null, CancellationToken ct = default)
-		{
-			if (view == null || view.gameObject == null)
-			{
-				Debug.LogError("Cannot show view: view or its GameObject is null.");
-				return UniTask.CompletedTask;
-			}
-
-			if (view.IsTemplate)
-			{
-				Debug.LogWarning($"'{view.name}' is a template — call ShowFragment<{view.GetType().Name}>() to spawn a clone; the template itself never shows.", view);
-				return UniTask.CompletedTask;
-			}
-
-			if (!_viewRegistry.TryGetValue(view, out var record))
-			{
-				Debug.LogError($"Cannot show view '{view.name}': not registered.", view);
-				return UniTask.CompletedTask;
-			}
-
-			UIView parent = record.Parent;
-			if (parent == null)
-			{
-				return ShowRegisteredViewAsync(view, null, context, null, ct: ct);
-			}
-
-			if (!_historyStacks.TryGetValue(parent, out var history))
-			{
-				history = new Stack<UIView>();
-				_historyStacks[parent] = history;
-			}
-
-			view.PrepareForShowAnimation();
-			view.SetContext(context);
-			RemoveFromStack(view, history);
-			history.Push(view);
-
-			return view.InternalShowAsync(ct);
-		}
-
-		/// <summary>
-		/// Shows multiple static children in parallel. All children are pushed onto the parent's
-		/// history stack synchronously first, then all show animations run simultaneously.
-		/// This avoids the sequential _pendingShowTasks serialization that would cause
-		/// child N to wait for child N-1's animation before starting.
-		/// </summary>
-		internal void ShowStaticChildrenBatch(UIView parent, IReadOnlyList<StaticViewEntry> entries)
-		{
-			if (parent == null || entries == null || entries.Count == 0) return;
-
-			// Ensure the history stack exists
-			if (!_historyStacks.TryGetValue(parent, out var history))
-			{
-				history = new Stack<UIView>();
-				_historyStacks[parent] = history;
-			}
-
-			var tasks = new List<UniTask>();
-
-			foreach (var entry in entries)
-			{
-				if (entry.View == null || !entry.ShowOnStart) continue;
-				if (entry.View.IsTemplate) continue;   // templates are clone sources, never presented
-				if (!_viewRegistry.TryGetValue(entry.View, out _)) continue;
-
-				if (entry.ShowOnStartDelay > 0f)
+				foreach (var view in stack)
 				{
-					// Hide it for the wait so an active fragment doesn't flash before its entrance.
-					entry.View.MoveContentOffScreen();
-					ShowStaticChildDelayedAsync(parent, entry.View, entry.ShowOnStartDelay).Forget();
-					continue;
-				}
-
-				// Prepare and push onto history stack synchronously (no stack behaviour between siblings)
-				entry.View.PrepareForShowAnimation();
-				RemoveFromStack(entry.View, history);
-				history.Push(entry.View);
-
-				// Collect animation tasks — they'll all run in parallel
-				tasks.Add(entry.View.InternalShowAsync());
-			}
-
-			// Fire-and-forget the parallel batch
-			UniTask.WhenAll(tasks).Forget();
-		}
-
-		/// <summary>
-		/// Waits out a ShowOnStart delay, then shows the fragment through the parallel path.
-		/// The token armed by BeginDelayedStart is cancelled by every close/hide/destroy
-		/// path on the view, and the post-delay guards catch a parent that went away or a
-		/// fragment someone else showed during the wait — so a delayed start never pops
-		/// a fragment back open after it was closed.
-		/// </summary>
-		private async UniTask ShowStaticChildDelayedAsync(UIView parent, UIView view, float delay)
-		{
-			CancellationToken ct = view.BeginDelayedStart();
-
-			try
-			{
-				await UniTask.Delay(TimeSpan.FromSeconds(delay), DelayType.DeltaTime, PlayerLoopTiming.Update, ct);
-			}
-			catch (OperationCanceledException)
-			{
-				return; // closed, hidden, or destroyed before the delay elapsed
-			}
-
-			// Re-validate after the wait — state may have changed mid-delay.
-			if (view == null || view.gameObject == null) return;
-			if (parent == null || parent.gameObject == null) return;
-			if (_closingViews.Contains(view) || _closingViews.Contains(parent)) return;
-			if (view.IsVisible) return;   // shown by someone else during the delay
-
-			await ShowExistingViewParallel(view, ct: ct);
-		}
-
-		internal bool IsViewRegistered(UIView view)
-		{
-			return view != null && view.gameObject != null && _viewRegistry.ContainsKey(view);
-		}
-
-		// =================================================================
-		// CORE — Prepare and Register (synchronous instantiation)
-		// =================================================================
-
-		/// <summary>
-		/// Core preparation logic. Instantiates (or reuses) the view, registers it, configures stacking.
-		/// Returns the view and a UniTask representing the full animation pipeline.
-		/// The caller decides whether to fire-and-forget (Show) or await (ShowAsync).
-		/// </summary>
-		private (TView view, UniTask animationTask) PrepareAndRegisterView<TView>(
-			Type type, UIContext context, UIView parent, string viewId,
-			UIChannel? channelOverride = null,
-			ViewStackBehaviour? stackBehaviour = null, Action<TView> onInit = null,
-			bool immediate = false, bool waitForPrevious = false)
-			where TView : UIView
-		{
-			string id = viewId ?? string.Empty;
-
-			// =================================================================
-			//   • Explicit parent → reuse only a static already registered under THAT parent.
-			//   • No parent       → reuse any static for (type, id) and re-route it onto its
-			//                       own registered host parent (its effective parent).
-			//
-			// Only when no static is registered do we fall through to the repository
-			// (instantiate/clone a prefab). Views mid-close are excluded so we never
-			// reuse a view that is currently tearing down.
-			// =================================================================
-			ViewRecord staticRecord = parent != null
-				? _viewRegistry.Values.FirstOrDefault(r =>
-					r.Instance != null &&
-					r.Instance.GetType() == type &&
-					r.Instance.ViewId == id &&
-					r.Parent == parent &&
-					r.IsStatic &&
-					!_closingViews.Contains(r.Instance))
-				: _viewRegistry.Values.FirstOrDefault(r =>
-					r.Instance != null &&
-					r.Instance.GetType() == type &&
-					r.Instance.ViewId == id &&
-					r.IsStatic &&
-					!_closingViews.Contains(r.Instance));
-
-			if (staticRecord != null && staticRecord.Instance is TView staticView)
-			{
-				// Templates never show or get reused themselves — they are clone sources.
-				if (staticView.IsTemplate)
-				{
-					return PrepareCloneFromTemplate(staticView, parent ?? staticRecord.Parent, context,
-					                                stackBehaviour, onInit, immediate, waitForPrevious);
-				}
-
-				UIView effectiveParent = parent ?? staticRecord.Parent;
-				onInit?.Invoke(staticView);
-				return (staticView, waitForPrevious
-					? ShowRegisteredViewAsync(staticView, effectiveParent, context, stackBehaviour, immediate)
-					: ShowExistingViewParallel(staticView, context));
-			}
-
-			// --- Find prefab (repository fallback) ---
-			var prefab = FindPrefab<TView>(type, id);
-			if (prefab == null)
-			{
-				Debug.LogError($"View prefab of type {type.Name} with ID '{id}' not found in UIViewRepository.");
-				return (null, UniTask.CompletedTask);
-			}
-
-			bool isScreen = prefab.GetComponent<UIViewChannel>() != null;
-
-			// --- Resolve parent for fragments ---
-			if (!isScreen && parent == null)
-			{
-				parent = FindBestParentView(channelOverride);
-				if (parent == null)
-				{
-					Debug.LogError($"Cannot show fragment '{type.Name}': no suitable parent found.");
-					return (null, UniTask.CompletedTask);
+					if (view != null && view.GetType() == key.Type && view.ViewId == key.ViewId)
+						return view as TView;
 				}
 			}
 
-			// --- Check for an existing DYNAMIC instance on this parent ---
-			// Static instances are resolved above; this only finds a dynamic instance that
-			// must be closed-and-replaced when multiple instances are not allowed.
-			ViewRecord existingRecord = _viewRegistry.Values.FirstOrDefault(r =>
-				r.Instance.GetType() == type && r.Instance.ViewId == id && r.Parent == parent
-				&& !r.IsStatic
-				&& !_closingViews.Contains(r.Instance));
-
-			// When replacing an existing dynamic instance, the close must be sequenced BEFORE the
-			// new show pipeline: otherwise the old close's resume-of-previous can run after the new
-			// show paused that same view, leaving it visible/interactable on top of the new view.
-			UniTask replaceCloseTask = UniTask.CompletedTask;
-			bool    hasReplaceClose  = false;
-
-			if (existingRecord != null && !prefab.AllowMultipleInstances)
+			for (var record = _registry.FirstOfKind(key); record != null; record = record.NextOfKind)
 			{
-				replaceCloseTask = CloseInternalAsync(existingRecord.Instance, CloseContext.Normal, false);
-				hasReplaceClose  = true;
-			}
-
-			// --- Instantiate or get from pool ---
-			Transform spawnParent = isScreen
-				? _viewsContainer
-				: (parent != null ? parent.FragmentContainer : _viewsContainer);
-
-			TView newView = _viewPool.Get(prefab, spawnParent);
-
-			if (!string.IsNullOrEmpty(id) && string.IsNullOrEmpty(newView.ViewId))
-			{
-				newView.SetViewId(id);
-			}
-
-			// --- Configure ---
-			newView.Inject(_diContainer);
-			newView.InternalInitialize(this, parent);
-			newView._overriddenStackBehaviour = stackBehaviour;
-			newView._overriddenChannel = channelOverride;
-			newView.MoveContentOffScreen();
-
-			// --- onInit callback (replaces V1's onPrepare) ---
-			onInit?.Invoke(newView);
-			newView.SetContext(context);
-
-			// --- Register ---
-			var record = new ViewRecord(newView, parent, isStatic: false);
-			_viewRegistry.Add(newView, record);
-
-			if (parent != null && _viewRegistry.TryGetValue(parent, out var parentRecord))
-			{
-				parentRecord.AddChild(newView);
-			}
-
-			// --- Initialize static children ---
-			newView.InitializeStaticChildren(_diContainer);
-
-			// --- Build the animation pipeline (but don't start it yet) ---
-			UniTask animTask;
-			if (isScreen)
-			{
-				animTask = hasReplaceClose
-					? AwaitReplaceCloseThen(replaceCloseTask, () => RunScreenShowAsync(newView, channelOverride, immediate))
-					: RunScreenShowAsync(newView, channelOverride, immediate);
-			}
-			else
-			{
-				animTask = hasReplaceClose
-					? AwaitReplaceCloseThen(replaceCloseTask, () => RunFragmentShowAsync(newView, parent, immediate, waitForPrevious: waitForPrevious))
-					: RunFragmentShowAsync(newView, parent, immediate, waitForPrevious: waitForPrevious);
-			}
-
-			return (newView, animTask);
-		}
-
-		/// <summary>
-		/// Clones a template static fragment and prepares the clone exactly like a
-		/// prefab-spawned dynamic instance: injected, registered under the same parent,
-		/// shown through the standard fragment pipeline. Clones register as dynamic, so
-		/// every ShowFragment call re-finds the template — unlimited clones, and the
-		/// template itself never presents.
-		/// </summary>
-		private (TView view, UniTask animationTask) PrepareCloneFromTemplate<TView>(
-			TView template, UIView parent, UIContext context, ViewStackBehaviour? stackBehaviour,
-			Action<TView> onInit, bool immediate, bool waitForPrevious)
-			where TView : UIView
-		{
-			if (parent == null)
-			{
-				Debug.LogError($"Cannot clone template '{template.name}': no parent resolved.");
-				return (null, UniTask.CompletedTask);
-			}
-
-			if (template.ReturnToPoolOnClose)
-			{
-				Debug.LogWarning($"Template '{template.name}' has ReturnToPoolOnClose — pooling is prefab-based, so clones destroy on close instead.", template);
-			}
-
-			// The template sits in its own layout slot — clones spawn right there.
-			// Starts inactive like the template; the show pipeline activates it.
-			var cloneGo = Instantiate(template.gameObject, template.transform.parent);
-			cloneGo.name = template.name;
-			var clone = cloneGo.GetComponent<TView>();
-
-			clone._suppressPooling = true;
-			clone.Inject(_diContainer);
-			clone.InternalInitialize(this, parent);
-			clone._overriddenStackBehaviour = stackBehaviour;
-			clone.MoveContentOffScreen();
-
-			onInit?.Invoke(clone);
-			clone.SetContext(context);
-
-			var record = new ViewRecord(clone, parent, isStatic: false);
-			_viewRegistry.Add(clone, record);
-
-			if (_viewRegistry.TryGetValue(parent, out var parentRecord))
-			{
-				parentRecord.AddChild(clone);
-			}
-
-			clone.InitializeStaticChildren(_diContainer);
-
-			return (clone, RunFragmentShowAsync(clone, parent, immediate, waitForPrevious: waitForPrevious));
-		}
-
-		/// <summary>
-		/// Awaits a replace-close before starting the show pipeline (see PrepareAndRegisterView).
-		/// Close failures are logged but never block the new show.
-		/// </summary>
-		private async UniTask AwaitReplaceCloseThen(UniTask closeTask, Func<UniTask> showPipeline)
-		{
-			try
-			{
-				await closeTask;
-			}
-			catch (Exception e)
-			{
-				Debug.LogException(e);
-			}
-
-			await showPipeline();
-		}
-
-		// =================================================================
-		// SHOW ANIMATION PIPELINES
-		// =================================================================
-
-		/// <summary>
-		/// Full show pipeline for a screen: configure Canvas, push to stack,
-		/// handle pause of previous screen, play show animation.
-		/// </summary>
-		private async UniTask RunScreenShowAsync(UIView newView, UIChannel? overrideChannel = null, bool immediate = false, CancellationToken ct = default)
-		{
-			UIViewChannel channel = newView.Channel;
-			UIChannel sortOrder = channel.SortOrder;
-
-			if (overrideChannel != null)
-			{
-				sortOrder = overrideChannel.Value;
-			}
-
-			if (!_channelStacks.ContainsKey(sortOrder))
-			{
-				_channelStacks[sortOrder] = new Stack<UIView>();
-			}
-
-			var stack = _channelStacks[sortOrder];
-			stack.Push(newView);
-
-			channel.Initialize(_uiCamera, stack.Count);
-
-			UIView previousView = stack.Count > 1 ? stack.Skip(1).First() : null;
-
-			if (previousView != null)
-			{
-				bool parallel = !immediate &&
-				                previousView.PlayInParallelWithPrevious;
-
-				if (parallel)
-				{
-					await UniTask.WhenAll(
-						HandlePauseAsync(newView, previousView, ct),
-						newView.InternalShowAsync(ct, immediate)
-					);
-				}
-				else
-				{
-					if (!immediate)
-						await HandlePauseAsync(newView, previousView, ct);
-					else
-						PausePreviousScreenImmediate(newView, previousView);
-
-					await newView.InternalShowAsync(ct, immediate);
-				}
-			}
-			else
-			{
-				await newView.InternalShowAsync(ct, immediate);
-			}
-		}
-
-		private void PausePreviousScreenImmediate(UIView newView, UIView previousView)
-		{
-			switch (newView.StackBehaviour)
-			{
-				case ViewStackBehaviour.PauseAndHideBelow:
-				case ViewStackBehaviour.HideBelow:
-					previousView.OnPause();
-					PauseFragments(previousView);
-					previousView.MoveContentOffScreen();
-					previousView.SetInteractable(false);
-					break;
-
-				case ViewStackBehaviour.PauseOnlyBelow:
-					previousView.OnPause();
-					PauseFragments(previousView);
-					previousView.SetInteractable(false);
-					break;
-
-				case ViewStackBehaviour.CloseBelow:
-					CloseInternalAsync(previousView, CloseContext.Normal, false).Forget();
-					break;
-
-				case ViewStackBehaviour.DoNothing:
-				default:
-					break;
-			}
-		}
-
-		/// <summary>
-		/// Full show pipeline for a fragment: manage parent's history stack,
-		/// handle previous fragment's stack behaviour, play show animation.
-		/// Serialized per-parent to prevent concurrent animation conflicts.
-		/// </summary>
-		private async UniTask RunFragmentShowAsync(UIView newView, UIView parent, bool immediate = false, CancellationToken ct = default,
-		                                           bool waitForPrevious = true)
-		{
-			if (!waitForPrevious)
-			{
-				// Independent sibling: push history synchronously and animate immediately,
-				// skipping the per-parent gate and stack-behaviour negotiation.
-				if (!_historyStacks.TryGetValue(parent, out var bypassHistory))
-				{
-					bypassHistory = new Stack<UIView>();
-					_historyStacks[parent] = bypassHistory;
-				}
-
-				newView.PrepareForShowAnimation();
-				RemoveFromStack(newView, bypassHistory);
-				bypassHistory.Push(newView);
-
-				await newView.InternalShowAsync(ct, immediate);
-				return;
-			}
-
-			// Wait for any pending show on this parent to complete first.
-			// This serializes rapid Show calls (e.g., double-tap) so they don't fight.
-			if (_pendingShowTasks.TryGetValue(parent, out var pending))
-			{
-				try
-				{
-					await pending.Task;
-				}
-				catch
-				{
-					/* swallow — we only care about sequencing */
-				}
-			}
-
-			var completionSource = new UniTaskCompletionSource();
-			_pendingShowTasks[parent] = completionSource;
-
-			try
-			{
-				await RunFragmentShowInternalAsync(newView, parent, immediate, ct);
-				completionSource.TrySetResult();
-			}
-			catch (Exception ex)
-			{
-				completionSource.TrySetException(ex);
-				throw;
-			}
-			finally
-			{
-				// Clean up — only remove if it's still our completion source (prevents race with concurrent shows)
-				if (_pendingShowTasks.TryGetValue(parent, out var existing) && ReferenceEquals(existing, completionSource))
-					_pendingShowTasks.Remove(parent);
-			}
-		}
-
-		private async UniTask RunFragmentShowInternalAsync(UIView newView, UIView parent, bool immediate, CancellationToken ct)
-		{
-			if (!_historyStacks.TryGetValue(parent, out var history))
-			{
-				history = new Stack<UIView>();
-				_historyStacks[parent] = history;
-			}
-
-			// Capture previous fragment before pushing
-			UIView previousFragment = null;
-			if (history.Count > 0)
-			{
-				var top = history.Peek();
-				if (top != newView) previousFragment = top;
-			}
-
-			// Remove if already in history (bring to top)
-			RemoveFromStack(newView, history);
-			history.Push(newView);
-
-			newView.PrepareForShowAnimation();
-
-			if (previousFragment == null)
-			{
-				await newView.InternalShowAsync(ct, immediate);
-				return;
-			}
-
-			if (immediate)
-			{
-				PausePreviousFragmentImmediate(newView, previousFragment);
-				await newView.InternalShowAsync(ct, immediate);
-				return;
-			}
-
-			await HandleFragmentStackBehaviourAsync(newView, previousFragment, ct);
-		}
-
-		private void PausePreviousFragmentImmediate(UIView newView, UIView previousFragment)
-		{
-			switch (newView.StackBehaviour)
-			{
-				case ViewStackBehaviour.HideBelow:
-				case ViewStackBehaviour.PauseAndHideBelow:
-					previousFragment.OnPause();
-					previousFragment.SetInteractable(false);
-					previousFragment.MoveContentOffScreen();
-					break;
-
-				case ViewStackBehaviour.PauseOnlyBelow:
-					previousFragment.OnPause();
-					previousFragment.SetInteractable(false);
-					break;
-
-				case ViewStackBehaviour.CloseBelow:
-					CloseInternalAsync(previousFragment, CloseContext.Normal, false).Forget();
-					break;
-
-				case ViewStackBehaviour.DoNothing:
-				default:
-					break;
-			}
-		}
-
-		/// <summary>
-		/// Shows a registered view (static or existing) within a parent's history stack.
-		/// Serialized per-parent to prevent concurrent animation conflicts.
-		/// </summary>
-		private async UniTask ShowRegisteredViewAsync(UIView view, UIView parent, UIContext context,
-		                                              ViewStackBehaviour? stackBehaviour, bool immediate = false, CancellationToken ct = default)
-		{
-			if (parent != null)
-			{
-				// Wait for any pending show on this parent to complete first.
-				if (_pendingShowTasks.TryGetValue(parent, out var pending))
-				{
-					try
-					{
-						await pending.Task;
-					}
-					catch
-					{
-						/* swallow — we only care about sequencing */
-					}
-				}
-
-				UniTaskCompletionSource completionSource = new();
-				_pendingShowTasks[parent] = completionSource;
-
-				try
-				{
-					await ShowRegisteredViewInternalAsync(view, parent, context, stackBehaviour, immediate, ct);
-					completionSource.TrySetResult();
-				}
-				catch (Exception ex)
-				{
-					completionSource.TrySetException(ex);
-					throw;
-				}
-				finally
-				{
-					// Clean up — only remove if it's still our completion source (prevents race with concurrent shows)
-					if (_pendingShowTasks.TryGetValue(parent, out var existing) && ReferenceEquals(existing, completionSource))
-						_pendingShowTasks.Remove(parent);
-				}
-
-				return;
-			}
-
-			await ShowRegisteredViewInternalAsync(view, parent, context, stackBehaviour, immediate, ct);
-		}
-
-		private async UniTask ShowRegisteredViewInternalAsync(UIView view, UIView parent, UIContext context,
-		                                                      ViewStackBehaviour? stackBehaviour, bool immediate, CancellationToken ct)
-		{
-			view._overriddenStackBehaviour = stackBehaviour;
-			view.PrepareForShowAnimation();
-			view.SetContext(context);
-
-			if (parent == null)
-			{
-				await view.InternalShowAsync(ct, immediate);
-				return;
-			}
-
-			if (!_historyStacks.TryGetValue(parent, out var history))
-			{
-				history = new Stack<UIView>();
-				_historyStacks[parent] = history;
-			}
-
-			UIView previousView = null;
-			if (history.Count > 0)
-			{
-				var top = history.Peek();
-				if (top != view) previousView = top;
-			}
-
-			RemoveFromStack(view, history);
-			history.Push(view);
-
-			if (previousView != null)
-			{
-				if (immediate)
-				{
-					PausePreviousFragmentImmediate(view, previousView);
-					await view.InternalShowAsync(ct, immediate);
-				}
-				else
-				{
-					await HandleFragmentStackBehaviourAsync(view, previousView, ct);
-				}
-			}
-			else
-			{
-				await view.InternalShowAsync(ct, immediate);
-			}
-		}
-
-		// =================================================================
-		// CORE — Close Internal
-		// =================================================================
-
-		private async UniTask CloseInternalAsync(UIView view, CloseContext context, bool immediate = false, CancellationToken ct = default)
-		{
-			if (view == null || view.gameObject == null) return;
-
-			// Guard against double-close
-			if (_closingViews.Contains(view)) return;
-
-			if (!_viewRegistry.TryGetValue(view, out var record))
-			{
-				// Not registered — could be already closed via parent
-				Debug.LogWarning($"Cannot close view '{view.name}': not registered (may have been closed via parent).");
-				return;
-			}
-
-			if (view.HasChannel)
-			{
-				await CloseScreenAsync(view, record, context, immediate, ct);
-			}
-			else
-			{
-				await CloseFragmentAsync(view, record, context, immediate, ct);
-			}
-		}
-
-		private async UniTask CloseScreenAsync(UIView view, ViewRecord record, CloseContext context,
-		                                       bool immediate, CancellationToken ct)
-		{
-			UIChannel sortOrder = view.Channel.SortOrder;
-
-			if (!_channelStacks.TryGetValue(sortOrder, out var stack))
-			{
-				await DestroyViewAsync(view, record, context, immediate, ct);
-				return;
-			}
-
-			// CASE 1: Not at the top — remove from stack, destroy immediately
-			if (stack.Count == 0 || stack.Peek() != view)
-			{
-				if (stack.Contains(view))
-				{
-					RemoveFromStack(view, stack);
-					RecomputeChannelSorting(stack);
-				}
-
-				await DestroyViewAsync(view, record, context, true, ct);
-				return;
-			}
-
-			// CASE 2: At the top — play close animation, then resume previous
-			stack.Pop();
-			RecomputeChannelSorting(stack);
-			_closingViews.Add(view);
-
-			UIView previousView = stack.Count > 0 ? stack.Peek() : null;
-
-			try
-			{
-				bool parallel = !immediate &&
-				                previousView != null &&
-				                previousView.PlayInParallelWithPrevious;
-
-				if (parallel)
-				{
-					// Run close and resume in parallel
-					await UniTask.WhenAll(
-						HideAndDestroyAsync(view, record, context, immediate, ct),
-						HandleResumeAsync(view, previousView, immediate, ct)
-					);
-				}
-				else
-				{
-					// Sequential: close first, then resume
-					await HideAndDestroyAsync(view, record, context, immediate, ct);
-					if (previousView != null)
-					{
-						await HandleResumeAsync(view, previousView, immediate, ct);
-					}
-				}
-			}
-			catch (Exception ex) when (ex is not OperationCanceledException)
-			{
-				Debug.LogError($"Error closing screen '{view.name}': {ex.Message}\n{ex.StackTrace}");
-			}
-			finally
-			{
-				_closingViews.Remove(view);
-			}
-		}
-
-		private async UniTask CloseFragmentAsync(UIView view, ViewRecord record, CloseContext context,
-		                                         bool immediate, CancellationToken ct)
-		{
-			_closingViews.Add(view);
-
-			try
-			{
-				// Find the parent's history stack
-				UIView parent = record.Parent;
-				if (parent != null && _historyStacks.TryGetValue(parent, out var history))
-				{
-					// CASE 1: If it's the top of the stack, use GoBack logic (handles resume naturally)
-					if (history.Count > 0 && history.Peek() == view && context == CloseContext.Normal)
-					{
-						await GoBackInternalAsync(parent, immediate, ct);
-						return;
-					}
-
-					// CASE 2: Mid-stack removal.
-					// Before removing, find the fragment directly below the one being closed.
-					// We need this to determine if it should be resumed after removal.
-					UIView fragmentBelow = FindBelowInStack(view, history);
-
-					RemoveFromStack(view, history);
-
-					await HideAndDestroyAsync(view, record, context, immediate, ct);
-
-					// Check if the closed fragment was hiding/blocking the one below it.
-					// If so, and nothing else in the remaining stack is still covering that fragment,
-					// we need to resume it.
-					//
-					// Example scenario:
-					//   Stack (bottom→top): StartGame → Shop(HideBelow) → Toast(DoNothing)
-					//   If Shop is closed while Toast is on top, StartGame was hidden by Shop.
-					//   Toast has DoNothing so it doesn't cover StartGame.
-					//   → StartGame must be resumed (shown back).
-					//
-					// Counter-example:
-					//   Stack: A → B(HideBelow) → C(HideBelow) → Toast
-					//   If B is closed, A was hidden by B, but C also hides below.
-					//   → A should stay hidden because C still covers it.
-					if (fragmentBelow != null && _viewRegistry.ContainsKey(fragmentBelow))
-					{
-						bool wasHiddenOrBlocked = view.StackBehaviour is ViewStackBehaviour.HideBelow
-							or ViewStackBehaviour.PauseAndHideBelow
-							or ViewStackBehaviour.PauseOnlyBelow;
-
-						if (wasHiddenOrBlocked && !IsViewCoveredByAnythingAbove(fragmentBelow, history))
-						{
-							await ResumeFragmentFromMidStackAsync(fragmentBelow, view.StackBehaviour, immediate, ct);
-						}
-					}
-
-					return;
-				}
-
-				// CASE 3: No parent or not in history — just destroy
-				await HideAndDestroyAsync(view, record, context, immediate, ct);
-			}
-			finally
-			{
-				_closingViews.Remove(view);
-			}
-		}
-
-		// =================================================================
-		// CORE — Go Back
-		// =================================================================
-
-		private async UniTask GoBackInternalAsync(UIView parentView, bool immediate = false, CancellationToken ct = default)
-		{
-			if (parentView == null || parentView.gameObject == null) return;
-			if (!_historyStacks.TryGetValue(parentView, out var history) || history.Count == 0)
-				return;
-
-			// Peek before popping — validate the view is still registered.
-			// If it's not in the registry, it was already cleaned up (e.g., via parent destruction),
-			// so we must not pop it blindly (that would corrupt the stack and skip resume of the previous view).
-			var currentView = history.Peek();
-
-			if (!_viewRegistry.TryGetValue(currentView, out var record))
-			{
-				// The top view is no longer registered — remove it from history and bail out.
-				history.Pop();
-				return;
-			}
-
-			// Now safe to pop — the view is valid and we have its record.
-			history.Pop();
-			UIView previousView = history.Count > 0 ? history.Peek() : null;
-
-			bool parallel = !immediate &&
-			                previousView != null &&
-			                previousView.PlayInParallelWithPrevious;
-
-			try
-			{
-				if (parallel && previousView != null)
-				{
-					await UniTask.WhenAll(
-						HideAndDestroyAsync(currentView, record, CloseContext.Normal, immediate, ct),
-						ResumeFragmentAsync(currentView, previousView, immediate, ct)
-					);
-				}
-				else
-				{
-					await HideAndDestroyAsync(currentView, record, CloseContext.Normal, immediate, ct);
-					if (previousView != null)
-					{
-						await ResumeFragmentAsync(currentView, previousView, immediate, ct);
-					}
-				}
-			}
-			catch (Exception ex) when (ex is not OperationCanceledException)
-			{
-				Debug.LogError($"Error during GoBack: {ex.Message}\n{ex.StackTrace}");
-			}
-		}
-
-		// =================================================================
-		// PAUSE / RESUME — Screens
-		// =================================================================
-
-		private async UniTask HandlePauseAsync(UIView newView, UIView previousView, CancellationToken ct = default)
-		{
-			try
-			{
-				switch (newView.StackBehaviour)
-				{
-					case ViewStackBehaviour.PauseAndHideBelow:
-						previousView.OnPause();
-						PauseFragments(previousView);
-						await previousView.InternalPauseHideAsync(false, ct);
-						previousView.SetInteractable(false);
-						break;
-
-					case ViewStackBehaviour.PauseOnlyBelow:
-						previousView.OnPause();
-						PauseFragments(previousView);
-						previousView.SetInteractable(false);
-						break;
-
-					case ViewStackBehaviour.HideBelow:
-						previousView.OnPause();
-						PauseFragments(previousView);
-						await previousView.InternalPauseHideAsync(false, ct);
-						previousView.SetInteractable(false);
-						break;
-
-					case ViewStackBehaviour.CloseBelow:
-						await CloseInternalAsync(previousView, CloseContext.Normal, true, ct);
-						break;
-
-					case ViewStackBehaviour.DoNothing:
-					default:
-						break;
-				}
-			}
-			catch (Exception ex) when (ex is not OperationCanceledException)
-			{
-				Debug.LogError($"Error during pause: {ex.Message}\n{ex.StackTrace}");
-			}
-		}
-
-		private async UniTask HandleResumeAsync(UIView closedView, UIView previousView, bool immediate, CancellationToken ct = default)
-		{
-			try
-			{
-				switch (closedView.StackBehaviour)
-				{
-					case ViewStackBehaviour.PauseAndHideBelow:
-						await previousView.InternalResumeShowAsync(ct, immediate);
-						previousView.SetInteractable(true);
-						ResumeFragments(previousView);
-						previousView.OnResume();
-						break;
-
-					case ViewStackBehaviour.PauseOnlyBelow:
-						previousView.SetInteractable(true);
-						ResumeFragments(previousView);
-						previousView.OnResume();
-						break;
-
-					case ViewStackBehaviour.HideBelow:
-						// HideBelow hid the view and called OnPause, so we need to show it back
-						// and resume children that were implicitly hidden along with the parent.
-						await previousView.InternalResumeShowAsync(ct, immediate);
-						previousView.SetInteractable(true);
-						ResumeFragments(previousView);
-						previousView.OnResume();
-						break;
-
-					case ViewStackBehaviour.DoNothing:
-					default:
-						break;
-				}
-			}
-			catch (Exception ex) when (ex is not OperationCanceledException)
-			{
-				Debug.LogError($"Error during resume: {ex.Message}\n{ex.StackTrace}");
-			}
-		}
-
-		// =================================================================
-		// PAUSE / RESUME — Fragments
-		// =================================================================
-
-		private async UniTask HandleFragmentStackBehaviourAsync(UIView newView, UIView previousFragment, CancellationToken ct = default)
-		{
-			try
-			{
-				switch (newView.StackBehaviour)
-				{
-					case ViewStackBehaviour.HideBelow:
-					case ViewStackBehaviour.PauseAndHideBelow:
-						previousFragment.OnPause();
-						previousFragment.SetInteractable(false);
-						bool parallel = previousFragment.PlayInParallelWithPrevious;
-						if (parallel)
-						{
-							await UniTask.WhenAll(
-								previousFragment.InternalPauseHideAsync(false, ct),
-								newView.InternalShowAsync(ct)
-							);
-						}
-						else
-						{
-							await previousFragment.InternalPauseHideAsync(false, ct);
-							await newView.InternalShowAsync(ct);
-						}
-
-						break;
-
-					case ViewStackBehaviour.PauseOnlyBelow:
-						previousFragment.OnPause();
-						previousFragment.SetInteractable(false);
-						await newView.InternalShowAsync(ct);
-						break;
-
-					case ViewStackBehaviour.CloseBelow:
-						if (previousFragment.PlayInParallelWithPrevious)
-						{
-							CloseInternalAsync(previousFragment, CloseContext.Normal, true, ct).Forget();
-							await newView.InternalShowAsync(ct);
-						}
-						else
-						{
-							await CloseInternalAsync(previousFragment, CloseContext.Normal, true, ct);
-							await newView.InternalShowAsync(ct);
-						}
-
-						break;
-
-					case ViewStackBehaviour.DoNothing:
-					default:
-						await newView.InternalShowAsync(ct);
-						break;
-				}
-			}
-			catch (Exception ex) when (ex is not OperationCanceledException)
-			{
-				Debug.LogError($"Error during fragment stack behaviour: {ex.Message}\n{ex.StackTrace}");
-				if (!newView.IsVisible)
-				{
-					try
-					{
-						await newView.InternalShowAsync(ct);
-					}
-					catch (Exception showEx)
-					{
-						Debug.LogError($"Recovery show also failed for '{newView.name}': {showEx.Message}");
-					}
-				}
-			}
-		}
-
-		private async UniTask ResumeFragmentAsync(UIView closedView, UIView previousFragment, bool immediate = false, CancellationToken ct = default)
-		{
-			try
-			{
-				previousFragment.SetContext(null);
-
-				switch (closedView.StackBehaviour)
-				{
-					case ViewStackBehaviour.PauseAndHideBelow:
-						await previousFragment.InternalResumeShowAsync(ct, immediate);
-						previousFragment.SetInteractable(true);
-						previousFragment.OnResume();
-						break;
-
-					case ViewStackBehaviour.HideBelow:
-						// HideBelow hid the fragment and called OnPause, so show it back
-						// and restore interactable + call OnResume for symmetry with pause.
-						await previousFragment.InternalResumeShowAsync(ct, immediate);
-						previousFragment.SetInteractable(true);
-						previousFragment.OnResume();
-						break;
-
-					case ViewStackBehaviour.PauseOnlyBelow:
-						previousFragment.SetInteractable(true);
-						previousFragment.OnResume();
-						break;
-
-					case ViewStackBehaviour.DoNothing:
-					default:
-						break;
-				}
-			}
-			catch (Exception ex) when (ex is not OperationCanceledException)
-			{
-				Debug.LogError($"Error resuming fragment: {ex.Message}\n{ex.StackTrace}");
-			}
-		}
-
-		// =================================================================
-		// DESTROY / CLEANUP
-		// =================================================================
-
-		/// <summary>
-		/// Drops all bookkeeping for a view destroyed outside the close pipeline (scene
-		/// unload, direct Destroy). The view settles its own resources in OnDestroy;
-		/// children do the same via their own OnDestroy — no cascade needed here.
-		/// Idempotent: system-driven closes have already removed everything.
-		/// </summary>
-		internal void HandleViewDestroyedExternally(UIView view)
-		{
-			if (_viewRegistry.TryGetValue(view, out var record))
-			{
-				if (record.Parent != null && _viewRegistry.TryGetValue(record.Parent, out var parentRecord))
-				{
-					parentRecord.RemoveChild(view);
-				}
-
-				_viewRegistry.Remove(view);
-			}
-
-			_closingViews.Remove(view);
-
-			foreach (var stack in _channelStacks.Values)
-			{
-				RemoveFromStack(view, stack);
-			}
-
-			foreach (var history in _historyStacks.Values)
-			{
-				RemoveFromStack(view, history);
-			}
-		}
-
-		private async UniTask HideAndDestroyAsync(UIView view, ViewRecord record, CloseContext context,
-		                                          bool immediate, CancellationToken ct = default)
-		{
-			// Children-first close policy: only on graceful, animated closes with children
-			// present. Teardown cascades (ParentDestroyed) always settle immediately.
-			bool childrenFirst = !immediate && context == CloseContext.Normal &&
-			                     record.Children.Count > 0 &&
-			                     view.ChildCloseOrder != ChildCloseOrder.ParentFirst;
-
-			if (childrenFirst)
-			{
-				try
-				{
-					await CloseChildrenAsync(view, view.ChildCloseOrder, immediate, ct);
-				}
-				catch (OperationCanceledException)
-				{
-					// Cancelled mid-cascade — each child self-settles in its own hide;
-					// fall through to the parent's hide/settle.
-				}
-				catch (Exception ex)
-				{
-					Debug.LogError($"Error closing children of '{view.name}': {ex.Message}");
-				}
-			}
-
-			try
-			{
-				await view.InternalHideAsync(immediate || context != CloseContext.Normal, ct);
-			}
-			catch (OperationCanceledException)
-			{
-				// External cancellation must NOT abort settlement: the view was already popped
-				// from its stack, so skipping the registry/pool cleanup below would leave a
-				// zombie (registered, active, off-stack). Settle it instead.
-			}
-			catch (Exception ex)
-			{
-				Debug.LogError($"Error hiding view '{view.name}': {ex.Message}");
-			}
-
-			bool shouldDestroy = ShouldDestroyView(record, context);
-
-			if (!shouldDestroy)
-			{
-				// Static view with Normal close — hide it but keep it registered.
-				// It stays in the hierarchy and in the history stack for proper navigation.
-				// Close its children: dynamic children are destroyed, static children are hidden.
-				CloseChildrenOfSurvivingView(view);
-
-				// Reset runtime flags so it can be shown again
-				view._overriddenStackBehaviour = null;
-				view._overriddenChannel = null;
-				view.gameObject.SetActive(false);
-
-				// Keep in history stack - static views behave exactly like dynamic views
-				// in terms of navigation. The only difference is they're not destroyed.
-				// When re-shown, they'll be at the top of the stack and GoBack will work correctly.
-				return;
-			}
-
-			// Dynamic view or ForceDestroy/ParentDestroyed context — destroy everything
-			// Close all children first — they must be destroyed since parent is going away
-			CloseChildrenImmediate(view, context);
-
-			// Remove from parent's child list
-			if (record.Parent != null && _viewRegistry.TryGetValue(record.Parent, out var parentRecord))
-			{
-				parentRecord.RemoveChild(view);
-			}
-
-			_viewRegistry.Remove(view);
-
-			if (record.Instance.ReturnToPoolOnClose && record.IsDynamic)
-			{
-				_viewPool.Release(view);
-			}
-			else
-			{
-				view.InternalCleanup();
-				Destroy(view.gameObject);
-			}
-
-			view._overriddenStackBehaviour = null;
-			view._overriddenChannel = null;
-		}
-
-		private async UniTask DestroyViewAsync(UIView view, ViewRecord record, CloseContext context,
-		                                       bool immediate, CancellationToken ct = default)
-		{
-			try
-			{
-				await view.InternalHideAsync(immediate, ct);
-			}
-			catch (OperationCanceledException)
-			{
-				// See HideAndDestroyAsync - cancellation must not skip settlement.
-			}
-			catch (Exception ex)
-			{
-				Debug.LogError($"Error hiding view '{view.name}': {ex.Message}");
-			}
-
-			CloseChildrenImmediate(view, context);
-
-			if (record.Parent != null && _viewRegistry.TryGetValue(record.Parent, out var parentRecord))
-			{
-				parentRecord.RemoveChild(view);
-			}
-
-			_viewRegistry.Remove(view);
-			view.InternalCleanup();
-			Destroy(view.gameObject);
-		}
-
-		/// <summary>
-		/// Animated, awaited close of a view's children for the children-first policy.
-		/// Presentation only (InternalHideAsync per child) — final settle (registry,
-		/// pooling, destruction) still happens in the post-parent cascade, which is
-		/// idempotent against hooks the animated hide already ran.
-		/// </summary>
-		private async UniTask CloseChildrenAsync(UIView parent, ChildCloseOrder order, bool immediate, CancellationToken ct)
-		{
-			if (!_viewRegistry.TryGetValue(parent, out var record)) return;
-
-			// Snapshot — record.Children mutates as children settle during their closes.
-			var children = new List<UIView>(record.Children);
-
-			if (order == ChildCloseOrder.ChildrenFirstSequential)
-			{
-				for (int i = children.Count - 1; i >= 0; i--)
-				{
-					var child = children[i];
-					if (child != null)
-					{
-						await CloseChildRecursivelyAsync(child, immediate, ct);
-					}
-				}
-			}
-			else
-			{
-				var tasks = new List<UniTask>();
-				for (int i = children.Count - 1; i >= 0; i--)
-				{
-					var child = children[i];
-					if (child != null)
-					{
-						tasks.Add(CloseChildRecursivelyAsync(child, immediate, ct));
-					}
-				}
-
-				await UniTask.WhenAll(tasks);
-			}
-		}
-
-		private async UniTask CloseChildRecursivelyAsync(UIView child, bool immediate, CancellationToken ct)
-		{
-			if (!_viewRegistry.TryGetValue(child, out var childRecord)) return;
-
-			// A child that is itself children-first closes its own children first —
-			// deep hierarchies compose level by level through this recursion.
-			if (!immediate && childRecord.Children.Count > 0 &&
-			    child.ChildCloseOrder != ChildCloseOrder.ParentFirst)
-			{
-				await CloseChildrenAsync(child, child.ChildCloseOrder, immediate, ct);
-			}
-
-			await child.InternalHideAsync(immediate, ct);
-		}
-
-		private void CloseChildrenImmediate(UIView parent, CloseContext context)
-		{
-			if (!_viewRegistry.TryGetValue(parent, out var record)) return;
-
-			var childContext = context == CloseContext.Normal ? CloseContext.ParentDestroyed : context;
-
-			for (int i = record.Children.Count - 1; i >= 0; i--)
-			{
-				var child = record.Children[i];
-				if (child == null) continue;
-
-				if (_viewRegistry.TryGetValue(child, out var childRecord))
-				{
-					// Close children recursively, immediate (no animation) to prevent
-					// accessing destroyed GameObjects during Unity's automatic cleanup
-					CloseChildrenImmediate(child, childContext);
-
-					bool shouldDestroy = ShouldDestroyView(childRecord, childContext);
-
-					// InternalCleanup runs full lifecycle: OnPrepareHide → OnHide → UnRegisterResources → NullifyContext
-					// It is idempotent, safe if hide already ran.
-					child.InternalCleanup();
-					_viewRegistry.Remove(child);
-
-					// Remove from any history stack
-					if (child.ParentView != null && _historyStacks.TryGetValue(child.ParentView, out var history))
-					{
-						RemoveFromStack(child, history);
-					}
-
-					if (shouldDestroy)
-					{
-						if (childRecord.IsDynamic && child.ReturnToPoolOnClose)
-						{
-							_viewPool.Release(child);
-						}
-						// else: Unity will destroy children when parent is destroyed
-					}
-				}
-			}
-
-			record.Children.Clear();
-
-			// Clean up history stack and pending show tasks for this parent
-			_historyStacks.Remove(parent);
-			_pendingShowTasks.Remove(parent);
-		}
-
-		/// <summary>
-		/// Closes children of a static view that is being hidden (not destroyed).
-		/// Dynamic children are destroyed. Static children are hidden and reset (they survive in hierarchy).
-		/// </summary>
-		private void CloseChildrenOfSurvivingView(UIView parent)
-		{
-			if (!_viewRegistry.TryGetValue(parent, out var record)) return;
-
-			for (int i = record.Children.Count - 1; i >= 0; i--)
-			{
-				var child = record.Children[i];
-				if (child == null) continue;
-
-				if (!_viewRegistry.TryGetValue(child, out var childRecord)) continue;
-
-				if (childRecord.IsDynamic)
-				{
-					// Dynamic children are destroyed — recurse with ParentDestroyed
-					CloseChildrenImmediate(child, CloseContext.ParentDestroyed);
-					child.InternalCleanup();
-					_viewRegistry.Remove(child);
-
-					if (child.ParentView != null && _historyStacks.TryGetValue(child.ParentView, out var history))
-					{
-						RemoveFromStack(child, history);
-					}
-
-					record.RemoveChild(child);
-
-					// Null check: child could be invalid after InternalCleanup in edge cases
-					if (child != null && child.gameObject != null)
-					{
-						if (child.ReturnToPoolOnClose)
-						{
-							_viewPool.Release(child);
-						}
-						else
-						{
-							Destroy(child.gameObject);
-						}
-					}
-				}
-				else
-				{
-					// Static children survive — just hide them and recurse for their children
-					CloseChildrenOfSurvivingView(child);
-					child.InternalCleanup();
-					child.gameObject.SetActive(false);
-
-					if (child.ParentView != null && _historyStacks.TryGetValue(child.ParentView, out var history))
-					{
-						RemoveFromStack(child, history);
-					}
-				}
-			}
-
-			_historyStacks.Remove(parent);
-			_pendingShowTasks.Remove(parent);
-		}
-
-		private bool ShouldDestroyView(ViewRecord record, CloseContext context)
-		{
-			if (record.IsDynamic) return true;
-			return context == CloseContext.ParentDestroyed || context == CloseContext.ForceDestroy;
-		}
-
-		// =================================================================
-		// HELPERS
-		// =================================================================
-
-		/// <summary>
-		/// Finds the view directly below the given view in a history stack.
-		/// Returns null if the view is at the bottom or not found.
-		/// Does NOT modify the stack.
-		/// </summary>
-		private static UIView FindBelowInStack(UIView target, Stack<UIView> stack)
-		{
-			// ToArray: index 0 = top of stack, last index = bottom
-			var items = stack.ToArray();
-			for (int i = 0; i < items.Length; i++)
-			{
-				if (items[i] == target)
-				{
-					// The view below is at index i+1 (deeper in the stack)
-					return (i + 1 < items.Length) ? items[i + 1] : null;
-				}
+				if (record.IsAlive && !record.IsClosing)
+					return record.Instance as TView;
 			}
 
 			return null;
 		}
 
-		/// <summary>
-		/// Checks whether a view is still being covered (hidden or blocked) by any other view
-		/// above it in the remaining history stack.
-		///
-		/// This is needed when removing a mid-stack fragment: even though the removed fragment was
-		/// hiding/blocking the one below, another fragment further up in the stack might also be
-		/// covering it, in which case we should NOT resume.
-		///
-		/// We walk from the target's position upward to the top. If any view above it has
-		/// HideBelow, PauseAndHideBelow, or PauseOnlyBelow, then it is still covered.
-		/// </summary>
-		private static bool IsViewCoveredByAnythingAbove(UIView target, Stack<UIView> stack)
+		public bool TryGetView<TView>(out TView view, string viewId = "") where TView : UIView
 		{
-			// ToArray: index 0 = top of stack, last index = bottom
-			var items = stack.ToArray();
-
-			int targetIndex = -1;
-			for (int i = 0; i < items.Length; i++)
-			{
-				if (items[i] == target)
-				{
-					targetIndex = i;
-					break;
-				}
-			}
-
-			if (targetIndex < 0)
-			{
-				return false; // View not in stack, nothing covers it
-			}
-
-			// Check all views above the target (from just above it to the top of stack)
-			for (int i = targetIndex - 1; i >= 0; i--)
-			{
-				var above = items[i];
-				if (above.StackBehaviour is ViewStackBehaviour.HideBelow
-					or ViewStackBehaviour.PauseAndHideBelow
-					or ViewStackBehaviour.PauseOnlyBelow)
-				{
-					return true; // Something above is still covering this view
-				}
-			}
-
-			return false;
+			view = GetView<TView>(viewId);
+			return view != null;
 		}
 
-		/// <summary>
-		/// Resumes a fragment that was previously hidden or blocked by a fragment that has now been
-		/// removed from the middle of the stack.
-		/// Applies the correct resume behaviour based on how the fragment was originally affected.
-		/// </summary>
-		private async UniTask ResumeFragmentFromMidStackAsync(UIView fragment, ViewStackBehaviour removedViewBehaviour,
-		                                                      bool immediate = false, CancellationToken ct = default)
+		// =================================================================
+		// IViewHost — what a view may ask of its system
+		// =================================================================
+
+		bool IViewHost.IsRegistered(UIView view) => _registry.IsRegistered(view);
+
+		void IViewHost.RegisterStatic(UIView view, UIView parent)
 		{
-			try
+			if (_registry.Contains(view))
 			{
-				fragment.SetContext(null);
-
-				switch (removedViewBehaviour)
-				{
-					case ViewStackBehaviour.HideBelow:
-					case ViewStackBehaviour.PauseAndHideBelow:
-						// Fragment was fully hidden — show it back and restore interactivity
-						await fragment.InternalResumeShowAsync(ct, immediate);
-						fragment.SetInteractable(true);
-						fragment.OnResume();
-						break;
-
-					case ViewStackBehaviour.PauseOnlyBelow:
-						// Fragment was only input-blocked — restore interactivity
-						fragment.SetInteractable(true);
-						fragment.OnResume();
-						break;
-				}
+				Debug.LogWarning($"Static view '{view.name}' is already registered.", view);
+				return;
 			}
-			catch (Exception ex) when (ex is not OperationCanceledException)
-			{
-				Debug.LogError($"Error during mid-stack fragment resume for '{fragment.name}': {ex.Message}\n{ex.StackTrace}");
-			}
+
+			_registry.Add(new ViewRecord(view, parent, isStatic: true));
 		}
 
-		/// <summary>
-		/// Finds the best parent view for a fragment that has no explicit parent.
-		/// Prefers the topmost screen across all channel stacks (by sorting order).
-		/// </summary>
-		private UIView FindBestParentView(UIChannel? preferredChannel = null)
-		{
-			UIView bestCandidate = null;
-			// Initialize below any real channel so HUD (0) can be selected as fallback.
-			UIChannel bestSortOrder = (UIChannel)(-1);
+		void IViewHost.ShowStaticChildren(UIView parent) => _show.ShowStaticChildren(parent);
 
-			foreach ((UIChannel effectiveOrder, Stack<UIView> value) in _channelStacks)
-			{
-				if (value.Count == 0) continue;
+		void IViewHost.NotifyShown(UIView view) => ViewShown?.Invoke(view);
 
-				var topView = value.Peek();
+		void IViewHost.NotifyDestroyedExternally(UIView view) => _close.NotifyDestroyedExternally(view);
 
-				// If a preferred channel is requested, only consider that channel.
-				if (preferredChannel.HasValue && effectiveOrder != preferredChannel.Value)
-					continue;
+		// =================================================================
+		// DIAGNOSTICS — tests and editor tooling
+		// =================================================================
 
-				// Prefer higher sort order (overlays > menus > HUD)
-				if (effectiveOrder > bestSortOrder)
-				{
-					bestSortOrder = effectiveOrder;
-					bestCandidate = topView;
-				}
-			}
+		internal ViewRegistry      Registry  => _registry;
+		internal ScreenStacks      Screens   => _screens;
+		internal FragmentHistories Histories => _histories;
+		internal ViewPool          Pool      => _factory?.Pool;
 
-			return bestCandidate;
-		}
+		internal int RegisteredViewCount => _registry.Count;
 
-		private void PauseFragments(UIView parentView)
-		{
-			if (parentView == null || parentView.gameObject == null) return;
-			if (!_historyStacks.TryGetValue(parentView, out var stack)) return;
-			foreach (var fragment in stack)
-			{
-				if (fragment != null && fragment.gameObject != null)
-					fragment.OnPause();
-			}
-		}
-
-		private void ResumeFragments(UIView parentView)
-		{
-			if (parentView == null || parentView.gameObject == null) return;
-			if (!_historyStacks.TryGetValue(parentView, out var stack)) return;
-			foreach (var fragment in stack)
-			{
-				if (fragment != null && fragment.gameObject != null)
-					fragment.OnResume();
-			}
-		}
-
-		/// <summary>
-		/// O(1) prefab lookup by (Type, ViewId). Caches the lookup dictionary on first access.
-		/// </summary>
-		private TView FindPrefab<TView>(Type type, string viewId) where TView : UIView
-		{
-			if (_prefabLookup == null)
-			{
-				_prefabLookup = new Dictionary<(Type, string), UIView>();
-				foreach (var view in _repository.Views)
-				{
-					if (view != null)
-						_prefabLookup[(view.GetType(), view.ViewId ?? string.Empty)] = view;
-				}
-			}
-
-			return _prefabLookup.TryGetValue((type, viewId), out var prefab) ? prefab as TView : null;
-		}
-
-		/// <summary>
-		/// Removes ghost entries from _viewRegistry, _historyStacks, and _pendingShowTasks
-		/// where the UIView key has been destroyed by Unity (fake-null).
-		/// Should be called periodically or on scene transitions.
-		/// </summary>
-		internal void CleanupDestroyedViews()
-		{
-			// Purge dead keys from _viewRegistry
-			var deadKeys = new List<UIView>();
-			foreach (var key in _viewRegistry.Keys)
-			{
-				if (key == null) deadKeys.Add(key);
-			}
-
-			foreach (var key in deadKeys)
-			{
-				_viewRegistry.Remove(key);
-			}
-
-			// Purge dead keys from _historyStacks
-			var deadHistoryKeys = new List<UIView>();
-			foreach (var key in _historyStacks.Keys)
-			{
-				if (key == null) deadHistoryKeys.Add(key);
-			}
-
-			foreach (var key in deadHistoryKeys)
-			{
-				_historyStacks.Remove(key);
-			}
-
-			// Purge dead keys from _pendingShowTasks
-			var deadPendingKeys = new List<UIView>();
-			foreach (var key in _pendingShowTasks.Keys)
-			{
-				if (key == null) deadPendingKeys.Add(key);
-			}
-
-			foreach (var key in deadPendingKeys)
-			{
-				_pendingShowTasks.Remove(key);
-			}
-		}
-
-		/// <summary>
-		/// Recomputes canvas sorting orders for every screen in a channel stack after a
-		/// pop/mid-stack removal, keeping depths contiguous so a later push can't collide
-		/// with a survivor's baked-in order. Stack bottom is depth 1 (matches push-time
-		/// channel.Initialize(_uiCamera, stack.Count)).
-		/// </summary>
-		private static void RecomputeChannelSorting(Stack<UIView> stack)
-		{
-			if (stack == null || stack.Count == 0) return;
-
-			var arr = stack.ToArray(); // top-first
-			for (int i = arr.Length - 1, depth = 1; i >= 0; i--, depth++)
-			{
-				var v = arr[i];
-				if (v != null && v.HasChannel)
-				{
-					v.Channel.UpdateSortingOrder(depth);
-				}
-			}
-		}
-
-		private static void RemoveFromStack<T>(T item, Stack<T> stack) where T : class
-		{
-			var temp = new Stack<T>();
-			bool found = false;
-
-			while (stack.Count > 0)
-			{
-				var current = stack.Pop();
-				if (current == item && !found)
-				{
-					found = true;
-				}
-				else
-				{
-					temp.Push(current);
-				}
-			}
-
-			while (temp.Count > 0)
-			{
-				stack.Push(temp.Pop());
-			}
-		}
-
-#if UNITY_EDITOR
-		private void ShowViewByIndex(int index)
-		{
-			if (_repository == null || index < 0 || index >= _repository.Views.Count) return;
-			var prefab = _repository.Views[index];
-			Show<UIView>(prefab.GetType());
-		}
-#endif
+		internal int CountOfKind(Type type, string viewId = "") => _registry.CountOfKind(new ViewKey(type, viewId));
 	}
 }

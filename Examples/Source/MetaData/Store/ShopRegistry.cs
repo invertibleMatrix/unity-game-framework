@@ -4,14 +4,8 @@ using UnityEngine;
 namespace AK.Examples.Store
 {
 	/// <summary>
-	/// Registry for managing shop item definitions using UID-based lookup
+	/// Registry of shop item definitions with identity-keyed lookup.
 	/// </summary>
 	[CreateAssetMenu(fileName = "ShopRegistry", menuName = "AK/MetaData/Store/ShopRegistry")]
-	public class ShopRegistry : TypedUIDRegistryAsset<ShopItemDefinition>
-	{
-		// Inherits from TypedUIDRegistryAsset which provides:
-		// - UID-based lookup
-		// - Validation
-		// - Registry management
-	}
+	public class ShopRegistry : UidRegistryAsset<ShopItemDefinition> { }
 }

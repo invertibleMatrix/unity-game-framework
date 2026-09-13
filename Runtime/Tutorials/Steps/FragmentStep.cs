@@ -33,6 +33,11 @@ namespace AK.Tutorials
 
 		public override async UniTask PresentAsync(TutorialStepContext context, CancellationToken ct)
 		{
+			if (BlockInputUntilPresented)
+			{
+				context.InputGate.Hold();
+			}
+
 			System.Type fragmentType = FragmentType != null ? FragmentType.Value : null;
 			if (fragmentType == null)
 			{
@@ -42,30 +47,40 @@ namespace AK.Tutorials
 
 			UIView parent = ResolveParent(context);
 
-			var view = context.UiSystem.Show<UIView>(fragmentType, context: BuildContext(), parent: parent, viewId: ViewId ?? string.Empty);
+			var view = context.UiSystem.Show<UIView>(fragmentType, new ShowOptions(context: BuildContext(), parent: parent, viewId: ViewId ?? string.Empty));
 			if (view == null)
 			{
 				Debug.LogWarning($"[FragmentStep] Failed to show fragment of type '{fragmentType.Name}'.");
 				return;
 			}
 
-			if (view is ITutorialStepView stepView)
-			{
-				await stepView.WaitUntilFinish().AttachExternalCancellation(ct);
-			}
-			else
-			{
-				Debug.LogWarning($"[FragmentStep] '{view.name}' does not implement ITutorialStepView — the step completes immediately.");
-			}
+			// The fragment is up and owns its interaction contract - open the
+			// gate so its controls are clickable.
+			context.InputGate.Release();
 
-			if (CloseOnFinish && view != null)
+			try
 			{
-				if (CloseDelay > 0f)
+				if (view is ITutorialStepView stepView)
+				{
+					await stepView.WaitUntilFinish().AttachExternalCancellation(ct);
+				}
+				else
+				{
+					Debug.LogWarning($"[FragmentStep] '{view.name}' does not implement ITutorialStepView — the step completes immediately.");
+				}
+
+				if (CloseOnFinish && CloseDelay > 0f)
 				{
 					await UniTask.WaitForSeconds(CloseDelay, cancellationToken: ct);
 				}
-
-				view.Close();
+			}
+			finally
+			{
+				// Cancellation (view destroyed mid-step) must not leak the fragment.
+				if (CloseOnFinish)
+				{
+					view.Close();
+				}
 			}
 		}
 

@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using AK.Core;
+using AK.Core.Collections;
 using AK.CoreDomain;
+using AK.CoreDomain.Transactions;
 using AK.Services.Costs;
 using AK.Services.Rewards;
 using AK.Services.Transactions;
@@ -13,6 +15,10 @@ namespace AK.Services
 	/// Orchestrates the purchase flow: affordability check → cost deduction → reward granting.
 	/// IAP is optional — pass null for iapService in games without IAP.
 	/// IAP items are identified by having a non-empty ProductID.
+	///
+	/// Every expected failure is a <see cref="Result"/> code the UI can map to a message:
+	/// <see cref="ErrorCode.CannotAfford"/>, <see cref="ErrorCode.Cancelled"/>, the 6xx store
+	/// codes, and so on. Nothing here throws for a declined purchase.
 	/// </summary>
 	public class PurchaseService : IPurchaseService
 	{
@@ -32,12 +38,10 @@ namespace AK.Services
 		/// </summary>
 		public int PendingCreditCount => _pendingCredit.Count;
 
-		/// <summary>
-		/// Create a PurchaseService.
-		/// </summary>
 		/// <param name="costService">The cost service for checking affordability and deducting costs.</param>
 		/// <param name="rewardService">The reward service for granting purchase rewards.</param>
 		/// <param name="iapService">Optional IAP service for platform store operations. Pass null for games without IAP.</param>
+		/// <param name="transactionService">Optional ledger. When present, purchases are recorded as transactions and survive crashes.</param>
 		public PurchaseService(
 			ICostService costService,
 			IRewardService rewardService,
@@ -50,44 +54,31 @@ namespace AK.Services
 			_transactionService = transactionService;
 		}
 
-		public async UniTask<PurchaseStatus> Purchase(IPurchasable item, bool immediateCredit)
+		public async UniTask<Result> Purchase(IPurchasable item, bool immediateCredit)
 		{
-			if (item == null)
+			if (item == null) return Result.Fail(ErrorCode.NullArgument, "item");
+
+			if (item.Cost == null || item.Cost.CostType.IsNone)
 			{
-				Debug.LogError("[PurchaseService] Cannot purchase null item.");
-				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InternalError };
+				return Result.Fail(ErrorCode.NoIdentity, $"'{item.DisplayName}' has no Cost or cost type");
 			}
 
-			if (item.Cost == null || item.Cost.CostTypeUID == null)
-			{
-				Debug.LogError($"[PurchaseService] Item '{item.DisplayName}' has no Cost or CostTypeUID assigned.");
-				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InternalError };
-			}
-
-			// IAP flow — when the item has a ProductID and IAP is available
 			if (!string.IsNullOrEmpty(item.ProductID))
 			{
 				if (_iapService == null)
 				{
 					// Never silently charge currency for a store product.
-					Debug.LogError($"[PurchaseService] Item '{item.DisplayName}' has a ProductID but no IIAPService was provided.");
-					return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.IAPNotInitialized };
+					return Result.Fail(ErrorCode.StoreNotInitialized, $"'{item.DisplayName}' has a ProductID but no IIAPService was provided");
 				}
 
 				return await HandleInAppPurchase(item, immediateCredit);
 			}
 
-			// All other purchases delegate to CostService → ICostProvider
-			if (!_costService.CanAfford(item.Cost))
-			{
-				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InsufficientCurrency };
-			}
+			Result affordable = _costService.CanAfford(item.Cost);
+			if (affordable.IsFailed) return affordable;
 
-			if (!_costService.Deduct(item.Cost))
-			{
-				Debug.LogWarning($"[PurchaseService] Failed to deduct cost for item '{item.DisplayName}'.");
-				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InternalError };
-			}
+			Result deducted = _costService.Deduct(item.Cost);
+			if (deducted.IsFailed) return deducted;
 
 			if (_transactionService != null)
 			{
@@ -95,23 +86,17 @@ namespace AK.Services
 			}
 
 			GrantRewards(item, immediateCredit);
-			return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.None };
+			return Result.Ok;
 		}
 
-		private async UniTask<PurchaseStatus> HandleInAppPurchase(IPurchasable item, bool immediateCredit)
+		private async UniTask<Result> HandleInAppPurchase(IPurchasable item, bool immediateCredit)
 		{
-			if (!_iapService.IsInitialized)
-			{
-				Debug.LogError("[PurchaseService] IIAPService is not initialized.");
-				return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.IAPNotInitialized };
-			}
+			if (!_iapService.IsInitialized) return Result.Fail(ErrorCode.StoreNotInitialized);
 
-			var iapResult = await _iapService.PurchaseAsync(item.ProductID);
-
+			IAPPurchaseResult iapResult = await _iapService.PurchaseAsync(item.ProductID);
 			if (!iapResult.Success)
 			{
-				Debug.LogWarning($"[PurchaseService] IAP purchase failed for '{item.ProductID}': {iapResult.FailureReason}");
-				return new PurchaseStatus { Error = MapIAPFailure(iapResult.FailureType) };
+				return Result.Fail(MapIAPFailure(iapResult.FailureType), iapResult.FailureReason);
 			}
 
 			Debug.Log($"[PurchaseService] IAP purchase succeeded for '{item.ProductID}' (tx: {iapResult.TransactionId})");
@@ -122,28 +107,28 @@ namespace AK.Services
 			}
 
 			GrantRewards(item, immediateCredit);
-			return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.None };
+			return Result.Ok;
 		}
 
 		// Purchases are ledgered as transactions: recorded pending with their reward
 		// payload, credited immediately or left for a later GrantPendingCredits.
-		private async UniTask<PurchaseStatus> CreditWithTransaction(IPurchasable item, bool immediateCredit)
+		private async UniTask<Result> CreditWithTransaction(IPurchasable item, bool immediateCredit)
+		{
+			Result<Transaction> pending = RecordPendingPurchase(item);
+			if (pending.IsFailed) return pending.Untyped;
+
+			if (!immediateCredit) return Result.Ok;
+
+			return await _transactionService.CreditAsync(pending.Value);
+		}
+
+		// The transaction keeps the reward list for its lifetime, so it cannot come from the pool.
+		private Result<Transaction> RecordPendingPurchase(IPurchasable item)
 		{
 			var rewards = new List<IReward>();
 			item.CollectRewards(rewards);
 
-			var transaction = _transactionService.RecordPending(item.TransactionTypeUID, rewards, item.ProductID);
-
-			if (immediateCredit)
-			{
-				bool credited = await _transactionService.CreditAsync(transaction);
-				if (!credited)
-				{
-					return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.InternalError };
-				}
-			}
-
-			return new PurchaseStatus { Error = PurchaseStatus.ErrorCode.None };
+			return _transactionService.RecordPending(item.TransactionType, rewards.Count > 0 ? rewards : null, item.ProductID);
 		}
 
 		/// <summary>
@@ -172,22 +157,19 @@ namespace AK.Services
 			if (_transactionService != null)
 			{
 				int credited = 0;
-				foreach (var transaction in _transactionService.GetPendingTransactions())
+				IReadOnlyList<Transaction> pending = _transactionService.GetPendingTransactions();
+				for (int i = 0; i < pending.Count; i++)
 				{
-					if (await _transactionService.CreditAsync(transaction))
-					{
-						credited++;
-					}
+					if (await _transactionService.CreditAsync(pending[i])) credited++;
 				}
 
 				return credited;
 			}
 
-			var count = _pendingCredit.Count;
-
-			foreach (var item in _pendingCredit)
+			int count = _pendingCredit.Count;
+			for (int i = 0; i < _pendingCredit.Count; i++)
 			{
-				GrantItemRewards(item);
+				GrantItemRewards(_pendingCredit[i]);
 			}
 
 			_pendingCredit.Clear();
@@ -196,28 +178,32 @@ namespace AK.Services
 
 		private void GrantItemRewards(IPurchasable item)
 		{
-			List<IReward> rewards = new();
-			item.CollectRewards(rewards);
+			using PooledList<IReward> rewards = ListPool<IReward>.Rent();
+			item.CollectRewards(rewards.List);
 
-			foreach (IReward reward in rewards)
+			for (int i = 0; i < rewards.List.Count; i++)
 			{
-				_rewardService.TryGrantReward(reward);
+				Result granted = _rewardService.Grant(rewards.List[i]);
+				if (granted.IsFailed)
+				{
+					Debug.LogWarning($"[PurchaseService] Reward {i} for '{item.DisplayName}' was not granted: {granted}.");
+				}
 			}
 		}
 
-		private static PurchaseStatus.ErrorCode MapIAPFailure(IAPFailureType failureType)
+		private static ErrorCode MapIAPFailure(IAPFailureType failureType)
 		{
 			return failureType switch
 			{
-				IAPFailureType.UserCancelled           => PurchaseStatus.ErrorCode.Cancelled,
-				IAPFailureType.NotInitialized          => PurchaseStatus.ErrorCode.IAPNotInitialized,
-				IAPFailureType.ProductUnavailable      => PurchaseStatus.ErrorCode.IAPProductUnavailable,
-				IAPFailureType.PaymentDeclined         => PurchaseStatus.ErrorCode.IAPPaymentDeclined,
-				IAPFailureType.StoreError              => PurchaseStatus.ErrorCode.IAPStoreError,
-				IAPFailureType.DuplicateTransaction    => PurchaseStatus.ErrorCode.IAPDuplicateTransaction,
-				IAPFailureType.Timeout                 => PurchaseStatus.ErrorCode.IAPTimeout,
-				IAPFailureType.ExistingPurchasePending => PurchaseStatus.ErrorCode.IAPStoreError,
-				_                                      => PurchaseStatus.ErrorCode.IAPUnknownError
+				IAPFailureType.UserCancelled           => ErrorCode.Cancelled,
+				IAPFailureType.NotInitialized          => ErrorCode.StoreNotInitialized,
+				IAPFailureType.ProductUnavailable      => ErrorCode.ProductUnavailable,
+				IAPFailureType.PaymentDeclined         => ErrorCode.PaymentDeclined,
+				IAPFailureType.StoreError              => ErrorCode.StoreError,
+				IAPFailureType.DuplicateTransaction    => ErrorCode.DuplicateTransaction,
+				IAPFailureType.Timeout                 => ErrorCode.Timeout,
+				IAPFailureType.ExistingPurchasePending => ErrorCode.StoreError,
+				_                                      => ErrorCode.StoreUnknown
 			};
 		}
 	}

@@ -12,8 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 07b124eba62d88045861bd4b5514e032, type: 3}
   m_Name: CostProvider_SoftCurrency
   m_EditorClassIdentifier: AK.Examples::AK.Examples.Costs.SoftCurrencyCostProvider
-  _id: 8bd8c3e6-d1dd-465a-940e-cec44068ca9f
-  _description: UID_SoftCurrencyCostProvider
+  _id:
+    _value: 8bd8c3e6d1dd465a940ecec44068ca9f
+  _provenance: 0
+  _provenanceSource: 
+  _notes: 
   Name: 
   DisplayName: 
   Description: 

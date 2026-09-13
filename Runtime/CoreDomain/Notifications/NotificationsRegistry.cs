@@ -10,7 +10,7 @@ namespace AK.CoreDomain.Notifications
 	/// Provides centralized management of notification data.
 	/// </summary>
 	[CreateAssetMenu(fileName = "NotificationsRegistry", menuName = "AK/MetaData/Notifications/NotificationsRegistry")]
-	public class NotificationsRegistry : TypedUIDRegistryAsset<NotificationDefinition>
+	public class NotificationsRegistry : UidRegistryAsset<NotificationDefinition>
 	{
 		/// <summary>
 		/// Gets all notifications of a specific type.

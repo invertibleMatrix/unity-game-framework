@@ -1,10 +1,13 @@
-using System.Threading;
-using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using UnityEngine;
 
 namespace AK.Systems
 {
+	/// <summary>
+	/// Asset-based animation strategy: shared between every view that references it, so it
+	/// holds tuning only, never scene references. Build the entrance and exit as tweens;
+	/// the system links and awaits them.
+	/// </summary>
 	public abstract class AnimationStrategy : ScriptableObject, IAnimationStrategy
 	{
 		[SerializeField]
@@ -16,17 +19,5 @@ namespace AK.Systems
 
 		public abstract Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default);
 		public abstract Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup);
-
-		public UniTask PlayShowAsync(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default,
-		                             CancellationToken ct = default)
-		{
-			return PlayShowAnimation(target, canvasGroup, entryPos).ToUniTask(cancellationToken: ct);
-		}
-
-		public UniTask PlayHideAsync(RectTransform target, CanvasGroup canvasGroup,
-		                             CancellationToken ct = default)
-		{
-			return PlayHideAnimation(target, canvasGroup).ToUniTask(cancellationToken: ct);
-		}
 	}
 }

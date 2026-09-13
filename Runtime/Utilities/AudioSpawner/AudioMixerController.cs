@@ -20,7 +20,8 @@ namespace Utilities.AudioSpawner
 		[Header("Channel parameter names (must match the mixer's exposed parameters)")]
 		[SerializeField] private string _masterVolumeParam = "MasterVolume";
 		[SerializeField] private string _musicVolumeParam  = "MusicVolume";
-		[SerializeField] private string _sfxVolumeParam    = "SfxVolume";
+		[SerializeField] private string _sfxVolumeParam    = "SFXVolume";
+		[SerializeField] private string _uiSfxVolumeParam  = "UISFXVolume";
 
 		[Header("Snapshots")]
 		[SerializeField] private AudioSnapshot _bootSnapshot;
@@ -31,16 +32,21 @@ namespace Utilities.AudioSpawner
 
 		private CancellationTokenSource _duckCts;
 
-		private void Awake()
+		private void Start()
 		{
-			ApplyVolume(_masterVolumeParam, _masterVolume.Read());
-			ApplyVolume(_musicVolumeParam, _musicVolume.Read());
-			ApplyVolume(_sfxVolumeParam, _sfxVolume.Read());
-
 			if (_bootSnapshot != null)
 			{
 				TransitionToSnapshot(_bootSnapshot, 0f);
 			}
+
+			ApplyPersistedVolumes();
+		}
+
+		private void ApplyPersistedVolumes()
+		{
+			ApplyVolume(_masterVolumeParam, _masterVolume.Read());
+			ApplyVolume(_musicVolumeParam, _musicVolume.Read());
+			ApplySfxVolumes(_sfxVolume.Read());
 		}
 
 		public void SetVolume(AudioChannel channel, float linearValue)
@@ -51,7 +57,7 @@ namespace Utilities.AudioSpawner
 			{
 				case AudioChannel.Master: _masterVolume.Save(linearValue); ApplyVolume(_masterVolumeParam, linearValue); break;
 				case AudioChannel.Music:  _musicVolume.Save(linearValue);  ApplyVolume(_musicVolumeParam, linearValue);  break;
-				case AudioChannel.Sfx:    _sfxVolume.Save(linearValue);    ApplyVolume(_sfxVolumeParam, linearValue);    break;
+				case AudioChannel.Sfx:    _sfxVolume.Save(linearValue);    ApplySfxVolumes(linearValue);                 break;
 			}
 		}
 
@@ -97,6 +103,12 @@ namespace Utilities.AudioSpawner
 			if (cancelled) return;
 
 			ApplyVolumeDb(_musicVolumeParam, ToDecibels(_musicVolume.Read()));
+		}
+
+		private void ApplySfxVolumes(float linearValue)
+		{
+			ApplyVolume(_sfxVolumeParam, linearValue);
+			ApplyVolume(_uiSfxVolumeParam, linearValue);
 		}
 
 		private void ApplyVolume(string parameterName, float linearValue)
