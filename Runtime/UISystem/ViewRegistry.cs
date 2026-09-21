@@ -69,15 +69,16 @@ namespace AK.Systems
 		/// <summary>
 		/// Static instance of a kind that is not tearing down. With a parent, only one
 		/// registered under that parent; without, any static of the kind (it re-routes onto
-		/// its own host).
+		/// its own host). <paramref name="includeClosing"/> also matches one mid-close —
+		/// for a show that wants to queue behind the close instead of spawning a twin.
 		/// </summary>
-		public ViewRecord FindStatic(ViewKey key, UIView parent)
+		public ViewRecord FindStatic(ViewKey key, UIView parent, bool includeClosing = false)
 		{
 			for (var record = FirstOfKind(key); record != null; record = record.NextOfKind)
 			{
 				if (!record.IsStatic) continue;
 				if (parent != null && record.Parent != parent) continue;
-				if (record.IsAlive && !record.IsClosing) return record;
+				if (record.IsAlive && (!record.IsClosing || includeClosing)) return record;
 			}
 
 			return null;

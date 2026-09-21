@@ -371,6 +371,33 @@ namespace AK.Core.ResourceManagement
 			return WaitAndTrack(op);
 		}
 
+		/// <summary>
+		/// Same as <see cref="LoadAsset{TObject}(string)"/> but missing/empty keys return
+		/// false instead of throwing. Probes locations first so Addressables never raises
+		/// InvalidKeyException (or logs it) for a key that is simply not in the catalog.
+		/// </summary>
+		public bool TryLoadAsset<TObject>(string key, out TObject asset)
+		{
+			asset = default;
+			if (!HasLocations(key, typeof(TObject)))
+				return false;
+
+			asset = LoadAsset<TObject>(key);
+			return asset != null;
+		}
+
+		public bool TryLoadAsset<TObject>(AssetReference reference, out TObject asset)
+		{
+			asset = default;
+			if (reference == null || !reference.RuntimeKeyIsValid())
+				return false;
+			if (!HasLocations(reference.RuntimeKey, typeof(TObject)))
+				return false;
+
+			asset = LoadAsset<TObject>(reference);
+			return asset != null;
+		}
+
 		public GameObject Spawn(string key, Transform root)
 		{
 			CheckResourceKey(key);
@@ -592,6 +619,29 @@ namespace AK.Core.ResourceManagement
 			}
 
 			return locations;
+		}
+
+		private static bool HasLocations(object key, Type type)
+		{
+			if (key == null)
+				return false;
+			if (key is string s && string.IsNullOrEmpty(s))
+				return false;
+
+			var handle = Addressables.LoadResourceLocationsAsync(key, type);
+			try
+			{
+				var locations = handle.WaitForCompletion();
+				return locations != null && locations.Count > 0;
+			}
+			catch
+			{
+				return false;
+			}
+			finally
+			{
+				ReleaseIfValid(handle);
+			}
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]

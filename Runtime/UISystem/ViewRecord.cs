@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Cysharp.Threading.Tasks;
 
 namespace AK.Systems
 {
@@ -8,6 +9,8 @@ namespace AK.Systems
 	/// </summary>
 	internal sealed class ViewRecord
 	{
+		private UniTaskCompletionSource _closeSettled;
+
 		public UIView       Instance  { get; }
 		public UIView       Parent    { get; }
 		public bool         IsStatic  { get; }
@@ -46,6 +49,24 @@ namespace AK.Systems
 
 		/// <summary>The channel stack a screen was pushed onto: its override when one was supplied at show time, else the component's sort order.</summary>
 		public UIChannel EffectiveChannel => ChannelOverride ?? Instance.Channel.SortOrder;
+
+		/// <summary>
+		/// Completes when the close in flight leaves its <see cref="IsClosing"/> state —
+		/// however it ended. Completed immediately when nothing is closing.
+		/// </summary>
+		public UniTask WhenCloseSettled()
+		{
+			if (!IsClosing) return UniTask.CompletedTask;
+
+			_closeSettled ??= new UniTaskCompletionSource();
+			return _closeSettled.Task;
+		}
+
+		public void SignalCloseSettled()
+		{
+			_closeSettled?.TrySetResult();
+			_closeSettled = null;
+		}
 
 		public void AddChild(UIView child)
 		{

@@ -168,6 +168,11 @@ namespace AK.Core.ResourceManagement
        public static TObject LoadAsset<TObject>(string key) => _strategy.LoadAsset<TObject>(key);
        public static TObject LoadAsset<TObject>(AssetReference reference) => _strategy.LoadAsset<TObject>(reference);
        public static TObject LoadAsset<TObject>(AssetReferenceT<TObject> reference) where TObject : Object => _strategy.LoadAsset<TObject>(reference);
+
+       public static bool TryLoadAsset<TObject>(string key, out TObject asset) => _strategy.TryLoadAsset(key, out asset);
+       public static bool TryLoadAsset<TObject>(AssetReference reference, out TObject asset) => _strategy.TryLoadAsset(reference, out asset);
+       public static bool TryLoadAsset<TObject>(AssetReferenceT<TObject> reference, out TObject asset) where TObject : Object
+          => _strategy.TryLoadAsset(reference, out asset);
        public static GameObject Spawn(string key, Transform root = null) => _strategy.Spawn(key, root);
        public static GameObject Spawn(AssetReference reference, Transform root = null) => _strategy.Spawn(reference, root);
        

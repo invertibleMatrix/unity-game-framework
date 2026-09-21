@@ -41,6 +41,16 @@ namespace AK.Tutorials
 
 		public Ease SpotlightIntroEase = Ease.OutCubic;
 
+		[Tooltip("Seconds after the tooltip appears before dim-tap or the hole can advance. Mash taps in this window are ignored; the player must tap again after.")]
+		public float DismissHoldDuration = 1.5f;
+
+		/// <summary>
+		/// When false (simple tap-anywhere steps), the hole still looks open but
+		/// consumes the tap and dismisses. Advance-on-fact / pointer steps override
+		/// so the spotlighted control is clickable.
+		/// </summary>
+		protected virtual bool PassClicksThroughHole => false;
+
 		public override async UniTask PresentAsync(TutorialStepContext context, CancellationToken ct)
 		{
 			await base.PresentAsync(context, ct);
@@ -52,13 +62,9 @@ namespace AK.Tutorials
 				throw new TutorialStepDeclinedException($"Step '{name}': target '{(TargetId != null ? TargetId.name : "null")}' not registered.");
 			}
 
-			var spotlight = context.UiSystem.Show<UIViewSpotlight>(ShowOptions.With(new UIViewSpotlightContext
-				{
-					Padding = SpotlightPadding,
-					Feather = SpotlightFeather,
-					IntroDuration = SpotlightIntroDuration,
-					IntroEase = SpotlightIntroEase
-				}), s => s.SetTargets(new[] { target }, animateSpotlight: true));
+			var spotlight = context.UiSystem.Show<UIViewSpotlight>(
+				ShowOptions.With(CreateSpotlightContext()),
+				s => s.SetTargets(new[] { target }, animateSpotlight: true));
 
 			var tooltip = context.UiSystem.Show<UIViewTooltip>(ShowOptions.With(new UIViewTooltipContext(Title, Description, target, Position)
 			{
@@ -70,9 +76,8 @@ namespace AK.Tutorials
 
 			spotlight.AttachFurniture(tooltip.RectTransform);
 
-			// Presentation is live: the spotlight now governs input (dim blocks,
-			// hole passes clicks to the target), so the gate opens and the
-			// spotlighted control is clickable.
+			// Presentation is live: the spotlight now governs input. Simple steps
+			// keep the hole closed so tap-anywhere dismisses; advance steps open it.
 			context.InputGate.Release();
 
 			try
@@ -95,6 +100,19 @@ namespace AK.Tutorials
 		// an unregistered target must never hang the game.
 		protected const float TargetWaitTimeout   = 3f;
 		protected const float TargetPollInterval  = 0.1f;
+
+		protected UIViewSpotlightContext CreateSpotlightContext()
+		{
+			return new UIViewSpotlightContext
+			{
+				Padding = SpotlightPadding,
+				Feather = SpotlightFeather,
+				IntroDuration = SpotlightIntroDuration,
+				IntroEase = SpotlightIntroEase,
+				DismissHoldDuration = DismissHoldDuration,
+				PassClicksThroughHole = PassClicksThroughHole,
+			};
+		}
 
 		protected async UniTask<RectTransform> WaitForTargetAsync(TutorialStepContext context, UITargetId id, CancellationToken ct)
 		{

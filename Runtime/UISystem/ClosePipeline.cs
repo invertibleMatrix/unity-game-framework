@@ -53,6 +53,7 @@ namespace AK.Systems
 			finally
 			{
 				record.IsClosing = false;
+				record.SignalCloseSettled();
 			}
 		}
 

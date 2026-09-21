@@ -95,6 +95,8 @@ namespace AK.Core.ResourceManagement
 
        TObject LoadAsset<TObject>(string key);
        TObject LoadAsset<TObject>(AssetReference reference);
+       bool TryLoadAsset<TObject>(string key, out TObject asset);
+       bool TryLoadAsset<TObject>(AssetReference reference, out TObject asset);
        GameObject Spawn(string key, Transform root);
        GameObject Spawn(AssetReference reference, Transform root);
 
