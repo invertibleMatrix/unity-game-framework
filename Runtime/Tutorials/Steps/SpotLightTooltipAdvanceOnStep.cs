@@ -22,6 +22,8 @@ namespace AK.Tutorials
 		[SerializeField, Tooltip("Advance this step when this fact is recorded while the step is live. The step never records it — instrumentation does.")]
 		private FactType _advanceOn;
 
+		protected override bool PassClicksThroughHole => true;
+
 		protected override async UniTask WaitForAdvanceAsync(TutorialStepContext context, UIViewSpotlight spotlight, CancellationToken ct)
 		{
 			if (_advanceOn == null)

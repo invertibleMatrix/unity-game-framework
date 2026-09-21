@@ -8,7 +8,7 @@ using UnityEngine.UI;
 namespace AK.Systems
 {
 	[RequireComponent(typeof(Image), typeof(GraphicRaycaster))]
-	public class UIViewSpotlight : UIView<UIViewSpotlightContext>, ICanvasRaycastFilter, IPointerClickHandler
+	public class UIViewSpotlight : UIView<UIViewSpotlightContext>, ICanvasRaycastFilter, IPointerDownHandler, IPointerClickHandler
 	{
 		private const int MAX_HOLES = 8;
 
@@ -32,14 +32,21 @@ namespace AK.Systems
 		private Tween    _introTween;
 		private float    _introT = 1f;
 		private bool     _introActive;
+		private float    _dismissHoldUntil;
+		private bool     _downWhileAccepting;
 
 		public RectTransform FurnitureRoot => _furnitureRoot;
 
 		// Serialized fields are the defaults; non-null context members win per show.
-		private float EffectivePadding       => Context?.Padding       ?? _padding;
-		private float EffectiveFeather       => Context?.Feather       ?? _feather;
-		private float EffectiveIntroDuration => Context?.IntroDuration ?? _introDuration;
-		private Ease  EffectiveIntroEase     => Context?.IntroEase     ?? _introEase;
+		private float EffectivePadding              => Context?.Padding              ?? _padding;
+		private float EffectiveFeather              => Context?.Feather              ?? _feather;
+		private float EffectiveIntroDuration        => Context?.IntroDuration        ?? _introDuration;
+		private Ease  EffectiveIntroEase            => Context?.IntroEase            ?? _introEase;
+		private float EffectiveDismissHoldDuration  => Context?.DismissHoldDuration  ?? 0f;
+		private bool  EffectivePassClicksThroughHole => Context?.PassClicksThroughHole ?? false;
+
+		private bool IsDismissHoldActive => Time.realtimeSinceStartup < _dismissHoldUntil;
+		private bool IsInputLocked => _introActive || IsDismissHoldActive;
 
 		public event Action BackgroundTapped;
 
@@ -102,6 +109,9 @@ namespace AK.Systems
 		{
 			base.OnPrepareShow();
 			SetInteractable(true);
+			_downWhileAccepting = false;
+			float hold = EffectiveDismissHoldDuration;
+			_dismissHoldUntil = hold > 0f ? Time.realtimeSinceStartup + hold : 0f;
 		}
 
 		public override void OnPrepareHide()
@@ -111,6 +121,8 @@ namespace AK.Systems
 			_introTween?.Kill();
 			_introActive = false;
 			_introT = 1f;
+			_dismissHoldUntil = 0f;
+			_downWhileAccepting = false;
 		}
 
 		private void Update()
@@ -135,10 +147,9 @@ namespace AK.Systems
 
 		public bool IsRaycastLocationValid(Vector2 screenPoint, Camera eventCamera)
 		{
-			// While the iris animates in, the hole still covers the whole screen —
-			// without this guard every tap would pass through to the UI beneath
-			// before the spotlight actually governs input.
-			if (_introActive)
+			// Iris, dismiss-hold, and tap-anywhere steps cover the whole screen so
+			// a hole tap dismisses instead of falling through to the control.
+			if (IsInputLocked || !EffectivePassClicksThroughHole)
 			{
 				return true;
 			}
@@ -146,10 +157,16 @@ namespace AK.Systems
 			return !IsInsideAnyHole(screenPoint);
 		}
 
+		public void OnPointerDown(PointerEventData eventData)
+		{
+			_downWhileAccepting = !IsInputLocked;
+		}
+
 		public void OnPointerClick(PointerEventData eventData)
 		{
-			// Swallowed taps during the iris-in are not deliberate dim-taps.
-			if (_introActive)
+			// Ignore iris/hold taps, and ignore a click whose press started then —
+			// otherwise a mash down-during / up-after would dismiss instantly.
+			if (IsInputLocked || !_downWhileAccepting)
 			{
 				return;
 			}
@@ -245,5 +262,7 @@ namespace AK.Systems
 		public float? Feather;
 		public float? IntroDuration;
 		public Ease?  IntroEase;
+		public float? DismissHoldDuration;
+		public bool?  PassClicksThroughHole;
 	}
 }

@@ -59,8 +59,9 @@ namespace AK.Systems
 			//   • Explicit parent → reuse only a static already registered under THAT parent.
 			//   • No parent       → reuse any static for the kind and re-route it onto its
 			//                       own registered host parent (its effective parent).
-			// Views mid-close are excluded so we never reuse a view that is tearing down.
-			ViewRecord staticRecord = _registry.FindStatic(key, parent);
+			// Views mid-close are excluded so we never reuse a view that is tearing down —
+			// except a static, whose show queues behind its close instead of spawning a twin.
+			ViewRecord staticRecord = _registry.FindStatic(key, parent, includeClosing: true);
 
 			if (staticRecord != null && staticRecord.Instance is TView staticView)
 			{
@@ -73,6 +74,12 @@ namespace AK.Systems
 				}
 
 				onInit?.Invoke(staticView);
+
+				if (staticRecord.IsClosing)
+				{
+					return (staticView, ReShowStaticAfterCloseAsync(staticView, staticRecord, host, context, stackBehaviour, immediate, serialized, ct));
+				}
+
 				return (staticView, serialized
 					? ShowRegisteredAsync(staticView, host, context, stackBehaviour, immediate, ct)
 					: ShowRegisteredParallelAsync(staticView, host, context, ct));
@@ -208,6 +215,24 @@ namespace AK.Systems
 			return (clone, PresentFragmentAsync(clone, null, parent, immediate, serialized, ct));
 		}
 
+		/// <summary>
+		/// A static view is never twinned: a show that arrives while its close is still
+		/// animating out waits for that close to settle and then re-presents the same
+		/// instance. If the close ends in teardown instead (parent cascade, dispose), the
+		/// record is gone and the show is dropped.
+		/// </summary>
+		private async UniTask ReShowStaticAfterCloseAsync(UIView view, ViewRecord record, UIView host, UIContext context,
+		                                                  ViewStackBehaviour? stackBehaviour, bool immediate, bool serialized,
+		                                                  CancellationToken ct)
+		{
+			await record.WhenCloseSettled().AttachExternalCancellation(ct);
+
+			if (!_registry.Contains(view)) return;
+
+			if (serialized) await ShowRegisteredAsync(view, host, context, stackBehaviour, immediate, ct);
+			else await ShowRegisteredParallelAsync(view, host, context, ct);
+		}
+
 		private static void Prime(UIView view, UIContext context, ViewStackBehaviour? stackBehaviour)
 		{
 			IViewLifecycle lifecycle = view.Lifecycle();
@@ -235,6 +260,12 @@ namespace AK.Systems
 			if (!_registry.TryGet(view, out record))
 			{
 				Debug.LogError($"Cannot show view '{view.name}': not registered.", view);
+				return false;
+			}
+
+			if (record.IsClosing)
+			{
+				Debug.LogWarning($"Cannot show view '{view.name}': it is closing. Show it again after the close settles.", view);
 				return false;
 			}
 

@@ -75,7 +75,6 @@ MonoBehaviour:
   _returnToPoolOnClose: 0
   _allowMultipleInstances: 0
   _childCloseOrder: 0
-  _showBackgroundOverlay: 0
   _lockEntryPosition: 0
   _staticViews: []
   _isTemplate: 0
@@ -97,7 +96,7 @@ Canvas:
   m_OverridePixelPerfect: 0
   m_SortingBucketNormalizedSize: 0
   m_VertexColorAlwaysGammaSpace: 0
-  m_AdditionalShaderChannelsFlag: 0
+  m_AdditionalShaderChannelsFlag: 25
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
   m_SortingOrder: 0
