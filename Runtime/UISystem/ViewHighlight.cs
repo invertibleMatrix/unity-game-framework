@@ -1,3 +1,4 @@
+using AK.Kernel.Timing;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.UI;
@@ -11,7 +12,8 @@ namespace AK.Systems
 	/// entering an active highlight keeps it (and cancels an exit fade in flight); exiting an
 	/// inactive one does nothing. Components the view already carries (a Canvas, a
 	/// GraphicRaycaster, a ViewBackgroundOverlay) are borrowed and handed back on
-	/// <see cref="Restore"/>; only what the highlight added itself is destroyed.
+	/// <see cref="Restore"/>; only what the highlight added itself is destroyed. The dim fades on
+	/// the view's <see cref="UIView.TimeDomain"/>.
 	/// Not to be confused with <see cref="UIViewSpotlight"/>, the rounded cut-out tutorials point at a target with.
 	/// </summary>
 	[DisallowMultipleComponent]
@@ -28,7 +30,9 @@ namespace AK.Systems
 		private GraphicRaycaster      _raycaster;
 		private bool                  _ownsRaycaster;
 		private UIViewChannel         _channel;
+		private bool                  _channelOverrideSorting;
 		private bool                  _exiting;
+		private TimeDomain            _time = TimeDomain.Unscaled;
 		private bool                  _enterDeferred;
 		private int                   _teardownFrame = -1;
 
@@ -63,7 +67,7 @@ namespace AK.Systems
 				if (_exiting)
 				{
 					_exiting = false;
-					_overlay.FadeIn(ViewBackgroundOverlay.DefaultAlpha, blockRaycasts: true);
+					_overlay.FadeIn(ViewBackgroundOverlay.DefaultAlpha, blockRaycasts: true, _time);
 					return;
 				}
 
@@ -85,6 +89,7 @@ namespace AK.Systems
 			}
 
 			IsActive = true;
+			_time = TryGetComponent(out UIView view) ? view.TimeDomain : TimeDomain.Unscaled;
 
 			if (!TryGetComponent(out _overlay))
 			{
@@ -92,12 +97,13 @@ namespace AK.Systems
 				_ownsOverlay = true;
 			}
 
-			_overlay.FadeIn(ViewBackgroundOverlay.DefaultAlpha, blockRaycasts: true);
+			_overlay.FadeIn(ViewBackgroundOverlay.DefaultAlpha, blockRaycasts: true, _time);
 
 			if (TryGetComponent(out _channel) && _channel.Canvas != null)
 			{
+				_channelOverrideSorting = _channel.Canvas.overrideSorting;
 				_channel.Canvas.overrideSorting = true;
-				_channel.Canvas.sortingOrder = (int)UIChannel.Overlay + 1;
+				_channel.Raise((int)UIChannel.Overlay + 1);
 				return;
 			}
 
@@ -142,7 +148,7 @@ namespace AK.Systems
 			}
 
 			_exiting = true;
-			_overlay.FadeOut(ExitFadeDuration, OnExitFadeComplete);
+			_overlay.FadeOut(ExitFadeDuration, _time, OnExitFadeComplete);
 		}
 
 		/// <summary>Immediate teardown: no fade. Idempotent.</summary>
@@ -183,9 +189,10 @@ namespace AK.Systems
 
 			if (_channel != null)
 			{
-				// Only the override flag. The UISystem owns sortingOrder (channel + stack depth);
-				// resetting it here would re-layer this screen under screens it should sit above.
-				if (_channel.Canvas != null) _channel.Canvas.overrideSorting = false;
+				// The channel hands the screen back to the order its stack gives it now, which
+				// may have changed while it was raised.
+				if (_channel.Canvas != null) _channel.Canvas.overrideSorting = _channelOverrideSorting;
+				_channel.Lower();
 				_channel = null;
 			}
 		}

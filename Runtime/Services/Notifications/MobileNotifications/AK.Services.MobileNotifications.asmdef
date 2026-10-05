@@ -1,0 +1,32 @@
+{
+    "name": "AK.Services.MobileNotifications",
+    "rootNamespace": "AK.Services",
+    "references": [
+        "AK.Core",
+        "AK.CoreDomain",
+        "AK.Services",
+        "Unity.Notifications.Android",
+        "Unity.Notifications.iOS"
+    ],
+    "includePlatforms": [
+        "Android",
+        "Editor",
+        "iOS"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UGFW_MOBILE_NOTIFICATIONS"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.mobile.notifications",
+            "expression": "2.4.0",
+            "define": "UGFW_MOBILE_NOTIFICATIONS"
+        }
+    ],
+    "noEngineReferences": false
+}

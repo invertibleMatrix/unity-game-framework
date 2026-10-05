@@ -1,4 +1,5 @@
-﻿namespace AK.Core.ResourceManagement
+﻿#if UGFW_ADDRESSABLES
+namespace AK.Core.ResourceManagement
 {
 	/// <summary>
 	/// Options for merging the results of requests.
@@ -28,3 +29,4 @@
 		Intersection = 2
 	}
 }
+#endif

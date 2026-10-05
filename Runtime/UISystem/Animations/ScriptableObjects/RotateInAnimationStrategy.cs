@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -9,7 +11,7 @@ namespace AK.Systems.Animations
         [SerializeField] private Vector3 _startRotation = new Vector3(0, 90, 0);
         [SerializeField] private Vector3 _startScale = new Vector3(0.7f, 0.7f, 0.7f);
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             var sequence = DOTween.Sequence();
             target.localEulerAngles = _startRotation;
@@ -20,10 +22,10 @@ namespace AK.Systems.Animations
             sequence.Join(target.DOScale(Vector3.one, EntryDuration).SetEase(EntryEase));
             sequence.Join(canvasGroup.DOFade(1, EntryDuration * 0.8f).SetEase(Ease.InQuad)); // Fade in slightly faster
 
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             var sequence = DOTween.Sequence();
             
@@ -31,7 +33,7 @@ namespace AK.Systems.Animations
             sequence.Join(target.DOScale(_startScale, ExitDuration).SetEase(ExitEase));
             sequence.Join(canvasGroup.DOFade(0, ExitDuration * 0.8f).SetEase(Ease.OutQuad));
 
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
     }
 }

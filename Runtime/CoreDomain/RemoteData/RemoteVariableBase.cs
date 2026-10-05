@@ -1,89 +1,130 @@
+using System;
 using AK.Core;
 using UnityEngine;
 
 namespace AK.CoreDomain.RemoteConfig
 {
 	/// <summary>
-	/// Abstract base class for remote config variables. The identity (inherited) is
-	/// internal; the server-facing key is <see cref="VariableKey"/>.
+	/// A value the game takes from remote config, with a default for when no remote value is
+	/// known. The identity (inherited) is internal; the provider's key is <see cref="VariableKey"/>.
+	///
+	/// <para><b>Text.</b> Remote values travel as text: a provider delivers text, and the cache
+	/// keeps it. Each type reads text one way (<see cref="AK.Kernel.RemoteConfig.RemoteValueText"/>),
+	/// whichever source it came from. Text that isn't a value of the type, and empty text, are no
+	/// value.</para>
+	///
+	/// <para><b>Who sets it.</b> <see cref="RemoteConfigMeta"/> applies cached and fetched values
+	/// and keeps the cache; a variable only holds its value. A disabled variable is left at its
+	/// default. Main thread only.</para>
+	///
+	/// <para><b>Which instance.</b> Values reach the instances in the meta's registry. A copy of
+	/// the asset loaded from another bundle never gets one: hold the registry's instance, or
+	/// resolve it by identity (<see cref="RemoteConfigMeta.GetVariable(AK.Core.Uid)"/>).</para>
+	///
+	/// <para>The remote value is held in memory only. In the editor it is cleared on entering Play
+	/// mode, so with domain reload off a session doesn't start with the last one's values.</para>
 	/// </summary>
 	public abstract class RemoteVariableBase : MetaDataAsset
 	{
-		[Tooltip("The key used to identify this variable in the remote config server (e.g., Firebase).")]
+		[Tooltip("The parameter's key in the remote config provider, such as Firebase.")]
 		[SerializeField] protected string _variableKey;
 
-		[Tooltip("Whether this variable should be registered with the remote config server.")]
+		[Tooltip("Whether this variable takes values from remote config. A disabled variable always reads as its default.")]
 		[SerializeField] protected bool _isEnabled = true;
 
-		[Tooltip("If true, the fetched value will be cached to PlayerPrefs for offline access.")]
+		[Tooltip("Whether a fetched value is kept for later sessions, so it holds when the provider can't be reached.")]
 		[SerializeField] protected bool _cacheValue = true;
 
-		/// <summary>
-		/// The key used to identify this variable in the remote config server.
-		/// </summary>
+		[NonSerialized] private string            _remoteText;
+		[NonSerialized] private RemoteValueOrigin _origin;
+
+		/// <summary>The parameter's key in the remote config provider.</summary>
 		public string VariableKey => _variableKey;
 
-		/// <summary>
-		/// Whether this variable is enabled for remote config registration.
-		/// </summary>
+		/// <summary>Whether the variable takes values from remote config.</summary>
 		public bool IsEnabled => _isEnabled;
 
-		/// <summary>
-		/// Whether to cache the fetched value to PlayerPrefs.
-		/// </summary>
+		/// <summary>Whether a fetched value is kept for later sessions.</summary>
 		public bool CacheValue => _cacheValue;
 
-		/// <summary>
-		/// Whether a remote value has been fetched from the server.
-		/// </summary>
-		public abstract bool HasRemoteValue { get; }
+		/// <summary>Where the value comes from.</summary>
+		public RemoteValueOrigin Origin => _origin;
+
+		/// <summary>Whether a remote value is known, fetched or cached. Without one, the variable reads as its default.</summary>
+		public bool HasRemoteValue => _origin != RemoteValueOrigin.Default;
+
+		/// <summary>The text the remote value was read from. Null without a remote value.</summary>
+		public string RemoteText => _remoteText;
+
+		/// <summary>The type of the variable's value.</summary>
+		public abstract Type ValueType { get; }
+
+		/// <summary>The default value as text, as a provider takes in-app defaults.</summary>
+		public abstract string GetDefaultValueText();
+
+		/// <summary>The value as text: the remote text, or the default's.</summary>
+		public string GetValueText() => HasRemoteValue ? _remoteText : GetDefaultValueText();
 
 		/// <summary>
-		/// Clears the remote value, resetting to default.
+		/// Takes <paramref name="text"/> as the remote value, from <paramref name="origin"/>.
+		/// False, changing nothing, when the text is empty or isn't a value of the variable's type.
 		/// </summary>
-		public abstract void ClearRemoteValue();
+		/// <exception cref="ArgumentOutOfRangeException"><paramref name="origin"/> is <see cref="RemoteValueOrigin.Default"/>.</exception>
+		public bool TrySetRemoteText(string text, RemoteValueOrigin origin)
+		{
+			if (origin == RemoteValueOrigin.Default)
+			{
+				throw new ArgumentOutOfRangeException(nameof(origin), origin, "A remote value is fetched or cached.");
+			}
 
-		/// <summary>
-		/// Gets the default value as an object for building defaults dictionary.
-		/// </summary>
-		public abstract object GetDefaultValueObject();
+			if (string.IsNullOrEmpty(text) || !TryAcceptText(text))
+			{
+				return false;
+			}
 
-		/// <summary>
-		/// Gets the current value as an object.
-		/// </summary>
-		public abstract object GetValueObject();
+			_remoteText = text;
+			_origin     = origin;
+			return true;
+		}
 
-		/// <summary>
-		/// Sets the remote value from a string (JSON for complex types).
-		/// </summary>
-		public abstract void SetRemoteValueFromString(string value);
+		/// <summary>Forgets the remote value. The variable reads as its default again.</summary>
+		public void ClearRemoteValue()
+		{
+			_remoteText = null;
+			_origin     = RemoteValueOrigin.Default;
+			OnRemoteValueCleared();
+		}
 
-		/// <summary>
-		/// Saves the current value to PlayerPrefs cache.
-		/// </summary>
-		public abstract void SaveCachedValue();
+		/// <summary>Reads <paramref name="text"/> and holds the value. False, holding nothing new, when it isn't a value of the type.</summary>
+		protected abstract bool TryAcceptText(string text);
 
-		/// <summary>
-		/// Loads the cached value from PlayerPrefs.
-		/// </summary>
-		public abstract void LoadCachedValue();
+		/// <summary>The remote value is gone: let go of it.</summary>
+		protected abstract void OnRemoteValueCleared();
 
-		/// <summary>
-		/// Clears the cached value from PlayerPrefs.
-		/// </summary>
-		public abstract void ClearCachedValue();
-
-		/// <summary>
-		/// Gets the cache key for this variable.
-		/// </summary>
-		protected string GetCacheKey() => $"remote_config_{_variableKey}";
+		/// <summary>Records a remote value the subclass already holds, with the text that reads back as it.</summary>
+		protected void MarkRemote(string text, RemoteValueOrigin origin)
+		{
+			_remoteText = text;
+			_origin     = origin;
+		}
 
 		protected virtual void OnValidate()
 		{
 			if (string.IsNullOrEmpty(_variableKey))
 			{
-				Debug.LogWarning($"RemoteVariable '{name}' has no VariableKey set. It will not be registered with remote config.");
+				Debug.LogWarning($"Remote variable '{name}' has no VariableKey, so it never takes a remote value.", this);
 			}
 		}
+
+#if UNITY_EDITOR
+		[UnityEditor.InitializeOnEnterPlayMode]
+		private static void ClearOnEnterPlayMode()
+		{
+			foreach (RemoteVariableBase variable in Resources.FindObjectsOfTypeAll<RemoteVariableBase>())
+			{
+				variable.ClearRemoteValue();
+			}
+		}
+#endif
 	}
 }

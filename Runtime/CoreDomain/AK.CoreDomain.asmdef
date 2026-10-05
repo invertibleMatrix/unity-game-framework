@@ -2,9 +2,8 @@
     "name": "AK.CoreDomain",
     "rootNamespace": "AK.CoreDomain",
     "references": [
-        "AK.Core",
-        "Unity.Addressables",
-        "Unity.ResourceManager"
+        "AK.Kernel",
+        "AK.Core"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

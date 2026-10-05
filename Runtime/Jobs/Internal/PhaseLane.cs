@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using AK.Core.Collections;
+using AK.Kernel.Collections;
 
 namespace AK.Jobs
 {
@@ -16,16 +16,16 @@ namespace AK.Jobs
 	{
 		private const int InitialCapacity = 64;
 
-		public JobArray<IJob>            PendingJobs      = new(InitialCapacity);
+		public JobArray<IFrameJob>       PendingJobs      = new(InitialCapacity);
 		public JobArray<Handle<JobSlot>> PendingHandles   = new(InitialCapacity);
-		public JobArray<IJob>            ExecutingJobs    = new(InitialCapacity);
+		public JobArray<IFrameJob>       ExecutingJobs    = new(InitialCapacity);
 		public JobArray<Handle<JobSlot>> ExecutingHandles = new(InitialCapacity);
 
-		public readonly JobArray<IJob>            RepeatingJobs    = new(16);
+		public readonly JobArray<IFrameJob>       RepeatingJobs    = new(16);
 		public readonly JobArray<Handle<JobSlot>> RepeatingHandles = new(16);
 
 		/// <summary>Repeating jobs scheduled during the frame; merged into <c>Repeating*</c> at the barrier so workers never see a growing array.</summary>
-		public readonly JobArray<IJob>            StagedRepeatingJobs    = new(16);
+		public readonly JobArray<IFrameJob>       StagedRepeatingJobs    = new(16);
 		public readonly JobArray<Handle<JobSlot>> StagedRepeatingHandles = new(16);
 
 		public readonly List<IJobBatch> Batches = new();

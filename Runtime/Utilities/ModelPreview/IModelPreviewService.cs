@@ -1,4 +1,4 @@
-namespace Utilities.ModelPreview
+namespace AK.Utilities.Previews
 {
 	/// <summary>
 	/// App-lifetime factory for dialog-scoped live 3D model preview sessions.

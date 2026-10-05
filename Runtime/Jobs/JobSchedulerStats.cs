@@ -12,7 +12,7 @@ namespace AK.Jobs
 
 		public readonly int LastFrameChunks;
 
-		/// <summary>Jobs whose <see cref="IJob.Execute"/> threw in the last frame.</summary>
+		/// <summary>Jobs whose <see cref="IFrameJob.Execute"/> threw in the last frame.</summary>
 		public readonly int LastFrameFaults;
 
 		/// <summary>Cumulative frames where the workers were still busy at the barrier, so nothing was handed off.</summary>

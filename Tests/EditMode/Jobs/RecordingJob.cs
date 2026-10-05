@@ -5,7 +5,7 @@ using AK.Jobs;
 namespace AK.Tests.Jobs
 {
 	/// <summary>Test job that records where and how often it ran, and can block inside Execute until released.</summary>
-	internal sealed class RecordingJob : IJob, IJobCallback
+	internal sealed class RecordingJob : IFrameJob, IFrameJobCallback
 	{
 		public int  ExecuteCount;
 		public int  ExecuteThreadId;
@@ -37,7 +37,7 @@ namespace AK.Tests.Jobs
 	}
 
 	/// <summary>Job without a callback, for allocation and throughput tests.</summary>
-	internal sealed class CountingJob : IJob
+	internal sealed class CountingJob : IFrameJob
 	{
 		public int Count;
 

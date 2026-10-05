@@ -32,7 +32,3 @@ MonoBehaviour:
   _addAttentionSeeking: 1
   _addJigglePhysics: 1
   _jiggleAmount: 5
-  _addStretchSquash: 1
-  _squashSensitivity: 0.3
-  _addLifeSounds: 0
-  _soundFrequency: 3

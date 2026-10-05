@@ -1,43 +1,38 @@
+using System.Threading;
 using Cysharp.Threading.Tasks;
-using AK.CoreDomain.RemoteConfig;
 
 namespace AK.Services
 {
 	/// <summary>
-	/// Interface for Remote Config services.
-	/// Implementations can wrap different providers (Firebase, custom backend, etc.)
+	/// Fetches remote config from a provider, such as Firebase or a game server, and applies
+	/// it to the variables of a <see cref="AK.CoreDomain.RemoteConfig.RemoteConfigMeta"/>.
+	///
+	/// A provider that can't be reached never fails a call: the variables keep their cached or
+	/// default values, and the failure is logged. Cancelling a call stops the caller waiting;
+	/// the values already applied stay.
 	/// </summary>
 	public interface IRemoteConfigService
 	{
 		/// <summary>
-		/// Whether the service has been initialized.
+		/// Whether <see cref="InitializeAsync"/> has finished: the variables hold fetched values,
+		/// or cached and default ones when the provider couldn't be reached. False while it
+		/// runs, and after it was cancelled.
 		/// </summary>
 		bool IsInitialized { get; }
 
 		/// <summary>
-		/// Initializes the remote config service.
-		/// - Sets default values from RemoteConfigMeta
-		/// - Fetches values from the remote server
-		/// - Applies fetched values to RemoteVariables
+		/// Loads the cached values, then fetches, activates and applies the provider's values.
+		/// Once it has finished, later calls do nothing; a cancelled run can be started again.
 		/// </summary>
-		UniTask InitializeAsync();
+		UniTask InitializeAsync(CancellationToken cancellationToken = default);
 
-		/// <summary>
-		/// Fetches the latest values from the remote server.
-		/// Call this to refresh values without full re-initialization.
-		/// </summary>
-		UniTask FetchAsync();
+		/// <summary>Fetches the provider's latest values, without applying them.</summary>
+		UniTask FetchAsync(CancellationToken cancellationToken = default);
 
-		/// <summary>
-		/// Activates the most recently fetched values.
-		/// Called automatically during InitializeAsync, but can be called
-		/// separately if you want to control when values are applied.
-		/// </summary>
-		UniTask ActivateAsync();
+		/// <summary>Activates the values fetched last and applies them to the variables.</summary>
+		UniTask ActivateAsync(CancellationToken cancellationToken = default);
 
-		/// <summary>
-		/// Fetches and activates values in one call.
-		/// </summary>
-		UniTask FetchAndActivateAsync();
+		/// <summary>Fetches, then activates and applies, in one call.</summary>
+		UniTask FetchAndActivateAsync(CancellationToken cancellationToken = default);
 	}
 }

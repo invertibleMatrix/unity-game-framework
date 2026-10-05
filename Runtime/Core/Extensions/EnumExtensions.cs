@@ -3,26 +3,31 @@ using System.Collections.Generic;
 
 namespace AK.Core.Extensions
 {
+    /// <summary>
+    /// Enum names, cached per enum type at its first use. Names are matched in any case,
+    /// ordinally; of two names that differ only in case, the one <see cref="Enum.GetNames"/>
+    /// lists first is matched. A value with several names goes by the first one listed.
+    /// </summary>
     public static class EnumExtensions
     {
-        public static bool TryGetEnum<T>(this string? enumString, out T result) where T : struct, Enum
+        public static bool TryGetEnum<T>(this string enumString, out T result) where T : struct, Enum
         {
             if (enumString == null)
             {
                 result = default;
                 return false;
             }
-            
-            //ReverseValues dictionary is not case sensitive, so this will work for any case string input!
-            if (LowerEnumNameCache<T>.ReverseValues.TryGetValue(enumString, out result))
+
+            if (NameCache<T>.Values.TryGetValue(enumString, out result))
             {
                 return true;
             }
 
+            // Numbers, and combinations of flags.
             return Enum.TryParse(enumString, true, out result);
         }
 
-        public static T GetEnum<T>(this string? enumString) where T : struct, Enum
+        public static T GetEnum<T>(this string enumString) where T : struct, Enum
         {
             bool success = TryGetEnum(enumString, out T result);
             if (!success)
@@ -34,68 +39,57 @@ namespace AK.Core.Extensions
             return result;
         }
 
-        public static ICollection<string> GetNames<T>() where T : Enum
+        /// <summary>One name per value: the first one listed.</summary>
+        public static ICollection<string> GetNames<T>() where T : struct, Enum
         {
-            return EnumNameCache<T>.Values.Values;
+            return NameCache<T>.Names.Values;
         }
 
-        public static string GetName<T>(this T @enum) where T : Enum
+        public static string GetName<T>(this T @enum) where T : struct, Enum
         {
-            if (EnumNameCache<T>.Values.TryGetValue(@enum, out string? result))
+            if (NameCache<T>.Names.TryGetValue(@enum, out string result))
             {
                 return result;
             }
 
-            return Enum.GetName(typeof(T), @enum) ?? @enum.ToString();
+            return @enum.ToString();
         }
 
         public static string GetLowerName<T>(this T @enum) where T : struct, Enum
         {
-            if (LowerEnumNameCache<T>.Values.TryGetValue(@enum, out string? result))
+            if (NameCache<T>.LowerNames.TryGetValue(@enum, out string result))
             {
                 return result;
             }
 
-            return (Enum.GetName(typeof(T), @enum) ?? @enum.ToString()).ToLowerInvariant();
-        }
-        
-        private static class EnumNameCache<T> where T : Enum
-        {
-            public static readonly Dictionary<T, string> Values;
-            
-            static EnumNameCache()
-            {
-                //This is safe against multiple enum names having the same value by only mapping the first name per value
-                var enumValues = (T[])Enum.GetValues(typeof(T));
-                Values = new Dictionary<T, string>(enumValues.Length);
-                for (int i = 0; i < enumValues.Length; i++)
-                {
-                    T enumVal = enumValues[i];
-                    string enumName = Enum.GetName(typeof(T), enumVal)!;
-                    Values.TryAdd(enumVal, enumName);
-                }
-            }
+            return @enum.ToString().ToLowerInvariant();
         }
 
-        private static class LowerEnumNameCache<T> where T : struct, Enum
+        private static class NameCache<T> where T : struct, Enum
         {
-            public static readonly Dictionary<T, string> Values;
-            public static readonly Dictionary<string, T> ReverseValues;
+            // By value: its first name listed, as declared and in lower case.
+            public static readonly Dictionary<T, string> Names;
+            public static readonly Dictionary<T, string> LowerNames;
 
-            static LowerEnumNameCache()
+            // By name, in any case: the value of the first name listed that matches.
+            public static readonly Dictionary<string, T> Values;
+
+            static NameCache()
             {
-                //This is safe against multiple enum names having the same value by only mapping the first name per value
-                string[] enumNames = Enum.GetNames(typeof(T));
-                Values = new Dictionary<T, string>(enumNames.Length);
-                ReverseValues = new Dictionary<string, T>(enumNames.Length, StringComparer.InvariantCultureIgnoreCase);
-                for (int i = 0; i < enumNames.Length; i++)
+                string[] names = Enum.GetNames(typeof(T));
+                Names      = new Dictionary<T, string>(names.Length);
+                LowerNames = new Dictionary<T, string>(names.Length);
+                Values     = new Dictionary<string, T>(names.Length, StringComparer.OrdinalIgnoreCase);
+
+                foreach (string name in names)
                 {
-                    string enumName = enumNames[i];
-                    T enumVal = Enum.Parse<T>(enumName);
-                    enumName = enumName.ToLowerInvariant();
-                    
-                    Values.TryAdd(enumVal, enumName);
-                    ReverseValues.Add(enumName, enumVal);
+                    T value = Enum.Parse<T>(name);
+                    if (Names.TryAdd(value, name))
+                    {
+                        LowerNames.Add(value, name.ToLowerInvariant());
+                    }
+
+                    Values.TryAdd(name, value);
                 }
             }
         }

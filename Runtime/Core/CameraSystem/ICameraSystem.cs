@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Threading;
 using AK.Core;
-using Cysharp.Threading.Tasks;
 
 namespace AK.Systems
 {
@@ -10,8 +8,11 @@ namespace AK.Systems
     /// Camera identities are OPTIONAL throughout: <see cref="Uid{T}.None"/> means "the first
     /// bound camera" (or first assignable to T). Pass an identity only to pick a specific
     /// variant when several cameras share a type.
+    /// <para>Virtual cameras need Cinemachine 3, and ICameraSystem.Cinemachine.cs declares them.
+    /// Overlays stack on their base cameras with URP only; without it, each camera renders on
+    /// its own.</para>
     /// </summary>
-    public interface ICameraSystem
+    public partial interface ICameraSystem
     {
         T Get<T>() where T : class, IGameCamera;
 
@@ -28,14 +29,17 @@ namespace AK.Systems
 
         /// <summary>
         /// Unbind a camera from the system. Removes from internal dictionaries and URP stack.
-        /// Called automatically when a BaseCamera is destroyed.
+        /// Called automatically when a BaseCamera is destroyed. The overlays on an unbound base
+        /// camera's stack wait for the next base camera of its kind.
         /// </summary>
         void UnbindCamera(IGameCamera gameCamera);
 
         /// <summary>
         /// Spawn a camera from the CameraRegistry. With an identity, the matching
         /// CameraDefinition is used; with None, the first definition whose prefab has a
-        /// <typeparamref name="T"/> component is used.
+        /// <typeparamref name="T"/> component is used. The instance is injected, takes the
+        /// definition's configuration when it is an <see cref="ISpawnableCamera"/>, and is bound
+        /// before this returns.
         /// </summary>
         T SpawnCamera<T>(Uid<CameraType> cameraType = default) where T : class, IGameCamera;
         T SpawnCamera<T>(CameraType cameraType) where T : class, IGameCamera;
@@ -57,40 +61,20 @@ namespace AK.Systems
         void DisableCamera(Uid<CameraType> cameraType, bool disableGameObject = true);
         void DisableCamera(CameraType cameraType, bool disableGameObject = true);
 
-        // =================================================================
-        // VIRTUAL CAMERAS (Cinemachine, single-brain priority workflow)
-        // =================================================================
-
-        /// <summary>The currently live virtual camera, or null if none is active.</summary>
-        IVirtualGameCamera ActiveVirtualCamera { get; }
-
-        /// <summary>The virtual camera marked as default (fallback), or null if none.</summary>
-        IVirtualGameCamera DefaultVirtualCamera { get; }
+        /// <summary>
+        /// Enables <paramref name="camera"/> itself, not the first camera of its type: a virtual
+        /// camera is made live, and an overlay goes on its base camera's stack, or waits for its
+        /// base camera to bind.
+        /// </summary>
+        void EnableCamera(IGameCamera camera, bool enableGameObject = true);
 
         /// <summary>
-        /// Makes a virtual camera live: its priority is boosted above all others and the (single)
-        /// Cinemachine brain blends to it. None activates the default camera.
+        /// Disables <paramref name="camera"/> itself: a virtual camera is demoted to standby, and
+        /// an overlay leaves its base camera's stack and stops waiting for one.
         /// </summary>
-        /// <param name="explicitCamera">Skip lookup entirely and activate this exact instance.</param>
-        void ActivateVirtualCamera(Uid<CameraType> cameraType = default, IVirtualGameCamera explicitCamera = null);
-        void ActivateVirtualCamera(CameraType cameraType, IVirtualGameCamera explicitCamera = null);
+        void DisableCamera(IGameCamera camera, bool disableGameObject = true);
 
-        /// <summary>Makes a virtual camera live and awaits until the brain's blend to it completes.</summary>
-        UniTask<IVirtualGameCamera> ActivateVirtualCameraAsync(Uid<CameraType> cameraType = default, IVirtualGameCamera explicitCamera = null,
-                                                               CancellationToken ct = default);
-
-        /// <summary>
-        /// Demotes a virtual camera back to standby priority. If it was live, the default
-        /// camera (if any) takes over with a smooth blend.
-        /// </summary>
-        void DeactivateVirtualCamera(IVirtualGameCamera camera);
-
-        /// <summary>Activates the default virtual camera, if one is registered.</summary>
-        bool ActivateDefaultVirtualCamera();
-
-        /// <summary>Awaits until the active Cinemachine brain finishes its current blend (or returns immediately if none).</summary>
-        UniTask WaitForCameraBlendAsync(CancellationToken ct = default);
-
+        /// <summary>Sorts every base camera's stack by layer order. Does nothing without URP.</summary>
         void ReorderCameraStack();
 
         void Dispose();

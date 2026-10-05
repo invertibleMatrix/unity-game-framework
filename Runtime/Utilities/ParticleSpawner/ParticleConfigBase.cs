@@ -1,7 +1,7 @@
 using AK.Core;
 using UnityEngine;
 
-namespace Utilities.ParticleSpawner
+namespace AK.Utilities.Particles
 {
 	[CreateAssetMenu(fileName = "ParticleConfigBase", menuName = "AK/Configs/ParticleConfigBase")]
 	public class ParticleConfigBase : UID

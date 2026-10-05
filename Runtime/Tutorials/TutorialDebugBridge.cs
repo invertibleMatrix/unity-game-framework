@@ -9,31 +9,41 @@ using UnityEngine;
 namespace AK.Tutorials
 {
 	/// <summary>
-	/// Editor-facing handle onto the live tutorial services. The host wires it at
-	/// binding time (Configure, plus ChainKick if the host has a presentation
-	/// arbiter), and the TutorialProvider inspector drives it to force tutorials:
-	/// Count(ProgressFact) is the step pointer, so running from step N is a SetCount
-	/// plus recording the step's missing condition facts. PresentDirectly runs the
-	/// provider's RunDueAsync on the spot; PresentViaChain defers to the host hook.
+	/// Editor-facing handle onto the live tutorial services. The host wires it at binding
+	/// time with <see cref="Configure"/>, and the TutorialProvider inspector drives it to
+	/// force tutorials: Count(ProgressFact) is the step pointer, so running from step N is a
+	/// SetCount plus recording the step's missing condition facts. PresentDirectly runs the
+	/// provider's RunDueAsync on the spot; PresentViaChain defers to the host's chain kick.
+	///
+	/// Editor only. In a player build, calls to <see cref="Configure"/> compile away with
+	/// their arguments, and the rest of the bridge does not exist.
 	/// </summary>
 	public static class TutorialDebugBridge
 	{
-		private static IFactService      _facts;
-		private static IUISystem         _uiSystem;
-		private static IUITargetRegistry _targets;
-
-		/// <summary>Host hook invoked after the facts are forced — kick your presentation arbiter's checkpoint here. Null means chain-present is unavailable.</summary>
-		public static Action ChainKick;
-
-		public static bool IsReady => _facts != null && _uiSystem != null && _targets != null;
-		public static bool CanPresentViaChain => ChainKick != null;
-
-		public static void Configure(IFactService facts, IUISystem uiSystem, IUITargetRegistry targets)
+		/// <summary>
+		/// Binds the bridge to the live services. <paramref name="chainKick"/> kicks the host's
+		/// presentation arbiter after the facts are forced; without one, chain-present is
+		/// unavailable.
+		/// </summary>
+		[System.Diagnostics.Conditional("UNITY_EDITOR")]
+		public static void Configure(IFactService facts, IUISystem uiSystem, IUITargetRegistry targets, Action chainKick = null)
 		{
+#if UNITY_EDITOR
 			_facts = facts;
 			_uiSystem = uiSystem;
 			_targets = targets;
+			_chainKick = chainKick;
+#endif
 		}
+
+#if UNITY_EDITOR
+		private static IFactService      _facts;
+		private static IUISystem         _uiSystem;
+		private static IUITargetRegistry _targets;
+		private static Action            _chainKick;
+
+		public static bool IsReady => _facts != null && _uiSystem != null && _targets != null;
+		public static bool CanPresentViaChain => _chainKick != null;
 
 		/// <summary>Read-only count passthrough for the inspector's condition breakdown.</summary>
 		public static int Count(FactType fact)
@@ -41,7 +51,7 @@ namespace AK.Tutorials
 			return _facts != null && fact != null ? _facts.Count(fact) : 0;
 		}
 
-		/// <summary>Forces the provider due and hands off to the host's ChainKick hook.</summary>
+		/// <summary>Forces the provider due and hands off to the host's chain kick.</summary>
 		public static void PresentViaChain(TutorialProvider provider, int fromStep, bool forceAllSteps)
 		{
 			if (!IsReady || !ForceDue(provider, fromStep, forceAllSteps))
@@ -49,14 +59,14 @@ namespace AK.Tutorials
 				return;
 			}
 
-			ChainKick?.Invoke();
+			_chainKick?.Invoke();
 		}
 
 		/// <summary>
 		/// Forces the provider due and presents it on the spot, bypassing any host
 		/// arbiter. The provider's own EnabledGate kill-switch still applies. Re-Init
-		/// is safe only because forcing is manual — don't call while the same provider
-		/// is mid-presentation.
+		/// abandons a run of the same provider still in flight, so forcing mid-presentation
+		/// restarts it cleanly.
 		/// </summary>
 		public static void PresentDirectly(TutorialProvider provider, int fromStep, bool forceAllSteps)
 		{
@@ -126,5 +136,6 @@ namespace AK.Tutorials
 
 			return true;
 		}
+#endif
 	}
 }

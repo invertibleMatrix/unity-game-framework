@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -27,12 +29,6 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Initial scale")]
         private Vector3 _initialScale = Vector3.zero;
         
-        [SerializeField] [Tooltip("Entry duration")]
-        private float _entryDuration = 0.5f;
-        
-        [SerializeField] [Tooltip("Exit duration")]
-        private float _exitDuration = 0.5f;
-        
         [SerializeField] [Tooltip("Add rotation pulse")]
         private bool _addRotationPulse = false;
         
@@ -45,12 +41,6 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Position amount")]
         private Vector2 _positionAmount = new Vector2(10, 10);
         
-        [SerializeField] [Tooltip("Add color pulse")]
-        private bool _addColorPulse = false;
-        
-        [SerializeField] [Tooltip("Pulse color")]
-        private Color _pulseColor = Color.white;
-        
         [SerializeField] [Tooltip("Keep pulsing after show")]
         private bool _continuousPulse = false;
         
@@ -60,9 +50,7 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Continuous pulse intensity")]
         private float _continuousIntensity = 0.1f;
 
-        private Tween _continuousPulseTween;
-
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             var sequence = DOTween.Sequence();
             
@@ -72,7 +60,7 @@ namespace AK.Systems.Animations
             
             // Entry animation
             sequence.AppendCallback(() => canvasGroup.alpha = 1f);
-            sequence.Append(target.DOScale(Vector3.one, _entryDuration).SetEase(Ease.OutBack));
+            sequence.Append(target.DOScale(Vector3.one, EntryDuration).SetEase(Ease.OutBack));
             
             // Pulse sequence
             for (int i = 0; i < _showPulses; i++)
@@ -104,13 +92,6 @@ namespace AK.Systems.Animations
                     sequence.Join(target.DOAnchorPos(randomOffset, pulseDuration * 0.5f).SetEase(Ease.OutSine));
                 }
                 
-                // Color pulse
-                if (_addColorPulse)
-                {
-                    // This would require a CanvasGroup or Image component
-                    // sequence.Join(target.GetComponent<Image>().DOColor(_pulseColor, pulseDuration * 0.5f).SetEase(Ease.OutSine));
-                }
-                
                 // Scale down
                 sequence.Append(target.DOScale(Vector3.one, pulseDuration * 0.5f).SetEase(Ease.InSine));
                 
@@ -131,34 +112,21 @@ namespace AK.Systems.Animations
                 {
                     sequence.Join(target.DOAnchorPos(Vector2.zero, pulseDuration * 0.5f).SetEase(Ease.InSine));
                 }
-                
-                // Restore color
-                if (_addColorPulse)
-                {
-                    // sequence.Join(target.GetComponent<Image>().DOColor(Color.white, pulseDuration * 0.5f).SetEase(Ease.InSine));
-                }
             }
             
             // Start continuous pulse if enabled
             if (_continuousPulse)
             {
-                sequence.AppendCallback(() => StartContinuousPulse(target, canvasGroup));
+                sequence.AppendCallback(() => StartContinuousPulse(target, canvasGroup, time));
             }
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             var sequence = DOTween.Sequence();
-            
-            // Stop continuous pulse if running
-            if (_continuousPulseTween != null)
-            {
-                _continuousPulseTween.Kill();
-                _continuousPulseTween = null;
-            }
-            
+
             // Pulse sequence before hiding
             for (int i = 0; i < _hidePulses; i++)
             {
@@ -184,34 +152,27 @@ namespace AK.Systems.Animations
             }
             
             // Final exit
-            sequence.Append(target.DOScale(_initialScale, _exitDuration).SetEase(Ease.InBack));
-            sequence.Join(canvasGroup.DOFade(0, _exitDuration).SetEase(Ease.InQuad));
+            sequence.Append(target.DOScale(_initialScale, ExitDuration).SetEase(Ease.InBack));
+            sequence.Join(canvasGroup.DOFade(0, ExitDuration).SetEase(Ease.InQuad));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        private void StartContinuousPulse(RectTransform target, CanvasGroup canvasGroup)
+        private void StartContinuousPulse(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             var pulseScale = Vector3.one * (1f + _continuousIntensity);
             var pulseDuration = 1f / _continuousSpeed;
             
-            _continuousPulseTween = DOTween.Sequence()
+            // Each view's own loop, never kept on this shared asset. It targets the content, so
+            // the view's next entrance or exit stops it, and it dies with the content.
+            DOTween.Sequence()
                 .Append(target.DOScale(pulseScale, pulseDuration * 0.5f).SetEase(Ease.InOutSine))
                 .Append(target.DOScale(Vector3.one, pulseDuration * 0.5f).SetEase(Ease.InOutSine))
                 .SetLoops(-1, LoopType.Restart)
-                // Dies with the view: this SO's OnDestroy only runs on asset unload, so without
-                // a link the loop outlives every view that plays it.
+                .SetTarget(target)
+                .SetTimeDomain(time)
                 .SetLink(target.gameObject, LinkBehaviour.KillOnDisable)
                 .Play();
-        }
-
-        private void OnDestroy()
-        {
-            if (_continuousPulseTween != null)
-            {
-                _continuousPulseTween.Kill();
-                _continuousPulseTween = null;
-            }
         }
     }
 }

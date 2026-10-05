@@ -10,10 +10,12 @@ namespace AK.Services
 		private readonly AnalyticsService _service = new();
 		private bool _useGameAnalytics;
 		private bool _useMixpanel;
-		private bool _useFirebase;
+		private bool _useMeta;
+		private bool _useAppsFlyer;
 		private bool _useDebug;
 		private AnalyticsMeta _meta;
 		private AnalyticsInitOptions _options;
+		private AnalyticsTaxonomy _taxonomy;
 
 		public AnalyticsServiceBuilder UseGameAnalytics(bool use = true)
 		{
@@ -27,9 +29,15 @@ namespace AK.Services
 			return this;
 		}
 
-		public AnalyticsServiceBuilder UseFirebase(bool use = true)
+		public AnalyticsServiceBuilder UseMeta(bool use = true)
 		{
-			_useFirebase = use;
+			_useMeta = use;
+			return this;
+		}
+
+		public AnalyticsServiceBuilder UseAppsFlyer(bool use = true)
+		{
+			_useAppsFlyer = use;
 			return this;
 		}
 
@@ -51,6 +59,13 @@ namespace AK.Services
 			return this;
 		}
 
+		/// <summary>The game's analytics vocabulary; see <see cref="AnalyticsService.SetTaxonomy"/>.</summary>
+		public AnalyticsServiceBuilder WithTaxonomy(AnalyticsTaxonomy taxonomy)
+		{
+			_taxonomy = taxonomy;
+			return this;
+		}
+
 		public AnalyticsServiceBuilder AddProvider(IAnalyticsProvider provider)
 		{
 			_service.RegisterProvider(provider);
@@ -62,6 +77,16 @@ namespace AK.Services
 			if (_meta != null)
 			{
 				_service.SetMeta(_meta);
+			}
+
+			if (_options != null)
+			{
+				_service.SetOptions(_options);
+			}
+
+			if (_taxonomy != null)
+			{
+				_service.SetTaxonomy(_taxonomy);
 			}
 
 			if (_useGameAnalytics)
@@ -90,12 +115,33 @@ namespace AK.Services
 				}
 			}
 
-			if (_useFirebase)
+			if (_useMeta)
 			{
-				_service.RegisterProvider(new FirebaseAnalyticsProvider());
+				IAnalyticsProvider meta = AnalyticsProviderFactory.TryCreateMeta();
+				if (meta != null)
+				{
+					_service.RegisterProvider(meta);
+				}
+				else
+				{
+					Debug.LogWarning("[AnalyticsServiceBuilder] UseMeta() requested but AK.Services.Meta is not loaded. Import the Facebook SDK for Unity so the Meta provider assembly compiles.");
+				}
 			}
 
-			if (_useDebug || (Application.isEditor && !_useGameAnalytics && !_useMixpanel && !_useFirebase))
+			if (_useAppsFlyer)
+			{
+				IAnalyticsProvider appsFlyer = AnalyticsProviderFactory.TryCreateAppsFlyer();
+				if (appsFlyer != null)
+				{
+					_service.RegisterProvider(appsFlyer);
+				}
+				else
+				{
+					Debug.LogWarning("[AnalyticsServiceBuilder] UseAppsFlyer() requested but AK.Services.AppsFlyer is not loaded. Install appsflyer-unity-plugin so the AppsFlyer provider assembly compiles.");
+				}
+			}
+
+			if (_useDebug || (Application.isEditor && !_useGameAnalytics && !_useMixpanel && !_useMeta && !_useAppsFlyer))
 			{
 				_service.RegisterProvider(new DebugAnalyticsProvider());
 			}

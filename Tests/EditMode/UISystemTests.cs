@@ -268,6 +268,28 @@ namespace AK.Tests
 		}
 
 		// ---------------------------------------------------------------
+		// Sorting
+		// ---------------------------------------------------------------
+
+		[Test]
+		public void Show_ScreenOnAnotherChannel_SortsOnThatChannel_ThroughReSorts()
+		{
+			MakePrefab<ScreenA>(screen: true);
+			MakePrefab<ScreenB>(screen: true);
+
+			var first = _system.Show<ScreenA>(new ShowOptions(channel: UIChannel.Overlay));
+			var second = _system.Show<ScreenB>(new ShowOptions(channel: UIChannel.Overlay));
+			Canvas secondCanvas = second.GetComponent<Canvas>();
+
+			Assert.That(first.GetComponent<Canvas>().sortingOrder, Is.EqualTo((int)UIChannel.Overlay + 1), "not the HUD order of its component");
+			Assert.That(secondCanvas.sortingOrder, Is.EqualTo((int)UIChannel.Overlay + 2));
+
+			Complete(_system.CloseAsync(first));
+
+			Assert.That(secondCanvas.sortingOrder, Is.EqualTo((int)UIChannel.Overlay + 1), "a re-sort keeps the channel it was shown on");
+		}
+
+		// ---------------------------------------------------------------
 		// Allocation budget
 		// ---------------------------------------------------------------
 

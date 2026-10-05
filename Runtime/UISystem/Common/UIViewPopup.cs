@@ -1,9 +1,14 @@
-﻿using UnityEngine;
+﻿using AK.Core.Extensions;
+using UnityEngine;
 using UnityEngine.UI;
 
 namespace AK.Systems
 {
-	public abstract class UIViewPopup<TContext> : UIView where TContext : UIContext, new()
+	/// <summary>
+	/// A popup with a close button and an optional Animator that starts once it is shown. The
+	/// context is typed like any <see cref="UIView{TContext}"/>.
+	/// </summary>
+	public abstract class UIViewPopup<TContext> : UIView<TContext> where TContext : UIContext, new()
 	{
 		[SerializeField] protected Animator _animator;
 		[SerializeField] protected Button   _closeButton;
@@ -31,7 +36,10 @@ namespace AK.Systems
 
 		public override void OnShow()
 		{
-			if (_animator != null) _animator.enabled = true;
+			if (_animator == null) return;
+
+			_animator.updateMode = TimeDomain.ToAnimatorUpdateMode();
+			_animator.enabled = true;
 		}
 
 		public virtual void OnCloseButtonPressed()
@@ -40,5 +48,6 @@ namespace AK.Systems
 		}
 	}
 
+	/// <summary>A popup that takes no data of its own.</summary>
 	public abstract class UIViewPopup : UIViewPopup<UIContext> { }
 }

@@ -1,21 +1,22 @@
 using System;
 using System.Collections.Generic;
-using System.Threading;
 using AK.Core;
-using Cysharp.Threading.Tasks;
-using Unity.Cinemachine;
+using Reflex.Attributes;
+using Reflex.Core;
+using Reflex.Injectors;
 using UnityEngine;
-using UnityEngine.Rendering.Universal;
 
 namespace AK.Systems
 {
-	public class CameraSystem : GameEntity, ICameraSystem
+	// Virtual cameras need Cinemachine, and live in CameraSystem.Cinemachine.cs. Overlay stacks
+	// are URP's, which CameraStack wraps; without URP, nothing stacks.
+	public partial class CameraSystem : GameEntity, ICameraSystem
 	{
 		[SerializeField]
 		private CameraRegistry _cameraRegistry;
 
-		[Tooltip("Added to a virtual camera's BasePriority while it is live. Higher than any standby priority wins the brain.")]
-		[SerializeField] private int _virtualCameraActiveBoost = 100;
+		// Injects the cameras this system spawns.
+		[Inject] private Container _container;
 
 		// Multiple cameras may share a concrete type (prefab variants) - keep them all, first-bound wins lookups.
 		private readonly Dictionary<Type, List<IGameCamera>> _camerasByType = new();
@@ -25,17 +26,13 @@ namespace AK.Systems
 		// Insertion-ordered list backing the "first bound camera" fallback for None identities.
 		private readonly List<IGameCamera> _bindOrder = new();
 
-		private readonly Dictionary<Uid, UniversalAdditionalCameraData> _baseCameraData = new();
+		// The bound base cameras by stack key, each with the camera data that holds its stack.
+		private readonly Dictionary<Uid, BaseStack> _baseStacks = new();
 
 		private readonly List<GameObject> _spawnedCameraObjects = new();
 
+		// Enabled overlays waiting for their base camera to bind, by the base's key.
 		private readonly Dictionary<Uid, List<IGameCamera>> _pendingOverlays = new();
-
-		// Virtual (Cinemachine) cameras
-		private readonly List<IVirtualGameCamera> _virtualCameras = new();
-		private IVirtualGameCamera _activeVirtualCamera;
-		private IVirtualGameCamera _defaultVirtualCamera;
-		private CinemachineBrain _brain;
 
 		// Cache of LayerOrder per camera so stack sorting never touches GetComponent in Compare.
 		private readonly Dictionary<Camera, int> _layerOrderCache = new();
@@ -160,59 +157,40 @@ namespace AK.Systems
 				_bindOrder.Add(gameCamera);
 			}
 
+			if (gameCamera.Role == CameraRole.Virtual)
+			{
+				BindVirtualCamera(gameCamera);
+				return;
+			}
+
+			// Not for virtual cameras: their Camera is the brain's, which has an order of its own.
 			if (gameCamera.Camera != null)
 			{
 				_layerOrderCache[gameCamera.Camera] = gameCamera.LayerOrder;
 			}
 
-			if (gameCamera.Role == CameraRole.Virtual)
-			{
-				BindVirtualCamera((IVirtualGameCamera)gameCamera);
-				return;
-			}
-
 			if (gameCamera.Role == CameraRole.Base)
 			{
-				var data = gameCamera.Camera.GetUniversalAdditionalCameraData();
-				if (data != null)
+				if (CameraStack.TryGet(gameCamera.Camera, out CameraStack stack))
 				{
 					var baseKey = GetBaseCameraKey(gameCamera);
-					_baseCameraData[baseKey] = data;
+					_baseStacks[baseKey] = new BaseStack(gameCamera, stack);
 
 					// Resolve any overlay cameras that were bound before this base camera
 					if (_pendingOverlays.TryGetValue(baseKey, out var pending))
 					{
+						_pendingOverlays.Remove(baseKey);
 						foreach (var overlay in pending)
 						{
 							AddToStack(baseKey, overlay);
 						}
-
-						_pendingOverlays.Remove(baseKey);
 					}
 				}
 			}
 			// Overlay Camera: Auto-stack if base exists, otherwise defer
-			else if (gameCamera.Role == CameraRole.Overlay)
+			else if (IsStackedOverlay(gameCamera))
 			{
-				Uid<CameraType> baseId = gameCamera.DefaultBaseCameraId;
-				if (baseId.IsSet)
-				{
-					Uid baseKey = baseId.Value;
-					if (_baseCameraData.ContainsKey(baseKey))
-					{
-						AddToStack(baseKey, gameCamera);
-					}
-					else
-					{
-						if (!_pendingOverlays.TryGetValue(baseKey, out var list))
-						{
-							list = new List<IGameCamera>();
-							_pendingOverlays[baseKey] = list;
-						}
-
-						list.Add(gameCamera);
-					}
-				}
+				StackOrPend(gameCamera);
 			}
 		}
 
@@ -241,37 +219,32 @@ namespace AK.Systems
 
 			_bindOrder.Remove(gameCamera);
 
-			if (gameCamera.Camera != null)
-			{
-				_layerOrderCache.Remove(gameCamera.Camera);
-			}
-
 			if (gameCamera.Role == CameraRole.Virtual)
 			{
-				UnbindVirtualCamera((IVirtualGameCamera)gameCamera);
+				UnbindVirtualCamera(gameCamera);
 				return;
 			}
 
-			if (gameCamera.Role == CameraRole.Overlay)
+			// A reference check: the camera may be destroyed already, and its entry must still go.
+			if (gameCamera.Camera is { } unboundCamera)
 			{
-				Uid<CameraType> baseId = gameCamera.DefaultBaseCameraId;
-				if (baseId.IsSet)
-				{
-					Uid baseKey = baseId.Value;
-					if (_pendingOverlays.TryGetValue(baseKey, out var pending))
-					{
-						pending.Remove(gameCamera);
-						if (pending.Count == 0) _pendingOverlays.Remove(baseKey);
-					}
+				_layerOrderCache.Remove(unboundCamera);
+			}
 
-					RemoveFromStack(baseKey, gameCamera);
-				}
+			if (IsStackedOverlay(gameCamera))
+			{
+				UnstackAndUnpend(gameCamera);
 			}
 			else if (gameCamera.Role == CameraRole.Base)
 			{
 				var baseKey = GetBaseCameraKey(gameCamera);
-				_baseCameraData.Remove(baseKey);
-				_pendingOverlays.Remove(baseKey);
+
+				// Only the base the key maps to: a second base of the same kind replaced it.
+				if (_baseStacks.TryGetValue(baseKey, out BaseStack stack) && ReferenceEquals(stack.Owner, gameCamera))
+				{
+					_baseStacks.Remove(baseKey);
+					PendOverlaysOf(baseKey, stack.Stack);
+				}
 			}
 		}
 
@@ -303,30 +276,31 @@ namespace AK.Systems
 		{
 			var instance = Instantiate(definition.Prefab, transform);
 			instance.name = definition.Prefab.name;
-			_spawnedCameraObjects.Add(instance);
 
 			var gameCamera = instance.GetComponent<IGameCamera>();
 			if (gameCamera == null)
 			{
 				Debug.LogError($"[CameraSystem] SpawnCamera failed: Prefab '{definition.Prefab.name}' does not have an IGameCamera component.");
-				_spawnedCameraObjects.Remove(instance);
 				Destroy(instance);
 				return null;
 			}
 
-			switch (gameCamera)
+			_spawnedCameraObjects.Add(instance);
+
+			// Injected as a scene camera is: after its Awake, before its Start.
+			if (_container != null)
 			{
-				case BaseCamera baseCam:
-					baseCam.ApplyDefinition(definition);
-					baseCam.BindToSystem(this);
-					break;
-				case VirtualGameCamera virtualCam:
-					virtualCam.ApplyDefinition(definition);
-					virtualCam.BindToSystem(this);
-					break;
-				default:
-					BindCamera(gameCamera);
-					break;
+				GameObjectInjector.InjectRecursive(instance, _container);
+			}
+
+			if (gameCamera is ISpawnableCamera spawnable)
+			{
+				spawnable.ApplyDefinition(definition);
+				spawnable.BindToSystem(this);
+			}
+			else
+			{
+				BindCamera(gameCamera);
 			}
 
 			return gameCamera as T;
@@ -360,59 +334,39 @@ namespace AK.Systems
 
 		public void EnableCamera(Type cameraType, bool enableGameObject = true)
 		{
-			var camera = GetCameraOfType(cameraType);
-			if (camera == null) return;
-
-			if (camera is IVirtualGameCamera virtualCamera)
-			{
-				ActivateVirtualCamera(explicitCamera: virtualCamera);
-				if (enableGameObject) camera.GameObject.SetActive(true);
-				return;
-			}
-
-			EnablePhysicalCamera(camera, enableGameObject);
+			EnableCamera(GetCameraOfType(cameraType), enableGameObject);
 		}
 
 		public void DisableCamera(Type cameraType, bool disableGameObject = true)
 		{
-			var camera = GetCameraOfType(cameraType);
-			if (camera == null) return;
-
-			DisablePhysicalOrVirtual(camera, disableGameObject);
+			DisableCamera(GetCameraOfType(cameraType), disableGameObject);
 		}
 
 		public void EnableCamera(Uid<CameraType> cameraType, bool enableGameObject = true)
 		{
-			var camera = GetCamera(cameraType);
-			if (camera == null) return;
-
-			if (camera is IVirtualGameCamera virtualCamera)
-			{
-				ActivateVirtualCamera(explicitCamera: virtualCamera);
-				if (enableGameObject) camera.GameObject.SetActive(true);
-				return;
-			}
-
-			EnablePhysicalCamera(camera, enableGameObject);
+			EnableCamera(GetCamera(cameraType), enableGameObject);
 		}
 
 		public void EnableCamera(CameraType cameraType, bool enableGameObject = true) => EnableCamera(ToId(cameraType), enableGameObject);
 
 		public void DisableCamera(Uid<CameraType> cameraType, bool disableGameObject = true)
 		{
-			var camera = GetCamera(cameraType);
-			if (camera == null) return;
-
-			DisablePhysicalOrVirtual(camera, disableGameObject);
+			DisableCamera(GetCamera(cameraType), disableGameObject);
 		}
 
 		public void DisableCamera(CameraType cameraType, bool disableGameObject = true) => DisableCamera(ToId(cameraType), disableGameObject);
 
-		private void EnablePhysicalCamera(IGameCamera camera, bool enableGameObject)
+		public void EnableCamera(IGameCamera camera, bool enableGameObject = true)
 		{
-			if (camera.Role == CameraRole.Overlay && camera.DefaultBaseCameraId.IsSet)
+			if (camera == null) return;
+
+			if (camera.Role == CameraRole.Virtual)
 			{
-				AddToStack(camera.DefaultBaseCameraId.Value, camera);
+				EnableVirtualCamera(camera);
+			}
+			else if (IsStackedOverlay(camera))
+			{
+				StackOrPend(camera);
 			}
 
 			if (enableGameObject)
@@ -421,15 +375,17 @@ namespace AK.Systems
 			}
 		}
 
-		private void DisablePhysicalOrVirtual(IGameCamera camera, bool disableGameObject)
+		public void DisableCamera(IGameCamera camera, bool disableGameObject = true)
 		{
-			if (camera is IVirtualGameCamera virtualCamera)
+			if (camera == null) return;
+
+			if (camera.Role == CameraRole.Virtual)
 			{
-				DeactivateVirtualCamera(virtualCamera);
+				DisableVirtualCamera(camera);
 			}
-			else if (camera.Role == CameraRole.Overlay && camera.DefaultBaseCameraId.IsSet)
+			else if (IsStackedOverlay(camera))
 			{
-				RemoveFromStack(camera.DefaultBaseCameraId.Value, camera);
+				UnstackAndUnpend(camera);
 			}
 
 			if (disableGameObject)
@@ -458,200 +414,103 @@ namespace AK.Systems
 
 		public void ReorderCameraStack()
 		{
-			foreach (var data in _baseCameraData.Values)
+			foreach (var stack in _baseStacks.Values)
 			{
-				SortStack(data);
+				SortStack(stack.Stack);
+			}
+		}
+
+		// An overlay that names its base camera. One that doesn't is stacked by hand, if at all.
+		private static bool IsStackedOverlay(IGameCamera camera)
+		{
+			return camera.Role == CameraRole.Overlay && camera.DefaultBaseCameraId.IsSet;
+		}
+
+		// An enabled overlay is on its base camera's stack, or waits for its base camera to bind.
+		private void StackOrPend(IGameCamera overlay)
+		{
+			Uid baseKey = overlay.DefaultBaseCameraId.Value;
+			if (_baseStacks.ContainsKey(baseKey))
+			{
+				AddToStack(baseKey, overlay);
+				return;
+			}
+
+			if (!_pendingOverlays.TryGetValue(baseKey, out var pending))
+			{
+				pending = new List<IGameCamera>();
+				_pendingOverlays[baseKey] = pending;
+			}
+
+			if (!pending.Contains(overlay))
+			{
+				pending.Add(overlay);
+			}
+		}
+
+		private void UnstackAndUnpend(IGameCamera overlay)
+		{
+			Uid baseKey = overlay.DefaultBaseCameraId.Value;
+			if (_pendingOverlays.TryGetValue(baseKey, out var pending) && pending.Remove(overlay) && pending.Count == 0)
+			{
+				_pendingOverlays.Remove(baseKey);
+			}
+
+			RemoveFromStack(baseKey, overlay);
+		}
+
+		// The overlays on the stack of a base camera that unbinds wait for the next base camera of
+		// its kind. A destroyed camera's stack can't be read; then every overlay of its kind waits.
+		private void PendOverlaysOf(Uid baseKey, CameraStack stack)
+		{
+			List<Camera> stacked = stack.Cameras;
+
+			foreach (var camera in _bindOrder)
+			{
+				if (!IsStackedOverlay(camera) || camera.DefaultBaseCameraId.Value != baseKey) continue;
+
+				// Not on the stack: it was disabled, and stays so.
+				if (stacked != null && !stacked.Remove(camera.Camera)) continue;
+
+				StackOrPend(camera);
 			}
 		}
 
 		private void AddToStack(Uid baseKey, IGameCamera overlay)
 		{
-			if (!_baseCameraData.TryGetValue(baseKey, out var baseData)) return;
+			if (!_baseStacks.TryGetValue(baseKey, out var baseStack)) return;
 
-			if (!baseData.cameraStack.Contains(overlay.Camera))
+			var cameraStack = baseStack.Stack.Cameras;
+			if (cameraStack != null && !cameraStack.Contains(overlay.Camera))
 			{
-				baseData.cameraStack.Add(overlay.Camera);
-				SortStack(baseData);
+				cameraStack.Add(overlay.Camera);
+				cameraStack.Sort(_stackComparer);
 			}
 		}
 
 		private void RemoveFromStack(Uid baseKey, IGameCamera overlay)
 		{
-			if (!_baseCameraData.TryGetValue(baseKey, out var baseData)) return;
+			if (!_baseStacks.TryGetValue(baseKey, out var baseStack)) return;
 
-			if (baseData.cameraStack.Contains(overlay.Camera))
-			{
-				baseData.cameraStack.Remove(overlay.Camera);
-			}
+			baseStack.Stack.Cameras?.Remove(overlay.Camera);
 		}
 
-		private void SortStack(UniversalAdditionalCameraData data)
+		private void SortStack(CameraStack stack)
 		{
-			data.cameraStack.Sort(_stackComparer);
+			stack.Cameras?.Sort(_stackComparer);
 		}
 
-		// =================================================================
-		// VIRTUAL CAMERAS (Cinemachine, single-brain priority workflow)
-		// =================================================================
+		// Implemented in CameraSystem.Cinemachine.cs. Without Cinemachine, a virtual camera is
+		// bound by type and identity only.
+		partial void BindVirtualCamera(IGameCamera gameCamera);
 
-		public IVirtualGameCamera ActiveVirtualCamera => _activeVirtualCamera;
-		public IVirtualGameCamera DefaultVirtualCamera => _defaultVirtualCamera;
+		partial void UnbindVirtualCamera(IGameCamera gameCamera);
 
-		private void BindVirtualCamera(IVirtualGameCamera camera)
-		{
-			if (_virtualCameras.Contains(camera)) return;
+		partial void EnableVirtualCamera(IGameCamera gameCamera);
 
-			_virtualCameras.Add(camera);
+		partial void DisableVirtualCamera(IGameCamera gameCamera);
 
-			if (camera.VirtualCamera != null)
-			{
-				// Park at standby priority; GameObjects stay enabled (priority decides, the brain blends).
-				camera.VirtualCamera.Priority = camera.BasePriority;
-			}
-
-			if (camera.IsDefault && _defaultVirtualCamera == null)
-			{
-				_defaultVirtualCamera = camera;
-
-				// A default with nothing live takes over immediately (this also covers cold boot).
-				if (_activeVirtualCamera == null)
-				{
-					ActivateVirtualCamera(explicitCamera: camera);
-				}
-			}
-		}
-
-		private void UnbindVirtualCamera(IVirtualGameCamera camera)
-		{
-			_virtualCameras.Remove(camera);
-
-			if (ReferenceEquals(_defaultVirtualCamera, camera))
-			{
-				_defaultVirtualCamera = null;
-			}
-
-			if (ReferenceEquals(_activeVirtualCamera, camera))
-			{
-				_activeVirtualCamera = null;
-
-				// Fall back to the default so the brain has somewhere to land.
-				if (_defaultVirtualCamera != null)
-				{
-					ActivateVirtualCamera(explicitCamera: _defaultVirtualCamera);
-				}
-			}
-		}
-
-		public void ActivateVirtualCamera(Uid<CameraType> cameraType = default, IVirtualGameCamera explicitCamera = null)
-		{
-			var target = ResolveVirtualCamera(cameraType, explicitCamera);
-			if (target == null) return;
-
-			foreach (var cam in _virtualCameras)
-			{
-				if (cam.VirtualCamera == null) continue;
-				cam.VirtualCamera.Priority = ReferenceEquals(cam, target)
-					? cam.BasePriority + _virtualCameraActiveBoost
-					: cam.BasePriority;
-			}
-
-			_activeVirtualCamera = target;
-		}
-
-		public void ActivateVirtualCamera(CameraType cameraType, IVirtualGameCamera explicitCamera = null)
-		{
-			ActivateVirtualCamera(ToId(cameraType), explicitCamera);
-		}
-
-		public async UniTask<IVirtualGameCamera> ActivateVirtualCameraAsync(Uid<CameraType> cameraType = default, IVirtualGameCamera explicitCamera = null,
-		                                                                    CancellationToken ct = default)
-		{
-			ActivateVirtualCamera(cameraType, explicitCamera);
-			await WaitForCameraBlendAsync(ct);
-			return _activeVirtualCamera;
-		}
-
-		public void DeactivateVirtualCamera(IVirtualGameCamera camera)
-		{
-			if (camera?.VirtualCamera == null) return;
-
-			camera.VirtualCamera.Priority = camera.BasePriority;
-
-			if (ReferenceEquals(_activeVirtualCamera, camera))
-			{
-				_activeVirtualCamera = null;
-
-				// Smooth hand-over to the default camera, if one exists.
-				if (_defaultVirtualCamera != null && !ReferenceEquals(_defaultVirtualCamera, camera))
-				{
-					ActivateVirtualCamera(explicitCamera: _defaultVirtualCamera);
-				}
-			}
-		}
-
-		public bool ActivateDefaultVirtualCamera()
-		{
-			if (_defaultVirtualCamera == null)
-			{
-				Debug.LogWarning("[CameraSystem] No default virtual camera set.");
-				return false;
-			}
-
-			ActivateVirtualCamera(explicitCamera: _defaultVirtualCamera);
-			return true;
-		}
-
-		public async UniTask WaitForCameraBlendAsync(CancellationToken ct = default)
-		{
-			var brain = GetBrain();
-			if (brain == null)
-			{
-				return;
-			}
-
-			// Let Cinemachine process the priority change first.
-			await UniTask.Yield(ct);
-
-			while (brain != null && brain.IsBlending)
-			{
-				await UniTask.Yield(ct);
-			}
-		}
-
-		private IVirtualGameCamera ResolveVirtualCamera(Uid<CameraType> cameraType, IVirtualGameCamera explicitCamera)
-		{
-			if (explicitCamera != null) return explicitCamera;
-
-			if (cameraType.IsSet)
-			{
-				if (_camerasById.TryGetValue(cameraType.Value, out var camera))
-				{
-					if (camera is IVirtualGameCamera virtualCamera) return virtualCamera;
-
-					Debug.LogWarning($"[CameraSystem] Camera {UidDebugNames.Describe(cameraType)} is bound but is not a virtual camera.");
-					return null;
-				}
-
-				Debug.LogWarning($"[CameraSystem] No camera bound for CameraType {UidDebugNames.Describe(cameraType)}.");
-				return null;
-			}
-
-			// None: default first, otherwise the first bound virtual camera.
-			return _defaultVirtualCamera ?? (_virtualCameras.Count > 0 ? _virtualCameras[0] : null);
-		}
-
-		private CinemachineBrain GetBrain()
-		{
-			if (_brain != null) return _brain;
-
-			// Prefer the brain of a bound Cinemachine base camera; fall back to any active brain.
-			var brainCamera = GetCamera<ICinemachineGameCamera>();
-			_brain = (brainCamera != null && brainCamera.Brain != null)
-				? brainCamera.Brain
-				: CinemachineBrain.GetActiveBrain(0);
-
-			return _brain;
-		}
+		partial void ClearVirtualCameras();
 
 		private CameraDefinition FindFirstDefinitionFor<T>() where T : class, IGameCamera
 		{
@@ -674,8 +533,7 @@ namespace AK.Systems
 
 			// Pre-scan the scene once: a pre-placed scene camera with the same CameraType must
 			// suppress the startup spawn. Both bind in Start, so dictionary checks alone race.
-			BaseCamera[] sceneCameras = null;
-			VirtualGameCamera[] sceneVirtualCameras = null;
+			List<IGameCamera> sceneCameras = null;
 
 			foreach (var def in _cameraRegistry.Objects)
 			{
@@ -687,32 +545,33 @@ namespace AK.Systems
 				if (hasType && _camerasById.ContainsKey(def.CameraType.Id)) continue;
 
 				// Pre-placed in the scene but not yet bound (Start order not guaranteed)?
-				if (hasType && SceneHasCameraWithType(def.CameraType, ref sceneCameras, ref sceneVirtualCameras)) continue;
+				if (hasType && SceneHasCameraWithType(def.CameraType, ref sceneCameras)) continue;
 
 				// Spawn THIS definition (a type-less definition must not resolve to "first in registry").
 				SpawnFromDefinition<IGameCamera>(def);
 			}
 		}
 
-		private static bool SceneHasCameraWithType(CameraType cameraType, ref BaseCamera[] sceneCameras,
-			ref VirtualGameCamera[] sceneVirtualCameras)
+		// Every kind of camera, generic ones included: anything in the scene that is an IGameCamera.
+		private static bool SceneHasCameraWithType(CameraType cameraType, ref List<IGameCamera> sceneCameras)
 		{
-			sceneCameras ??= FindObjectsByType<BaseCamera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-			sceneVirtualCameras ??= FindObjectsByType<VirtualGameCamera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+			if (sceneCameras == null)
+			{
+				sceneCameras = new List<IGameCamera>();
+				foreach (var behaviour in FindObjectsByType<MonoBehaviour>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+				{
+					if (behaviour is IGameCamera camera)
+					{
+						sceneCameras.Add(camera);
+					}
+				}
+			}
 
 			Uid<CameraType> wanted = cameraType.IdAs<CameraType>();
 
 			foreach (var cam in sceneCameras)
 			{
-				if (cam != null && cam.CameraTypeId.IsSet && cam.CameraTypeId == wanted)
-				{
-					return true;
-				}
-			}
-
-			foreach (var cam in sceneVirtualCameras)
-			{
-				if (cam != null && cam.CameraTypeId.IsSet && cam.CameraTypeId == wanted)
+				if (cam.CameraTypeId.IsSet && cam.CameraTypeId == wanted)
 				{
 					return true;
 				}
@@ -742,12 +601,21 @@ namespace AK.Systems
 
 			_spawnedCameraObjects.Clear();
 			_pendingOverlays.Clear();
-			_virtualCameras.Clear();
-			_activeVirtualCamera = null;
-			_defaultVirtualCamera = null;
-			_brain = null;
+			ClearVirtualCameras();
 
 			Destroy(gameObject);
+		}
+
+		private readonly struct BaseStack
+		{
+			public readonly IGameCamera Owner;
+			public readonly CameraStack Stack;
+
+			public BaseStack(IGameCamera owner, CameraStack stack)
+			{
+				Owner = owner;
+				Stack = stack;
+			}
 		}
 	}
 }

@@ -1,223 +1,182 @@
 ﻿using System;
-using System.Text;
-using System.Text.RegularExpressions;
+using System.Globalization;
+using AK.Kernel.Formatting;
 
 namespace AK.Utilities
 {
-	// -------------------------------------------------------------------------
-	// CONFIGURATION
-	// -------------------------------------------------------------------------
+	/// <summary>How <see cref="TimeFormatter"/> writes a duration.</summary>
 	public enum TimeFormat
 	{
-		Digital, // 01:30:45
-		Abbreviated, // 1h 30m
-		Full, // 1 Hour 30 Minutes
-		Compact, // 1h30m (No spaces)
-		Stopwatch // 01:30.45 (Milliseconds)
+		/// <summary>A clock: "01:30" below an hour, "01:01:30" below a day, then "01:01:01:30" with days.</summary>
+		Digital = 0,
+
+		/// <summary>Units with spaces: "1h 30m".</summary>
+		Abbreviated = 1,
+
+		/// <summary>Units in words: "1 Hour 30 Minutes".</summary>
+		Full = 2,
+
+		/// <summary>Units without spaces: "1h30m".</summary>
+		Compact = 3,
+
+		/// <summary>Total minutes, seconds and hundredths: "01:30.45".</summary>
+		Stopwatch = 4,
 	}
 
+	/// <summary>How <see cref="TimeFormatter"/> rounds to the smallest unit it shows.</summary>
 	public enum TimeRounding
 	{
-		Floor, // 59s -> 0m (Good for "Time Played")
-		Ceil, // 59s -> 1m (CRITICAL for Cooldowns)
-		Nearest // 59s -> 1m, 29s -> 0m
+		/// <summary>Down, so the text never shows more than the time: for time played.</summary>
+		Floor = 0,
+
+		/// <summary>Up, so the text never shows less: for cooldowns, which then show zero only at their end.</summary>
+		Ceil = 1,
+
+		/// <summary>To the nearest; halves go up.</summary>
+		Nearest = 2,
 	}
 
 	/// <summary>
-	/// The comprehensive Time Utility for Unity.
-	/// Handles Formatting, Parsing, Rounding, and Future Predictions.
+	/// Durations in seconds as text for UI, and back: a facade over the kernel's
+	/// <see cref="DurationText"/>.
+	///
+	/// <para>A duration is rounded to the smallest unit shown before it is split into units, so
+	/// 59.5 seconds rounded up is "01:00", and a duration below zero shows as zero. A float is
+	/// read to seven significant digits, so 90.45f is 90.45 seconds. The text is the same on
+	/// every device, and <see cref="ParseTime"/> reads back whatever the formats write.</para>
 	/// </summary>
 	public static class TimeFormatter
 	{
-		private const int SECONDS_PER_MINUTE = 60;
-		private const int SECONDS_PER_HOUR   = 3600;
-		private const int SECONDS_PER_DAY    = 86400;
+		/// <summary>The longest text <see cref="TryFormatDuration(float, Span{char}, out int, TimeFormat, int, TimeRounding)"/> writes.</summary>
+		public const int MaxDurationLength = DurationText.MaxLength;
 
-		// -------------------------------------------------------------------------
-		// 1. EXTENSIONS (The API)
-		// -------------------------------------------------------------------------
+		// ------------------------------------------------------------------ durations
 
-		// --- Duration ---
-		public static string FormatDuration(this float s, TimeFormat f = TimeFormat.Digital, int max = 3, TimeRounding r = TimeRounding.Floor)
-			=> FormatSpan(TimeSpan.FromSeconds(s), f, max, r);
+		/// <summary>Formats a number of seconds.</summary>
+		/// <param name="max">For the unit formats, the most units shown.</param>
+		/// <exception cref="ArgumentOutOfRangeException">
+		/// The seconds are NaN or more than a <see cref="TimeSpan"/> holds, or <paramref name="max"/> is below 1 for a unit format.
+		/// </exception>
+		public static string FormatDuration(this float s, TimeFormat f = TimeFormat.Digital, int max = 3, TimeRounding r = TimeRounding.Floor) =>
+			Format(s <= 0f ? TimeSpan.Zero : DurationText.FromSeconds(s), f, max, r);
 
-		public static string FormatDuration(this int s, TimeFormat f = TimeFormat.Digital, int max = 3, TimeRounding r = TimeRounding.Floor)
-			=> FormatSpan(TimeSpan.FromSeconds(s), f, max, r);
+		/// <inheritdoc cref="FormatDuration(float, TimeFormat, int, TimeRounding)"/>
+		public static string FormatDuration(this int s, TimeFormat f = TimeFormat.Digital, int max = 3, TimeRounding r = TimeRounding.Floor) =>
+			Format(s <= 0 ? TimeSpan.Zero : new TimeSpan(s * TimeSpan.TicksPerSecond), f, max, r);
 
-		public static string FormatDuration(this double s, TimeFormat f = TimeFormat.Digital, int max = 3, TimeRounding r = TimeRounding.Floor)
-			=> FormatSpan(TimeSpan.FromSeconds(s), f, max, r);
+		/// <inheritdoc cref="FormatDuration(float, TimeFormat, int, TimeRounding)"/>
+		public static string FormatDuration(this double s, TimeFormat f = TimeFormat.Digital, int max = 3, TimeRounding r = TimeRounding.Floor) =>
+			Format(s <= 0d ? TimeSpan.Zero : DurationText.FromSeconds(s), f, max, r);
 
-		// --- Progress (New!) ---
 		/// <summary>
-		/// Formats a "Current / Total" string. Example: "01:30 / 02:00"
+		/// <see cref="FormatDuration(float, TimeFormat, int, TimeRounding)"/> into
+		/// <paramref name="destination"/>, allocating nothing: for text redrawn every frame. False,
+		/// with nothing written, when the text doesn't fit; <see cref="MaxDurationLength"/>
+		/// characters always hold it.
 		/// </summary>
-		public static string FormatProgress(this float current, float total, TimeFormat f = TimeFormat.Digital)
-		{
-			return $"{current.FormatDuration(f)} / {total.FormatDuration(f)}";
-		}
+		/// <exception cref="ArgumentOutOfRangeException">
+		/// The seconds are NaN or more than a <see cref="TimeSpan"/> holds, or <paramref name="max"/> is below 1 for a unit format.
+		/// </exception>
+		public static bool TryFormatDuration(this float s, Span<char> destination, out int charsWritten, TimeFormat f = TimeFormat.Digital,
+		                                     int max = 3, TimeRounding r = TimeRounding.Floor) =>
+			TryFormat(s <= 0f ? TimeSpan.Zero : DurationText.FromSeconds(s), f, max, r, destination, out charsWritten);
 
-		// --- Arrival / Future ---
+		/// <inheritdoc cref="TryFormatDuration(float, Span{char}, out int, TimeFormat, int, TimeRounding)"/>
+		public static bool TryFormatDuration(this double s, Span<char> destination, out int charsWritten, TimeFormat f = TimeFormat.Digital,
+		                                     int max = 3, TimeRounding r = TimeRounding.Floor) =>
+			TryFormat(s <= 0d ? TimeSpan.Zero : DurationText.FromSeconds(s), f, max, r, destination, out charsWritten);
+
+		/// <summary>Formats "current / total", such as "01:30 / 02:00".</summary>
+		public static string FormatProgress(this float current, float total, TimeFormat f = TimeFormat.Digital) =>
+			current.FormatDuration(f) + " / " + total.FormatDuration(f);
+
+		/// <summary>Seconds as a clock from a minute on, rounded down, and below a minute with one decimal: "01:15", "12.3".</summary>
+		public static string FormatDynamic(this float s) =>
+			s >= 60f ? s.FormatDuration() : s.ToString("0.0", CultureInfo.InvariantCulture);
+
+		/// <summary>
+		/// Reads a number of seconds: a clock such as "01:30" or "1:30:00", units such as "1h 30m",
+		/// "1.5h" or "2 days 1 sec", or seconds alone such as "90". Returns 0 for anything else.
+		/// <see cref="DurationText"/> has the rules.
+		/// </summary>
+		public static double ParseTime(string s) =>
+			DurationText.TryParse(s, out TimeSpan duration) ? duration.TotalSeconds : 0d;
+
+		// ------------------------------------------------------------------ dates
+
+		/// <summary>The local time <paramref name="s"/> seconds from now, in the device's format: "5:30 PM" by default.</summary>
 		public static string GetArrivalTime(this float s, string fmt = "t") => DateTime.Now.AddSeconds(s).ToString(fmt);
 
-		/// <summary>
-		/// Returns smart descriptions like "Tomorrow at 5pm" or "Just now".
-		/// </summary>
-		public static string GetArrivalDescription(this float s) => GetArrivalDescImpl(s);
+		/// <summary>When <paramref name="s"/> seconds from now is, in local time and the device's format: "Today at 5:30 PM", "Tomorrow at 9:00 AM" or "Oct 07 at 9:00 AM".</summary>
+		public static string GetArrivalDescription(this float s)
+		{
+			DateTime now = DateTime.Now;
+			DateTime arrival = now.AddSeconds(s);
 
-		public static string ToRelativeTime(this DateTime dt) => GetRelativeTimeImpl(dt);
-
-		// --- Dynamic ---
-		/// <summary>
-		/// Switches format based on urgency. >1m: Digital, <1m: Decimals.
-		/// </summary>
-		public static string FormatDynamic(this float s) =>
-			s >= 60 ? FormatSpan(TimeSpan.FromSeconds(s), TimeFormat.Digital, 3, TimeRounding.Floor) : s.ToString("0.0");
-
-		// -------------------------------------------------------------------------
-		// 2. PARSING (Input Logic)
-		// -------------------------------------------------------------------------
+			if (arrival.Date == now.Date) return $"Today at {arrival:t}";
+			if (arrival.Date == now.Date.AddDays(1)) return $"Tomorrow at {arrival:t}";
+			return $"{arrival:MMM dd} at {arrival:t}";
+		}
 
 		/// <summary>
-		/// Parses "1h 30m", "90m", or "01:30:00" back to seconds.
+		/// How long ago a time was, rounded down: "Just now" under a minute, then "5m ago", "2h ago"
+		/// and "3d ago". A time ahead is "Just now". A local time is converted to UTC; a time of
+		/// unspecified kind is taken as UTC.
 		/// </summary>
-		public static double ParseTime(string s)
+		public static string ToRelativeTime(this DateTime dt)
 		{
-			if (string.IsNullOrWhiteSpace(s)) return 0;
-			s = s.Trim().ToLowerInvariant();
+			DateTime utc = dt.Kind == DateTimeKind.Local ? dt.ToUniversalTime() : dt;
+			double seconds = (DateTime.UtcNow - utc).TotalSeconds;
 
-			// 1. Digital (Colon)
-			if (s.Contains(":"))
-			{
-				if (TimeSpan.TryParse(s, out TimeSpan ts)) return ts.TotalSeconds;
-				// Fallback for M:S
-				var parts = s.Split(':');
-				if (parts.Length == 2 && double.TryParse(parts[0], out double m) && double.TryParse(parts[1], out double sc))
-					return m * 60 + sc;
-			}
-
-			// 2. Suffixes (1h 30m)
-			double total = 0;
-			var matches = Regex.Matches(s, @"(\d*\.?\d+)\s*([dhms])");
-			if (matches.Count > 0)
-			{
-				foreach (Match m in matches)
-				{
-					double val = double.Parse(m.Groups[1].Value);
-					switch (m.Groups[2].Value)
-					{
-						case "d": total += val * SECONDS_PER_DAY; break;
-						case "h": total += val * SECONDS_PER_HOUR; break;
-						case "m": total += val * SECONDS_PER_MINUTE; break;
-						case "s": total += val; break;
-					}
-				}
-
-				return total;
-			}
-
-			// 3. Raw number fallback
-			if (double.TryParse(s, out double raw)) return raw;
-
-			return 0;
+			if (seconds < 60d) return "Just now";
+			if (seconds < 3600d) return Ago(seconds / 60d, "m ago");
+			if (seconds < 86400d) return Ago(seconds / 3600d, "h ago");
+			return Ago(seconds / 86400d, "d ago");
 		}
 
-		// -------------------------------------------------------------------------
-		// 3. CORE LOGIC (Formatting & Rounding)
-		// -------------------------------------------------------------------------
+		// ------------------------------------------------------------------ internals
 
-		private static string FormatSpan(TimeSpan t, TimeFormat format, int maxUnits, TimeRounding rounding)
+		/// <summary>The kernel's rounding for a <see cref="TimeRounding"/>.</summary>
+		internal static NumberRounding ToNumberRounding(TimeRounding rounding)
 		{
-			// Apply Rounding to the TOTAL seconds first to ensure unit cascading works
-			// (e.g. 59s -> 60s -> 1m)
-			double totalSeconds = t.TotalSeconds;
-
-			if (rounding == TimeRounding.Ceil)
-				totalSeconds = Math.Ceiling(totalSeconds);
-			else if (rounding == TimeRounding.Nearest)
-				totalSeconds = Math.Round(totalSeconds);
-			else
-				totalSeconds = Math.Floor(totalSeconds);
-
-			// Reconstruct TimeSpan from rounded value
-			t = TimeSpan.FromSeconds(totalSeconds);
-
-			if (totalSeconds <= 0) return GetZeroString(format);
-
-			if (format == TimeFormat.Digital)
-				return FormatDigital(t);
-			if (format == TimeFormat.Stopwatch)
-				return $"{(int)t.TotalMinutes:D2}:{t.Seconds:D2}.{(t.Milliseconds / 10):D2}";
-
-			return FormatNatural(t, format, maxUnits);
-		}
-
-		private static string FormatDigital(TimeSpan t)
-		{
-			if (t.TotalHours < 1) return $"{(int)t.TotalMinutes:D2}:{t.Seconds:D2}";
-			if (t.TotalDays < 1) return $"{(int)t.TotalHours:D2}:{t.Minutes:D2}:{t.Seconds:D2}";
-			return $"{t.Days:D2}:{(int)t.Hours:D2}:{t.Minutes:D2}:{t.Seconds:D2}";
-		}
-
-		private static string FormatNatural(TimeSpan t, TimeFormat format, int max)
-		{
-			StringBuilder sb = new StringBuilder();
-			int count = 0;
-			bool full = format == TimeFormat.Full;
-			string sp = format == TimeFormat.Compact ? "" : " ";
-
-			void Add(int val, string s, string l)
+			switch (rounding)
 			{
-				if (count >= max) return;
-				// If we found a value, OR if we are showing at least one unit for a larger magnitude
-				if (val > 0)
-				{
-					sb.Append($"{val}{(full ? (val == 1 ? l.TrimEnd('s') : l) : s)}{sp}");
-					count++;
-				}
-			}
-
-			Add(t.Days, "d", " Days");
-			Add(t.Hours, "h", " Hours");
-			Add(t.Minutes, "m", " Minutes");
-
-			// Show seconds if we have space, OR if we haven't shown anything yet (e.g. 0m 30s)
-			if (count < max && (t.Seconds > 0 || count == 0))
-				sb.Append($"{t.Seconds}{(full ? (t.Seconds == 1 ? " Second" : " Seconds") : "s")}");
-
-			return sb.ToString().Trim();
-		}
-
-		// -------------------------------------------------------------------------
-		// 4. HELPERS
-		// -------------------------------------------------------------------------
-
-		private static string GetZeroString(TimeFormat f)
-		{
-			switch (f)
-			{
-				case TimeFormat.Digital:   return "00:00";
-				case TimeFormat.Stopwatch: return "00:00.00";
-				case TimeFormat.Full:      return "0 Seconds";
-				default:                   return "0s";
+				case TimeRounding.Floor:   return NumberRounding.Down;
+				case TimeRounding.Ceil:    return NumberRounding.Up;
+				case TimeRounding.Nearest: return NumberRounding.Nearest;
+				default:                   throw new ArgumentOutOfRangeException(nameof(rounding), rounding, null);
 			}
 		}
 
-		private static string GetArrivalDescImpl(double seconds)
+		private static string Format(TimeSpan duration, TimeFormat format, int maxUnits, TimeRounding rounding)
 		{
-			var f = DateTime.Now.AddSeconds(seconds);
-			var now = DateTime.Now;
-			if (f.Date == now.Date) return $"Today at {f:t}";
-			if (f.Date == now.AddDays(1).Date) return $"Tomorrow at {f:t}";
-			return $"{f:MMM dd} at {f:t}";
+			Span<char> text = stackalloc char[MaxDurationLength];
+			TryFormat(duration, format, maxUnits, rounding, text, out int written);
+			return new string(text.Slice(0, written));
 		}
 
-		private static string GetRelativeTimeImpl(DateTime past)
+		private static bool TryFormat(TimeSpan duration, TimeFormat format, int maxUnits, TimeRounding rounding, Span<char> destination,
+		                              out int charsWritten)
 		{
-			double s = (DateTime.Now - past).TotalSeconds;
-			if (s < 60) return "Just now";
-			if (s < 3600) return $"{(int)(s / 60)}m ago";
-			if (s < 86400) return $"{(int)(s / 3600)}h ago";
-			return $"{(int)(s / 86400)}d ago";
+			NumberRounding numberRounding = ToNumberRounding(rounding);
+			switch (format)
+			{
+				case TimeFormat.Digital:
+					return DurationText.TryFormatClock(duration, ClockLayout.Adaptive, numberRounding, destination, out charsWritten);
+				case TimeFormat.Stopwatch:
+					return DurationText.TryFormatStopwatch(duration, numberRounding, destination, out charsWritten);
+				case TimeFormat.Abbreviated:
+					return DurationText.TryFormatUnits(duration, UnitStyle.Abbreviated, maxUnits, numberRounding, destination, out charsWritten);
+				case TimeFormat.Compact:
+					return DurationText.TryFormatUnits(duration, UnitStyle.Compact, maxUnits, numberRounding, destination, out charsWritten);
+				case TimeFormat.Full:
+					return DurationText.TryFormatUnits(duration, UnitStyle.Full, maxUnits, numberRounding, destination, out charsWritten);
+				default:
+					throw new ArgumentOutOfRangeException(nameof(format), format, null);
+			}
 		}
+
+		private static string Ago(double amount, string unit) =>
+			((long)amount).ToString(CultureInfo.InvariantCulture) + unit;
 	}
 }

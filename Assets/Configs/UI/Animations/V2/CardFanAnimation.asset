@@ -18,12 +18,10 @@ MonoBehaviour:
   ExitEase: 8
   _fanDirection: 0
   _fanAngle: 30
-  _fanRadius: 200
   _cardIndex: 0
   _totalCards: 5
   _startScale: {x: 0, y: 0, z: 0}
   _addArc: 1
-  _arcHeight: 50
   _addRotation: 1
   _extraRotationPerCard: 5
   _fanDuration: 0.5

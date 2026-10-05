@@ -19,7 +19,6 @@ MonoBehaviour:
   _triggerDelay: 0.2
   _triggerType: 0
   _triggerIntensity: 1.5
-  _cascadePattern: 0
   _waveSpeed: 2
   _waveDecay: 0.8
   _cascadeStages: 5
@@ -31,6 +30,3 @@ MonoBehaviour:
   _addElementVariation: 1
   _addTrailEffects: 1
   _addGlowPropagation: 1
-  _addScreenShake: 0
-  _soundPattern: 0
-  _addPitchVariation: 1

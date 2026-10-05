@@ -1,3 +1,4 @@
+using AK.Kernel.Timing;
 using AK.Systems.Animations;
 using System;
 using System.Collections.Generic;
@@ -119,6 +120,12 @@ namespace AK.Systems
 		public IUISystem                      UISystem                   => _host;
 
 		/// <summary>
+		/// The time this view animates on: its UI system's <see cref="IUISystem.TimeDomain"/>, or
+		/// unscaled time before the view is attached to one.
+		/// </summary>
+		public TimeDomain TimeDomain => _host != null ? _host.TimeDomain : TimeDomain.Unscaled;
+
+		/// <summary>
 		/// Returns the UIChannel component if this view has one, null otherwise.
 		/// </summary>
 		public UIViewChannel Channel { get; private set; }
@@ -160,8 +167,9 @@ namespace AK.Systems
 		public virtual void OnResume() { }
 
 		/// <summary>
-		/// Called when a pooled view is returned to the pool, after its children are gone.
-		/// Reset your internal state here (text, images, references) and call the base.
+		/// Called when a pooled view is returned to the pool, after its children are gone, and
+		/// on each static child that goes with it. Reset your internal state here (text, images,
+		/// references) and call the base, which clears <see cref="Context"/>.
 		/// </summary>
 		public virtual void OnReset()
 		{
@@ -295,7 +303,7 @@ namespace AK.Systems
 				return;
 			}
 
-			bool finished = await _animator.PlayShowAsync(AnimationStrategy, _entryPosition, ct);
+			bool finished = await _animator.PlayShowAsync(AnimationStrategy, _entryPosition, TimeDomain, ct);
 			if (run != _run) return;
 
 			if (finished) CompleteShow();
@@ -327,7 +335,7 @@ namespace AK.Systems
 				State = ViewState.Hiding;
 			}
 
-			if (_overlay != null) _overlay.FadeOut();
+			if (_overlay != null) _overlay.FadeOut(TimeDomain);
 
 			if (immediate || NoAnimation)
 			{
@@ -337,7 +345,7 @@ namespace AK.Systems
 				return;
 			}
 
-			bool finished = await _animator.PlayHideAsync(AnimationStrategy, ct);
+			bool finished = await _animator.PlayHideAsync(AnimationStrategy, TimeDomain, ct);
 			if (run != _run) return;
 
 			if (!finished) CanvasGroup.alpha = 0f;
@@ -359,7 +367,7 @@ namespace AK.Systems
 				return;
 			}
 
-			bool finished = await _animator.PlayShowAsync(AnimationStrategy, _entryPosition, ct);
+			bool finished = await _animator.PlayShowAsync(AnimationStrategy, _entryPosition, TimeDomain, ct);
 			if (run != _run || !finished) return;
 
 			SettleVisible();
@@ -403,12 +411,15 @@ namespace AK.Systems
 		/// <summary>
 		/// Starts a new entrance/exit run. Whatever run was in flight is cancelled and its
 		/// continuation, seeing a newer run, does nothing; the new run settles the interrupted
-		/// state itself (<see cref="FinishExit"/>, <see cref="AbandonEntrance"/>).
+		/// state itself (<see cref="FinishExit"/>, <see cref="AbandonEntrance"/>). Every tween
+		/// still on the content or the canvas group goes too, including idle loops a strategy
+		/// started after the last entrance: an exit never plays over a breathing or pulsing view.
 		/// </summary>
 		private int BeginRun()
 		{
 			int run = ++_run;
 			_animator.Cancel();
+			_animator.KillTweens();
 			return run;
 		}
 
@@ -440,7 +451,7 @@ namespace AK.Systems
 
 		private void SettleVisible()
 		{
-			if (_overlay != null) _overlay.FadeIn();
+			if (_overlay != null) _overlay.FadeIn(TimeDomain);
 			IsVisible = true;
 		}
 
@@ -485,7 +496,8 @@ namespace AK.Systems
 
 		/// <summary>
 		/// Resets runtime state for reuse (pool return, static child re-attach). Serialized
-		/// data and the ViewId are untouched.
+		/// data and the ViewId are untouched. The context goes, so a reused view never shows
+		/// the data of its last use.
 		/// </summary>
 		private void ResetState()
 		{
@@ -495,6 +507,7 @@ namespace AK.Systems
 				State = ViewState.Hidden;
 			}
 
+			Context = null;
 			CancelDelayedStart();
 			if (_animatableContent != null)
 			{
@@ -608,8 +621,8 @@ namespace AK.Systems
 			//    fragment resurfacing from under another view keeps its data.
 			//  - If the view has NO context yet, give it a fresh default so a typed view
 			//    never observes null after a show.
-			// Nothing clears the context on teardown either: a pooled instance keeps its
-			// last context until the next show passes a new one.
+			// A view going to the pool loses its context (OnReset), so a reused instance
+			// starts from a fresh default like a new one.
 			if (context == null && Context == null)
 			{
 				base.Context = new TContext();

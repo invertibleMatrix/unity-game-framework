@@ -14,13 +14,13 @@
     "precompiledReferences": [],
     "autoReferenced": false,
     "defineConstraints": [
-        "GAME_ANALYTICS_SDK"
+        "UGFW_GAME_ANALYTICS_SDK"
     ],
     "versionDefines": [
         {
             "name": "com.gameanalytics.sdk",
             "expression": "",
-            "define": "GAME_ANALYTICS_SDK"
+            "define": "UGFW_GAME_ANALYTICS_SDK"
         }
     ],
     "noEngineReferences": false

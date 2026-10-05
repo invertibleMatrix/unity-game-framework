@@ -1,0 +1,27 @@
+{
+    "name": "AK.Services.AppsFlyer",
+    "rootNamespace": "AK.Services",
+    "references": [
+        "AK.Core",
+        "AK.CoreDomain",
+        "AK.Services",
+        "AppsFlyer"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UGFW_APPSFLYER_SDK"
+    ],
+    "versionDefines": [
+        {
+            "name": "appsflyer-unity-plugin",
+            "expression": "",
+            "define": "UGFW_APPSFLYER_SDK"
+        }
+    ],
+    "noEngineReferences": false
+}

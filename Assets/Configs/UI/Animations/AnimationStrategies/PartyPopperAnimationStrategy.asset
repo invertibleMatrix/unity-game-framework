@@ -18,8 +18,6 @@ MonoBehaviour:
   ExitEase: 8
   _explosionScale: {x: 2.5, y: 2.5, z: 2.5}
   _explosionDuration: 0.15
-  _particleCount: 12
-  _burstRadius: 200
   _birthScale: {x: 0.01, y: 0.01, z: 0.01}
   _wobbleIntensity: 15
   _growthFeel: 3
@@ -27,11 +25,7 @@ MonoBehaviour:
   _bounceDecay: 0.6
   _finalWobble: 3
   _addPersonalityWobble: 1
-  _wobbleSpeed: 8
   _addBreathing: 1
   _breathingIntensity: 0.05
   _addFlash: 1
   _flashIntensity: 2
-  _addColorCelebration: 0
-  _triggerPopSound: 1
-  _triggerCelebrationSound: 0

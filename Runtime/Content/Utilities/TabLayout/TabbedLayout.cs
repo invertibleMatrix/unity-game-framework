@@ -1,12 +1,14 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.UI;
 using DG.Tweening;
 
-namespace UI.Utilities
+namespace AK.UI
 {
 	/// <summary>
 	/// Main controller for a tabbed layout system with animated indicator.
@@ -22,6 +24,9 @@ namespace UI.Utilities
 
 		[SerializeField] private Ease _indicatorMoveEase = Ease.OutCubic;
 
+		[SerializeField, Tooltip("The time the indicator and the tabs animate on. Unscaled keeps them moving in a game paused at timeScale 0.")]
+		private TimeDomain _timeDomain = TimeDomain.Unscaled;
+
 		[Header("Tabs (Inspector Assignment - Optional)")]
 		[Tooltip("Tabs can be assigned in inspector OR added manually via AddTab()")]
 		[SerializeField]
@@ -36,6 +41,9 @@ namespace UI.Utilities
 		private bool          _isInteractable = true;
 
 		public RectTransform TabsContainer => _tabsContainer;
+
+		/// <summary>The time the indicator and the tabs animate on.</summary>
+		public TimeDomain TimeDomain => _timeDomain;
 
 		/// <summary>
 		/// Event fired when a tab is selected. Passes the selected index.
@@ -294,7 +302,7 @@ namespace UI.Utilities
 				_currentIndicatorTween = _indicator
 				                         .DOMove(targetPosition3D, _indicatorMoveDuration)
 				                         .SetEase(_indicatorMoveEase)
-				                         .SetUpdate(true)
+				                         .SetTimeDomain(_timeDomain)
 				                         .OnComplete(() =>
 				                         {
 					                         newTab.SetSelected(true, false);

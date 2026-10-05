@@ -16,9 +16,9 @@ namespace AK.Services.Analytics
 		private sealed class EarlyListener : IGameAnalyticsATTListener
 		{
 			public void GameAnalyticsATTListenerNotDetermined() { }
-			public void GameAnalyticsATTListenerRestricted() { }
-			public void GameAnalyticsATTListenerDenied() { }
-			public void GameAnalyticsATTListenerAuthorized() { }
+			public void GameAnalyticsATTListenerRestricted() => AttConsentStatus.Report(false);
+			public void GameAnalyticsATTListenerDenied() => AttConsentStatus.Report(false);
+			public void GameAnalyticsATTListenerAuthorized() => AttConsentStatus.Report(true);
 		}
 
 		public static void RequestEarly()

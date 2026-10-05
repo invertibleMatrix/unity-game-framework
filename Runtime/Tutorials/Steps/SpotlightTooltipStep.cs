@@ -29,6 +29,9 @@ namespace AK.Tutorials
 		[Tooltip("Extra offset in canvas units applied to the tooltip position.")]
 		public Vector2 Offset;
 
+		[Tooltip("Tooltip variant (ViewId). Empty shows the default tooltip.")]
+		public string TooltipId;
+
 		[Header("Spotlight")]
 		[Tooltip("Extra padding around the spotlight hole (screen pixels).")]
 		public float SpotlightPadding = 20f;
@@ -43,6 +46,11 @@ namespace AK.Tutorials
 
 		[Tooltip("Seconds after the tooltip appears before dim-tap or the hole can advance. Mash taps in this window are ignored; the player must tap again after.")]
 		public float DismissHoldDuration = 1.5f;
+
+		[Tooltip("Tint the dim with DimColor instead of the spotlight prefab's color.")]
+		public bool OverrideDimColor;
+
+		public Color DimColor = new(0f, 0f, 0f, 0.96f);
 
 		/// <summary>
 		/// When false (simple tap-anywhere steps), the hole still looks open but
@@ -66,7 +74,7 @@ namespace AK.Tutorials
 				ShowOptions.With(CreateSpotlightContext()),
 				s => s.SetTargets(new[] { target }, animateSpotlight: true));
 
-			var tooltip = context.UiSystem.Show<UIViewTooltip>(ShowOptions.With(new UIViewTooltipContext(Title, Description, target, Position)
+			var tooltip = context.UiSystem.Show<UIViewTooltip>(ShowOptions.Variant(TooltipId, new UIViewTooltipContext(Title, Description, target, Position)
 			{
 				Icon = Icon,
 				Offset = Offset,
@@ -78,7 +86,8 @@ namespace AK.Tutorials
 
 			// Presentation is live: the spotlight now governs input. Simple steps
 			// keep the hole closed so tap-anywhere dismisses; advance steps open it.
-			context.InputGate.Release();
+			// The spotlight holds input itself while its intro plays.
+			context.InputHold.Release();
 
 			try
 			{
@@ -93,14 +102,6 @@ namespace AK.Tutorials
 			}
 		}
 
-		// UITarget registers in Start(), which Unity runs before the next Update — a
-		// step presenting in the same frame its host view activates (checkpoint
-		// chains hop surfaces like this) must poll briefly instead of failing on
-		// the first lookup. Bounded: the input gate is held until presentation, so
-		// an unregistered target must never hang the game.
-		protected const float TargetWaitTimeout   = 3f;
-		protected const float TargetPollInterval  = 0.1f;
-
 		protected UIViewSpotlightContext CreateSpotlightContext()
 		{
 			return new UIViewSpotlightContext
@@ -111,31 +112,8 @@ namespace AK.Tutorials
 				IntroEase = SpotlightIntroEase,
 				DismissHoldDuration = DismissHoldDuration,
 				PassClicksThroughHole = PassClicksThroughHole,
+				DimColor = OverrideDimColor ? DimColor : null,
 			};
-		}
-
-		protected async UniTask<RectTransform> WaitForTargetAsync(TutorialStepContext context, UITargetId id, CancellationToken ct)
-		{
-			if (id == null)
-			{
-				return null;
-			}
-
-			float deadline = Time.realtimeSinceStartup + TargetWaitTimeout;
-			while (true)
-			{
-				if (context.Targets.TryGet(id, out var target) && target != null)
-				{
-					return target;
-				}
-
-				if (Time.realtimeSinceStartup >= deadline)
-				{
-					return null;
-				}
-
-				await UniTask.WaitForSeconds(TargetPollInterval, cancellationToken: ct);
-			}
 		}
 
 		// The advance seam: base completes on dim-tap; game subclasses override to

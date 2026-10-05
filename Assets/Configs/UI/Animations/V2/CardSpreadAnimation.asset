@@ -16,13 +16,10 @@ MonoBehaviour:
   EntryEase: 9
   ExitDuration: 0.3
   ExitEase: 8
-  _spreadDirection: 0
-  _spreadDistance: 200
   _cardIndex: 0
   _totalCards: 5
   _startScale: {x: 0, y: 0, z: 0}
   _addCurve: 1
-  _curveIntensity: 50
   _addRotation: 1
   _maxRotation: 10
   _rotationPattern: 0

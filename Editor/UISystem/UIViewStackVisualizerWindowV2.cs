@@ -12,7 +12,7 @@ namespace AK.Systems.Editor
 	/// </summary>
 	public class UIViewStackVisualizerWindowV2 : EditorWindow
 	{
-		[MenuItem("AK/UI/View Stack Visualizer")]
+		[MenuItem("Tools/UGFW/UI/View Stack Visualizer")]
 		public static void ShowWindow()
 		{
 			var window = GetWindow<UIViewStackVisualizerWindowV2>("View Stack");

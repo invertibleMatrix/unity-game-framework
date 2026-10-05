@@ -1,7 +1,7 @@
 using AK.Core;
 using UnityEngine;
 
-namespace Utilities.AudioSpawner
+namespace AK.Utilities.Audio
 {
 	/// <summary>
 	/// Plays and spawns pooled audio. The primary API takes the AudioConfig asset — call sites
@@ -10,7 +10,11 @@ namespace Utilities.AudioSpawner
 	/// </summary>
 	public interface IAudioSpawner
 	{
-		/// <summary>Plays the config's audio. Use this for nearly everything.</summary>
+		/// <summary>
+		/// Plays the config's audio. Use this for nearly everything. Returns the voice, or null
+		/// when nothing plays: the config's replay gap turned it away, or it has nothing to play.
+		/// The voice goes back to its pool when it ends; keep no reference to it past then.
+		/// </summary>
 		AudioComponent PlayAudio(AudioConfig config, Vector3? position = null);
 
 		/// <summary>Plays by identity, resolved through the registry. Logs and returns null when unknown.</summary>
@@ -19,23 +23,24 @@ namespace Utilities.AudioSpawner
 		/// <summary>
 		/// Type-safe spawn without playing: returns a T from the pool bound to the config for T
 		/// (the variant, or T's default config when the variant is None). Use when you need
-		/// the component before it plays.
+		/// the component before it plays. The voice is tracked like a playing one, and passes its
+		/// gates when it plays. Stop it to give it back unplayed.
 		/// </summary>
 		T Spawn<T>(Uid<AudioConfig> variant = default) where T : AudioComponent;
 
-		/// <summary>True while at least one voice of this config is active.</summary>
+		/// <summary>True while a voice of this config plays, its start delay and fade-out included.</summary>
 		bool IsPlaying(AudioConfig config);
 
-		/// <summary>Stops (fade-out) all active voices, or only the given config's.</summary>
+		/// <summary>Stops (fade-out) every voice handed out, or only the given config's.</summary>
 		void StopAll(AudioConfig config = null);
 
 		/// <summary>Crossfades to a music track (one at a time). Replaying the current track is a no-op.</summary>
 		void PlayMusic(AudioConfig config, float crossfadeSeconds = 1f);
 
-		/// <summary>Fades out and stops the current music track.</summary>
+		/// <summary>Fades out and stops the music, a track still fading out included.</summary>
 		void StopMusic(float fadeOutSeconds = 1f);
 
-		/// <summary>The currently playing music config, or null.</summary>
+		/// <summary>The music playing, or null: null after StopMusic, and once a track that doesn't loop has played out.</summary>
 		AudioConfig CurrentMusic { get; }
 	}
 }

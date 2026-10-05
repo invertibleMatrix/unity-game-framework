@@ -2,6 +2,7 @@
     "name": "AK.Content",
     "rootNamespace": "AK.Content",
     "references": [
+        "AK.Kernel",
         "AK.Core",
         "AK.UISystem",
         "Unity.TextMeshPro",

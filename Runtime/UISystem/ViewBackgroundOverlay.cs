@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -7,10 +9,10 @@ namespace AK.Systems
 {
 	/// <summary>
 	/// A full-canvas dim behind a view. Put it on a <see cref="UIView"/> and the view fades it
-	/// in when it shows and out when it hides; tutorial mode adds one on demand to dim
-	/// everything except the highlighted view. The dim is a runtime-built Image that is
-	/// oversized relative to the nearest Canvas so it covers the screen even when the view
-	/// itself is small.
+	/// in when it shows and out when it hides, on the view's <see cref="UIView.TimeDomain"/>;
+	/// tutorial mode adds one on demand to dim everything except the highlighted view. The dim
+	/// is a runtime-built Image that is oversized relative to the nearest Canvas so it covers
+	/// the screen even when the view itself is small.
 	/// </summary>
 	[DisallowMultipleComponent]
 	public sealed class ViewBackgroundOverlay : MonoBehaviour
@@ -31,35 +33,35 @@ namespace AK.Systems
 		/// <summary>The dim has been built and not yet destroyed.</summary>
 		public bool IsBuilt => _dim != null;
 
-		/// <summary>Fades the dim in with the serialized settings, building it on first use.</summary>
-		public void FadeIn()
+		/// <summary>Fades the dim in on <paramref name="time"/> with the serialized settings, building it on first use.</summary>
+		public void FadeIn(TimeDomain time)
 		{
-			FadeIn(_alpha, _blockRaycasts);
+			FadeIn(_alpha, _blockRaycasts, time);
 		}
 
-		/// <summary>Fades the dim in to <paramref name="alpha"/>, building it on first use.</summary>
-		public void FadeIn(float alpha, bool blockRaycasts)
+		/// <summary>Fades the dim in to <paramref name="alpha"/> on <paramref name="time"/>, building it on first use.</summary>
+		public void FadeIn(float alpha, bool blockRaycasts, TimeDomain time)
 		{
 			if (_dim == null) Build();
 
 			_image.raycastTarget = blockRaycasts;
 			_image.DOKill();
 			_image.color = new Color(0f, 0f, 0f, _image.color.a);
-			_image.DOFade(alpha, _fadeInDuration);
+			_image.DOFade(alpha, _fadeInDuration).SetTimeDomain(time);
 		}
 
-		/// <summary>Fades the dim out and stops it blocking input. Keeps it built for the next fade in.</summary>
-		public void FadeOut()
+		/// <summary>Fades the dim out on <paramref name="time"/> and stops it blocking input. Keeps it built for the next fade in.</summary>
+		public void FadeOut(TimeDomain time)
 		{
-			FadeOut(_fadeOutDuration);
+			FadeOut(_fadeOutDuration, time);
 		}
 
 		/// <summary>
-		/// Fades the dim out over <paramref name="duration"/>; <paramref name="onComplete"/> runs
-		/// when it is fully transparent. A <see cref="FadeIn()"/> before then kills the fade and
-		/// drops the callback.
+		/// Fades the dim out over <paramref name="duration"/> seconds of <paramref name="time"/>;
+		/// <paramref name="onComplete"/> runs when it is fully transparent. A fade in before then
+		/// kills the fade and drops the callback.
 		/// </summary>
-		public void FadeOut(float duration, TweenCallback onComplete = null)
+		public void FadeOut(float duration, TimeDomain time, TweenCallback onComplete = null)
 		{
 			if (_image == null)
 			{
@@ -69,11 +71,11 @@ namespace AK.Systems
 
 			_image.raycastTarget = false;
 			_image.DOKill();
-			var tween = _image.DOFade(0f, duration);
+			var tween = _image.DOFade(0f, duration).SetTimeDomain(time);
 			if (onComplete != null) tween.OnComplete(onComplete);
 		}
 
-		/// <summary>Destroys the dim and its texture. The next <see cref="FadeIn()"/> rebuilds them.</summary>
+		/// <summary>Destroys the dim and its texture. The next fade in rebuilds them.</summary>
 		public void Clear()
 		{
 			if (_image != null) _image.DOKill();

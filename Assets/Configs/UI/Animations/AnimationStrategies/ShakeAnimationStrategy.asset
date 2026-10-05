@@ -28,5 +28,3 @@ MonoBehaviour:
   _finalShakeDuration: 0.5
   _addGlowEffect: 0
   _glowIntensity: 1.2
-  _addScreenShake: 0
-  _screenShakeStrength: 5

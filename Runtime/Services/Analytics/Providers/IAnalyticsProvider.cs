@@ -11,7 +11,18 @@ namespace AK.Services.Analytics.Providers
 
 		bool IsEnabled { get; }
 
-		void Configure(AnalyticsInitOptions options);
+		/// <summary>
+		/// Called once before <see cref="Initialize"/> with the run's options and the game's
+		/// analytics vocabulary, which is never null.
+		/// </summary>
+		void Configure(AnalyticsInitOptions options, AnalyticsTaxonomy taxonomy);
+
+		/// <summary>
+		/// Called at the top of boot, before identity or session context exists. Attribution
+		/// SDKs start their install measurement here; analytics providers ignore it and wait
+		/// for <see cref="Initialize"/>.
+		/// </summary>
+		void EarlyStart();
 
 		void Initialize(AnalyticsMeta analyticsMeta, Dictionary<string, string> config);
 

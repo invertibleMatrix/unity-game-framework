@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -33,9 +35,6 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Birth flash intensity")]
         private float _flashIntensity = 1.8f;
         
-        [SerializeField] [Tooltip("Add screen shake")]
-        private bool _addScreenShake = true;
-        
         [SerializeField] [Tooltip("Settlement behavior")]
         private SettlementBehavior _settlementBehavior = SettlementBehavior.Scattered;
         
@@ -51,15 +50,6 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Celebration interval")]
         private float _celebrationInterval = 2f;
         
-        [SerializeField] [Tooltip("Add color rainbow effect")]
-        private bool _addRainbowEffect = false;
-        
-        [SerializeField] [Tooltip("Trigger burst sound")]
-        private bool _triggerBurstSound = true;
-        
-        [SerializeField] [Tooltip("Trigger celebration sounds")]
-        private bool _triggerCelebrationSounds = false;
-        
         public enum SettlementBehavior
         {
             Scattered,    // Pieces land randomly
@@ -68,7 +58,7 @@ namespace AK.Systems.Animations
             Chaotic       // Pieces keep moving
         }
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             // Kill any existing tweens on this target to prevent memory leaks
             target.DOKill();
@@ -80,13 +70,7 @@ namespace AK.Systems.Animations
             canvasGroup.alpha = 0f;
             
             // THE BURST! - Explosive birth
-            sequence.AppendCallback(() => {
-                canvasGroup.alpha = 1f;
-                
-                if (_triggerBurstSound) {
-                    Debug.Log("🎊 BURST! Sound would play here");
-                }
-            });
+            sequence.AppendCallback(() => canvasGroup.alpha = 1f);
             
             // Initial pop
             sequence.Append(target.DOScale(_popScale, 0.1f).SetEase(Ease.OutBack));
@@ -94,16 +78,8 @@ namespace AK.Systems.Animations
             // Flash effect
             sequence.Join(target.DOScale(Vector3.one * _flashIntensity, 0.15f).SetLoops(2, LoopType.Yoyo));
             
-            // Screen shake
-            if (_addScreenShake) {
-                sequence.AppendCallback(() => {
-                    Debug.Log("📳 Screen shake would happen here");
-                });
-            }
-            
             // Confetti burst simulation - chaotic movement
-            var burstPositions = GenerateBurstPositions(target.anchoredPosition);
-            var targetPosition = burstPositions[Random.Range(0, burstPositions.Length)];
+            var targetPosition = RandomBurstPosition(target.anchoredPosition);
             
             // Move to random burst position with chaos
             sequence.Append(target.DOAnchorPos(targetPosition, _burstDuration * 0.6f).SetEase(Ease.OutQuad));
@@ -141,36 +117,23 @@ namespace AK.Systems.Animations
             sequence.Append(target.DOScale(Vector3.one, 0.2f).SetEase(Ease.OutBack));
             sequence.Join(target.DOLocalRotate(Vector3.zero, 0.3f).SetEase(Ease.OutBack));
             
-            // Rainbow effect
-            if (_addRainbowEffect) {
-                sequence.AppendCallback(() => StartRainbowEffect(target));
-            }
-            
             // Continuous celebration
             if (_continuousCelebration) {
-                sequence.AppendCallback(() => StartContinuousCelebration(target, canvasGroup));
+                sequence.AppendCallback(() => StartContinuousCelebration(target, canvasGroup, time));
             }
             
-            // Celebration sounds
-            if (_triggerCelebrationSounds) {
-                sequence.AppendCallback(() => {
-                    Debug.Log("🎉 Celebration sounds would play here");
-                });
-            }
-            
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             // Kill any existing tweens on this target to prevent memory leaks
             target.DOKill();
             
             var sequence = DOTween.Sequence();
             
-            // Stop continuous effects
-            StopContinuousCelebration(target);
-            StopRainbowEffect(target);
+            // The celebration loop targets the content, so the DOKill above stopped it.
+            target.localScale = Vector3.one;
             
             // Final celebration burst before leaving
             sequence.Append(target.DOScale(_popScale * 1.2f, 0.2f).SetEase(Ease.OutBack));
@@ -186,37 +149,26 @@ namespace AK.Systems.Animations
             // Quick fade and disappear
             sequence.Append(target.DOScale(Vector3.zero, 0.3f).SetEase(Ease.InBack));
             sequence.Join(canvasGroup.DOFade(0, 0.3f).SetEase(Ease.InQuad));
-            
-            // Final sound
-            if (_triggerBurstSound) {
-                sequence.AppendCallback(() => {
-                    Debug.Log("👋 Goodbye burst! Sound would play here");
-                });
-            }
-            
-            return sequence.Play();
+
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        private Vector2[] GenerateBurstPositions(Vector2 center)
+        /// <summary>Where one of <see cref="_confettiCount"/> pieces bursting evenly around <paramref name="center"/> lands, picked at random.</summary>
+        private Vector2 RandomBurstPosition(Vector2 center)
         {
-            var positions = new Vector2[_confettiCount];
-            
-            for (int i = 0; i < _confettiCount; i++) {
-                var angle = (float)i / _confettiCount * 2f * Mathf.PI;
-                var distance = _burstForce * Random.Range(0.5f, 1f);
-                
-                // Add chaos
-                if (_chaosIntensity > 0) {
-                    distance += Random.Range(-_burstForce * _chaosIntensity, _burstForce * _chaosIntensity);
-                }
-                
-                positions[i] = center + new Vector2(
-                    Mathf.Cos(angle) * distance,
-                    Mathf.Sin(angle) * distance
-                );
+            int count = Mathf.Max(1, _confettiCount);
+            var angle = (float)Random.Range(0, count) / count * 2f * Mathf.PI;
+            var distance = _burstForce * Random.Range(0.5f, 1f);
+
+            // Add chaos
+            if (_chaosIntensity > 0) {
+                distance += Random.Range(-_burstForce * _chaosIntensity, _burstForce * _chaosIntensity);
             }
-            
-            return positions;
+
+            return center + new Vector2(
+                Mathf.Cos(angle) * distance,
+                Mathf.Sin(angle) * distance
+            );
         }
 
         private Vector2 GetSettlementPosition(Vector2 original, Vector2 burstPos)
@@ -252,42 +204,26 @@ namespace AK.Systems.Animations
             };
         }
 
-        private void StartRainbowEffect(RectTransform target)
-        {
-            if (!_addRainbowEffect) return;
-            
-            // This would cycle through colors
-            Debug.Log("🌈 Rainbow effect would start here");
-        }
-
-        private void StopRainbowEffect(RectTransform target)
-        {
-            Debug.Log("🌈 Rainbow effect would stop here");
-        }
-
-        private void StartContinuousCelebration(RectTransform target, CanvasGroup canvasGroup)
+        private void StartContinuousCelebration(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             if (!_continuousCelebration) return;
             
             DOTween.Sequence()
                 .AppendCallback(() => {
                     target.DOShakePosition(0.5f, new Vector2(20, 20), 10, 0, true)
+                        .SetTimeDomain(time)
                         .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
                     target.DOShakeRotation(0.5f, new Vector3(0, 0, 30), 8, 0, true)
+                        .SetTimeDomain(time)
                         .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
                 })
                 .AppendInterval(_celebrationInterval)
                 .SetLoops(-1)
-                // Anonymous sequences have no target, so target.DOKill() can never kill them.
+                // Targets the content, so the view's next entrance or exit stops it.
+                .SetTarget(target)
+                .SetTimeDomain(time)
                 .SetLink(target.gameObject, LinkBehaviour.KillOnDisable)
                 .Play();
-        }
-
-        private void StopContinuousCelebration(RectTransform target)
-        {
-            // Don't use DOKill() here as it's already called in PlayHideAnimation
-            // Just reset the state
-            target.localScale = Vector3.one;
         }
     }
 }

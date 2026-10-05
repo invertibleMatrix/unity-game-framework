@@ -117,10 +117,10 @@ There is no message-passing here, no queue of events between threads. Threads ag
 
 ### 3.1 A job, and its clock
 
-A job is any class or struct implementing `IJob`:
+A job is any class or struct implementing `IFrameJob`:
 
 ```csharp
-public sealed class SortScoresJob : IJob
+public sealed class SortScoresJob : IFrameJob
 {
     public int[] Scores;                                   // input: given to the job
 
@@ -145,10 +145,10 @@ When the game is paused with `Time.timeScale = 0`, `ctx.DeltaTime` is 0, so a si
 
 ### 3.2 One-shot jobs and the reply
 
-`Schedule(job)` runs a job once, next frame. To get the answer back, also implement `IJobCallback`:
+`Schedule(job)` runs a job once, next frame. To get the answer back, also implement `IFrameJobCallback`:
 
 ```csharp
-public sealed class SortScoresJob : IJob, IJobCallback
+public sealed class SortScoresJob : IFrameJob, IFrameJobCallback
 {
     public int[]       Scores;                             // input, handed over
     public Action<int[]> Published;                        // pass-through: what to do with the answer
@@ -170,15 +170,15 @@ Notice `copyOfScores`: the job sorts the array in place, so the main thread must
 
 ### 3.3 Handles
 
-`Schedule` returns a `JobHandle`, a small value — think coat-check ticket:
+`Schedule` returns a `FrameJobHandle`, a small value — think coat-check ticket:
 
 ```csharp
-JobHandle h = _scheduler.Schedule(job);
+FrameJobHandle h = _scheduler.Schedule(job);
 _scheduler.IsPending(h);     // true until OnComplete has been delivered
 _scheduler.Cancel(h);        // withdraw it; OnComplete(true) will fire once
 ```
 
-A ticket for a coat that has already been collected does nothing: `Cancel` and `IsPending` on a handle whose job completed return `false`, and never accidentally affect a *different* job that later reused the same internal slot. You can keep handles around carelessly. `JobHandle.Invalid` (the default value) is a ticket for nothing and is always safe to pass.
+A ticket for a coat that has already been collected does nothing: `Cancel` and `IsPending` on a handle whose job completed return `false`, and never accidentally affect a *different* job that later reused the same internal slot. You can keep handles around carelessly. `FrameJobHandle.Invalid` (the default value) is a ticket for nothing and is always safe to pass.
 
 ### 3.4 Repeating jobs
 
@@ -191,7 +191,7 @@ The catch: a repeating job's fields are being written by a worker in *every* fra
 Suppose 500 enemies each need the same computation every frame. You could `Schedule` 500 job objects, but that is 500 envelopes to hand over and 500 objects scattered around memory. A **batch** stores them as one array of structs:
 
 ```csharp
-public struct SightJob : IJob
+public struct SightJob : IFrameJob
 {
     public Vector2 Eye, Player;         // inputs
     public bool    CanSee;              // output
@@ -260,6 +260,8 @@ Two things to weigh before adding a phase. First, workers idle at the boundary: 
 
 `WorkerCount` is the number of worker threads. The default is `cores − 2`, clamped to between 1 and 4. Two cores are left for Unity itself: the main thread and the render thread (and Unity's own job workers, and the OS). More managed workers than that on a phone tend to fight each other for cores rather than help. The right number comes from measuring on the target device with the benchmark scene in `UGFW/Examples/Source/Jobs`; `Stats` tells you what you are getting (3.9).
 
+`WorkerCount = 0` starts no threads at all. The jobs then run on the main thread, at the top of the next frame, and their answers still arrive a frame after that, as they would with workers, so the same code works either way. That is how it always runs on WebGL, which can't start threads.
+
 ### 3.9 Seeing it work
 
 `scheduler.Stats` is a snapshot of the last finished frame: how many jobs and chunks ran, how many threw, how many frames were skipped so far, total worker time, and `LastFrameCriticalTicks` — the time of the *slowest* worker, which is how long the parallel work really took. If critical time is close to total worker time, you are not getting parallelism (one giant job); if `SkippedFrames` climbs, something is longer than a frame.
@@ -295,7 +297,7 @@ Data that *nobody* writes while jobs run can be shared by everyone: the level's 
 A shared array where element *i* writes **only slot *i***. Every slot has exactly one writer, so there is no race even though the array is shared. This is how batch elements communicate outward beyond their own fields, and how phase 0 leaves results for phase 1:
 
 ```csharp
-public struct MoveJob : IJob
+public struct MoveJob : IFrameJob
 {
     public int       Index;
     public Vector2   Position, Target;
@@ -313,7 +315,7 @@ The main thread must not read `Desired` during the frame — the workers are wri
 Phase 0 writes (by partition), phase 1 reads. The phase boundary guarantees all writes are finished before any read starts:
 
 ```csharp
-public struct SeparateJob : IJob
+public struct SeparateJob : IFrameJob
 {
     public int       Index, Count;
     public float     Radius;
@@ -389,7 +391,7 @@ Why this is safe: when `PendingCount == 0` just after a barrier, the elements yo
 Use `ctx.Time`. A cooldown is a field on the element compared against the frame's time:
 
 ```csharp
-public struct AlertJob : IJob
+public struct AlertJob : IFrameJob
 {
     public float AlertUntil;        // input, carried from last frame's result
     public bool  SeesPlayer;        // input
@@ -460,7 +462,7 @@ An exception inside `Execute` is caught per job (or per batch element), logged w
 | Your work looks like | Use | Because |
 |---|---|---|
 | The same small computation for hundreds or thousands of things, every frame | `JobBatch<T>` | contiguous structs, chunked across workers, zero allocation |
-| A few different, heavier tasks, each with its own inputs and a result | `Schedule` with a reused `IJob` object + `OnComplete` | one envelope per task, answer on the main thread |
+| A few different, heavier tasks, each with its own inputs and a result | `Schedule` with a reused `IFrameJob` object + `OnComplete` | one envelope per task, answer on the main thread |
 | Something that must happen at a button press, a query, a save | the delegate form `Schedule(ctx => ..., done => ...)` | allocates, but at event rate that is irrelevant |
 | Worker-side work that feeds other worker-side work every frame | `ScheduleRepeating` + phases | no main-thread round trip |
 | Anything touching transforms, UI, physics, audio, animation | the main thread | the engine is main-thread-only |
@@ -474,7 +476,7 @@ A job costs a hand-over, a chunk claim, and two frames of latency. If the total 
 
 | Task | Approach | Notes |
 |---|---|---|
-| Pathfinding requests | one-shot, pooled `PathRequest : IJob, IJobCallback` | grid is share-read-only (4.3); cancel on re-target |
+| Pathfinding requests | one-shot, pooled `PathRequest : IFrameJob, IFrameJobCallback` | grid is share-read-only (4.3); cancel on re-target |
 | Crowd / boid steering | batch, phase 0; optional phase 1 for separation | freeze neighbours with two snapshots (4.6) |
 | Line-of-sight / awareness for many agents | batch | walls share-read-only; Part 7 |
 | AI utility scoring | batch (per agent) or one-shot (per squad) | copy-in inputs |
@@ -529,7 +531,7 @@ Decide the four kinds of field (2.5). Inputs: the eye and the player position �
 ```csharp
 public struct Wall { public Vector2 A, B; }
 
-public struct SightJob : IJob
+public struct SightJob : IFrameJob
 {
     public Enemy   Enemy;              // pass-through: the main thread's, never touched in Execute
     public Vector2 Eye, Player;        // inputs, copied
@@ -655,7 +657,7 @@ The alternative without a phase would be to separate against *last frame's* posi
 **Can I `await` a job?** Not directly, but a completion source turns `OnComplete` into a task (UniTask shown; `TaskCompletionSource<T>` works the same way):
 
 ```csharp
-public sealed class AwaitableJob<T> : IJob, IJobCallback
+public sealed class AwaitableJob<T> : IFrameJob, IFrameJobCallback
 {
     public Func<T> Work;                                            // pure C#, runs on the worker
     public readonly UniTaskCompletionSource<T> Done = new();

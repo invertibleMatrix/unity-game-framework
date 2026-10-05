@@ -28,9 +28,5 @@ MonoBehaviour:
   _rotationDirection: 0
   _addFade: 1
   _fadeCurve: 1
-  _addTrailEffect: 0
-  _trailIntensity: 0.5
-  _addColorShift: 0
-  _colorShiftSpeed: 2
   _reverseOnExit: 1
   _exitSpeedMultiplier: 1.5

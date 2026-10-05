@@ -1,4 +1,4 @@
-namespace Utilities.AudioSpawner
+namespace AK.Utilities.Audio
 {
 	public enum AudioChannel
 	{
@@ -18,7 +18,10 @@ namespace Utilities.AudioSpawner
 		/// <summary>Transitions to the given snapshot asset; negative time uses the snapshot's default.</summary>
 		void TransitionToSnapshot(AudioSnapshot snapshot, float transitionTime = -1f);
 
-		/// <summary>Temporarily lowers the music channel by duckDb for the given duration, then restores.</summary>
+		/// <summary>
+		/// Lowers the music channel by duckDb for durationSeconds of the controller's time, then
+		/// restores it. The latest duck wins, and a music volume set meanwhile keeps it.
+		/// </summary>
 		void DuckMusic(float duckDb, float durationSeconds);
 	}
 }

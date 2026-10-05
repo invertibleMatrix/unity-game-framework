@@ -1,3 +1,4 @@
+#if UGFW_ADDRESSABLES
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -51,8 +52,9 @@ namespace AK.Core.ResourceManagement
        }
 
        /// <summary>
-       /// Silently checks for and applies catalog updates in one seamless operation.
-       /// Call this immediately after InitAsync to ensure the local client has the latest metadata.
+       /// Checks for and applies catalog updates in one operation: true when catalogs were
+       /// updated, false when there was nothing to update; throws when the check or update fails.
+       /// Call this right after InitAsync so the client has the latest metadata.
        /// </summary>
        public static UniTask<bool> UpdateCatalogsIfNeededAsync(bool autoCleanBundleCache = false, CancellationToken cToken = default)
        {
@@ -163,6 +165,8 @@ namespace AK.Core.ResourceManagement
 
        // --------------------------------------------------------------------------
        // SYNCHRONOUS API
+       // On WebGL these return only what is already loaded: TryLoad* answers false, and
+       // LoadAsset and Spawn throw NotSupportedException. Load with the async API there.
        // --------------------------------------------------------------------------
 
        public static TObject LoadAsset<TObject>(string key) => _strategy.LoadAsset<TObject>(key);
@@ -171,6 +175,9 @@ namespace AK.Core.ResourceManagement
 
        public static bool TryLoadAsset<TObject>(string key, out TObject asset) => _strategy.TryLoadAsset(key, out asset);
        public static bool TryLoadAsset<TObject>(AssetReference reference, out TObject asset) => _strategy.TryLoadAsset(reference, out asset);
+       public static bool TryLoadAssetList<TObject>(string key, out IList<TObject> assets) => _strategy.TryLoadAssetList(key, out assets);
+       public static UniTask<IList<TObject>> TryLoadAssetListAsync<TObject>(string key, CancellationToken cToken = default)
+          => _strategy.TryLoadAssetListAsync<TObject>(key, cToken);
        public static bool TryLoadAsset<TObject>(AssetReferenceT<TObject> reference, out TObject asset) where TObject : Object
           => _strategy.TryLoadAsset(reference, out asset);
        public static GameObject Spawn(string key, Transform root = null) => _strategy.Spawn(key, root);
@@ -199,3 +206,4 @@ namespace AK.Core.ResourceManagement
        }
     }
 }
+#endif

@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -21,9 +23,6 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Total rotation during show animation")]
         private Vector3 _showRotation = new Vector3(0, 0, 360);
         
-        [SerializeField] [Tooltip("Rotation speed variation")]
-        private float _rotationSpeedVariation = 0.3f;
-        
         [SerializeField] [Tooltip("Initial scale when spawning")]
         private Vector3 _initialScale = new Vector3(0.3f, 0.3f, 0.3f);
         
@@ -42,10 +41,7 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Glow pulse intensity")]
         private float _glowIntensity = 1.5f;
         
-        [SerializeField] [Tooltip("Glow pulse speed")]
-        private float _glowSpeed = 2f;
-
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             // Kill any existing tweens on this target to prevent memory leaks
             target.DOKill();
@@ -86,14 +82,14 @@ namespace AK.Systems.Animations
             {
                 sequence.AppendCallback(() =>
                 {
-                    target.DOScale(Vector3.one * _glowIntensity, 0.2f).SetLoops(2, LoopType.Yoyo).SetEase(Ease.InOutSine);
+                    target.DOScale(Vector3.one * _glowIntensity, 0.2f).SetLoops(2, LoopType.Yoyo).SetEase(Ease.InOutSine).SetTimeDomain(time);
                 });
             }
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             // Kill any existing tweens on this target to prevent memory leaks
             target.DOKill();
@@ -109,7 +105,7 @@ namespace AK.Systems.Animations
             var fallPosition = new Vector2(target.anchoredPosition.x, _spawnOffset.y - 300);
             sequence.Append(target.DOAnchorPos(fallPosition, ExitDuration * 0.5f).SetEase(Ease.InCubic));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
     }
 }

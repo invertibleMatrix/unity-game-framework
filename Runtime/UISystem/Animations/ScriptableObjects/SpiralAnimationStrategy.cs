@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -42,18 +44,6 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Fade curve")]
         private FadeCurve _fadeCurve = FadeCurve.InOut;
         
-        [SerializeField] [Tooltip("Add trail effect")]
-        private bool _addTrailEffect = false;
-        
-        [SerializeField] [Tooltip("Trail intensity")]
-        private float _trailIntensity = 0.5f;
-        
-        [SerializeField] [Tooltip("Add color shift")]
-        private bool _addColorShift = false;
-        
-        [SerializeField] [Tooltip("Color shift speed")]
-        private float _colorShiftSpeed = 2f;
-        
         [SerializeField] [Tooltip("Reverse spiral on exit")]
         private bool _reverseOnExit = true;
         
@@ -80,7 +70,7 @@ namespace AK.Systems.Animations
             LateOut
         }
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             // Kill any existing tweens on this target to prevent memory leaks
             target.DOKill();
@@ -127,10 +117,10 @@ namespace AK.Systems.Animations
                 sequence.Join(canvasGroup.DOFade(1f, EntryDuration).SetEase(fadeEase));
             }
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             // Kill any existing tweens on this target to prevent memory leaks
             target.DOKill();
@@ -179,7 +169,7 @@ namespace AK.Systems.Animations
                 sequence.Join(canvasGroup.DOFade(0, exitDuration).SetEase(fadeEase));
             }
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
         private Vector3[] GetSpiralPath(Vector2 center, float radius, int rotations, bool outward)

@@ -2,6 +2,7 @@
     "name": "AK.Services",
     "rootNamespace": "AK.Services",
     "references": [
+        "AK.Kernel",
         "AK.Core",
         "UniTask",
         "AK.CoreDomain"
@@ -13,17 +14,6 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [
-        {
-            "name": "com.unity.notifications",
-            "expression": "",
-            "define": "UNITY_NOTIFICATIONS"
-        },
-        {
-            "name": "com.unity.purchasing",
-            "expression": "",
-            "define": "IAP"
-        }
-    ],
+    "versionDefines": [],
     "noEngineReferences": false
 }

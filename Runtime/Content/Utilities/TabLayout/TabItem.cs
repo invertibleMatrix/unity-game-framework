@@ -1,9 +1,11 @@
-﻿using DG.Tweening;
+﻿using AK.Core.Extensions;
+using AK.Kernel.Timing;
+using DG.Tweening;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 
-namespace UI.Utilities
+namespace AK.UI
 {
 	/// <summary>
 	/// Represents a single tab item in the tabbed layout system.
@@ -46,12 +48,19 @@ namespace UI.Utilities
 		protected TabbedLayout _tabbedLayout;
 		protected TData        _tabData;
 
+		// The running resize and color change: a new selection state overtakes them.
+		private Tween _sizeTween;
+		private Tween _colorTween;
+
 		public int             Index            { get; private set; }
 		public RectTransform   TabItemTransform => _tabItemTransform;
 		public Image           BackgroundImage  => _backgroundImage;
 		public Image           IconImage        => _iconImage;
 		public TextMeshProUGUI LabelText        => _labelText;
 		public bool            IsSelected       { get; private set; }
+
+		// The layout's time; unscaled before the tab joins a layout.
+		private TimeDomain AnimationTime => _tabbedLayout != null ? _tabbedLayout.TimeDomain : TimeDomain.Unscaled;
 
 		private void Awake()
 		{
@@ -130,6 +139,9 @@ namespace UI.Utilities
 
 		private void AnimateTargetSize(Vector2 targetSize, bool immediate)
 		{
+			_sizeTween?.Kill();
+			_sizeTween = null;
+
 			if (immediate)
 			{
 				_scalingTargetTransform.sizeDelta = targetSize;
@@ -138,11 +150,11 @@ namespace UI.Utilities
 			{
 				float delay = (targetSize == _normalTabSize) ? 0f : _tabResizeDelayAfterIndicator;
 
-				_scalingTargetTransform
+				_sizeTween = _scalingTargetTransform
 					.DOSizeDelta(targetSize, _tabResizeDuration)
 					.SetEase(_tabResizeEase)
 					.SetDelay(delay)
-					.SetUpdate(true)
+					.SetTimeDomain(AnimationTime)
 					.Play();
 			}
 		}
@@ -165,13 +177,16 @@ namespace UI.Utilities
 			if (graphic == null)
 				return;
 
+			_colorTween?.Kill();
+			_colorTween = null;
+
 			if (immediate)
 			{
 				graphic.color = color;
 			}
 			else
 			{
-				graphic.DOColor(color, 0.2f).SetUpdate(true).Play();
+				_colorTween = graphic.DOColor(color, 0.2f).SetTimeDomain(AnimationTime).Play();
 			}
 		}
 

@@ -1,3 +1,4 @@
+#if UGFW_ADDRESSABLES
 using System;
 using System.Threading;
 using Cysharp.Threading.Tasks;
@@ -53,7 +54,7 @@ namespace AK.Core.ResourceManagement
 		/// </summary>
 		/// <param name="params">The sprite loading parameters.</param>
 		/// <param name="cToken">Cancellation token for loading cancellation.</param>
-		/// <returns>The loaded sprite.</returns>
+		/// <returns>The loaded sprite, or null when the load is cancelled or fails. A failure is logged.</returns>
 		public virtual async UniTask<Sprite> LoadSpriteAsync(SpriteLoadingParams @params,
 			CancellationToken cToken = default)
 		{
@@ -67,8 +68,14 @@ namespace AK.Core.ResourceManagement
 				SetSprite(sprite);
 				return sprite;
 			}
-			catch (Exception _)
+			catch (OperationCanceledException)
 			{
+				return default;
+			}
+			catch (Exception e)
+			{
+				// A failed load leaves no sprite; it is logged rather than hidden.
+				Debug.LogException(e, this);
 				return default;
 			}
 		}
@@ -136,3 +143,4 @@ namespace AK.Core.ResourceManagement
 #endif
 	}
 }
+#endif

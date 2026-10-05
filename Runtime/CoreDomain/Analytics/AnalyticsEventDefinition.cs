@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using AK.Core;
+using AK.Kernel.Analytics;
 using UnityEngine;
 
 namespace AK.CoreDomain.Analytics
@@ -42,7 +43,7 @@ namespace AK.CoreDomain.Analytics
 		[Tooltip("Maximum level after which this event won't be tracked (0 = no max).")]
 		public int MaxLevelRequired = 0;
 
-		[Header("Sampling")] [Tooltip("Sampling rate (0.0 to 1.0). 1.0 = track all events, 0.5 = track 50% of events.")] [Range(0f, 1f)]
+		[Header("Sampling")] [Tooltip("Share of users who send this event (0 to 1). Sampling keeps or drops whole users: a user is always in or always out, and everyone in a smaller sample is in every larger one.")] [Range(0f, 1f)]
 		public float SamplingRate = 1f;
 
 		[Tooltip("Is this event only for development builds?")]
@@ -74,14 +75,13 @@ namespace AK.CoreDomain.Analytics
 
 
 		/// <summary>
-		/// Checks if this event should be tracked based on sampling rate.
+		/// True when this event is active and a user in <paramref name="userBucket"/> is in its
+		/// sample. The bucket comes from the user's id (<see cref="UserSampling.Bucket"/>), so the
+		/// same user gets the same answer on every session and device.
 		/// </summary>
-		public bool ShouldTrack()
+		public bool ShouldTrack(double userBucket)
 		{
-			if (!IsActive) return false;
-			if (SamplingRate >= 1f) return true;
-			if (SamplingRate <= 0f) return false;
-			return UnityEngine.Random.value < SamplingRate;
+			return IsActive && UserSampling.Includes(SamplingRate, userBucket);
 		}
 
 		/// <summary>

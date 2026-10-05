@@ -42,6 +42,9 @@ namespace AK.Core
 		private void OnEnable() => _registry.Invalidate();
 
 #if UNITY_EDITOR
+		// Inspector edits and undo change the list under the registry's index.
+		private void OnValidate() => _registry.Invalidate();
+
 		public override bool Editor_TryTrack(UID asset)
 		{
 			if (asset is not T typed || !_registry.Add(typed)) return false;

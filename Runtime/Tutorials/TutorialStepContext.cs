@@ -14,20 +14,24 @@ namespace AK.Tutorials
 		public readonly IFactService      Facts;
 
 		/// <summary>
-		/// Held by the runner from step kick-in, so no click slips into the gap
-		/// before the step's presentation appears. A step releases it once its
-		/// presentation governs input itself (spotlight shown, view in tutorial
-		/// mode) - the tutored control becomes clickable then. The runner's
-		/// finally-Release is the safety net so input can never strand.
+		/// The input hold the runner takes for a step with BlockInputUntilPresented, from the
+		/// moment the step starts, so no tap slips in before its presentation appears; empty
+		/// for other steps. A step releases it once its presentation governs input itself
+		/// (spotlight shown, view in tutorial mode), which is when the tutored control becomes
+		/// clickable. The runner releases it when the step ends anyway, and a second release
+		/// does nothing, so input can't be left blocked.
 		/// </summary>
-		public readonly UIInputGate       InputGate;
+		public readonly InputHold InputHold;
 
-		public TutorialStepContext(IUISystem uiSystem, IUITargetRegistry targets, IFactService facts, UIInputGate inputGate)
+		public TutorialStepContext(IUISystem uiSystem, IUITargetRegistry targets, IFactService facts, InputHold inputHold = default)
 		{
 			UiSystem = uiSystem;
 			Targets = targets;
 			Facts = facts;
-			InputGate = inputGate;
+			InputHold = inputHold;
 		}
+
+		/// <summary>This context, for a step that presents under <paramref name="inputHold"/>.</summary>
+		public TutorialStepContext WithInputHold(InputHold inputHold) => new(UiSystem, Targets, Facts, inputHold);
 	}
 }

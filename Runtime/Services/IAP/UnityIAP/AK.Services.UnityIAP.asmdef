@@ -1,0 +1,27 @@
+{
+    "name": "AK.Services.UnityIAP",
+    "rootNamespace": "AK.Services",
+    "references": [
+        "AK.Kernel",
+        "AK.Services",
+        "UniTask",
+        "Unity.Purchasing"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UGFW_UNITY_PURCHASING_5"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.purchasing",
+            "expression": "5.0.0",
+            "define": "UGFW_UNITY_PURCHASING_5"
+        }
+    ],
+    "noEngineReferences": false
+}

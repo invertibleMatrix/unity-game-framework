@@ -1,11 +1,20 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Threading;
 using Cysharp.Threading.Tasks;
 
 namespace AK.Services
 {
 	/// <summary>
-	/// Abstraction over platform In-App Purchase services.
-	/// Works with store product IDs as strings, decoupled from any metadata layer.
+	/// A platform store: its products, its purchases and the paid orders it delivers. Works with
+	/// store product IDs as strings, decoupled from any metadata layer.
+	///
+	/// Every paid order goes to the order handler (<see cref="SetOrderHandler"/>), whichever way it
+	/// arrives: bought with <see cref="PurchaseAsync"/>, restored, approved after a deferral, bought
+	/// from the store's own page, or left unfinished by an earlier session. The store finishes an
+	/// order (Unity IAP's ConfirmPurchase) only once the handler reports it
+	/// <see cref="OrderFulfilment.Fulfilled"/>. Until then it stays unfinished, and the store
+	/// delivers it again at the next launch, so a crash can't lose a paid order.
 	/// </summary>
 	public interface IIAPService
 	{
@@ -15,34 +24,36 @@ namespace AK.Services
 		bool IsInitialized { get; }
 
 		/// <summary>
-		/// Fired when a purchase is confirmed by the store WITHOUT a matching PurchaseAsync call -
-		/// i.e. restored, deferred (e.g. Ask-to-Buy), or promotional purchases. Subscribing to this
-		/// is the grant path for those orders; otherwise they are confirmed into the void and the
-		/// player receives nothing.
+		/// Sets who fulfils paid orders. Orders that arrived before a handler was set go to it now.
 		/// </summary>
-		event System.Action<IAPPurchaseResult> OnExternalPurchaseConfirmed;
+		void SetOrderHandler(IStoreOrderHandler handler);
 
 		/// <summary>
-		/// Initializes the IAP service with the given product definitions.
-		/// Must be called before any other operations.
+		/// Connects to the store and fetches the given products, then the purchases the store holds.
+		/// Must be called before any other operations. Unfinished orders reach the handler from here on.
 		/// </summary>
-		/// <param name="products">Collection of (productId, productType) tuples to register with the store.</param>
-		/// <returns>True if initialization succeeded.</returns>
-		UniTask<bool> InitializeAsync(IEnumerable<IAPProductRegistration> products);
+		/// <returns>True if initialization succeeded. A failed initialization can be tried again.</returns>
+		UniTask<bool> InitializeAsync(IEnumerable<IAPProductRegistration> products, CancellationToken ct = default);
 
 		/// <summary>
-		/// Initiates a purchase for the given product ID and awaits the result.
+		/// Buys a product. Completes once the store has delivered the paid order and the handler has
+		/// had it, with Success; the handler reports the fulfilment. Otherwise with the store's
+		/// failure: <see cref="IAPFailureType.Deferred"/> when the store holds the purchase for
+		/// approval, and <see cref="IAPFailureType.Timeout"/> when it didn't answer in time. Either
+		/// purchase can still complete, and its order then goes to the handler.
 		/// </summary>
-		/// <param name="productId">The store product ID to purchase.</param>
-		/// <returns>The result of the purchase attempt.</returns>
-		UniTask<IAPPurchaseResult> PurchaseAsync(string productId);
+		UniTask<IAPPurchaseResult> PurchaseAsync(string productId, CancellationToken ct = default);
+
+		/// <summary>
+		/// Hands the orders still unfinished in this session to the handler again: ones it couldn't
+		/// fulfil yet, and ones the store failed to finish. Rejected orders aren't retried.
+		/// </summary>
+		UniTask RetryUnfinishedOrdersAsync(CancellationToken ct = default);
 
 		/// <summary>
 		/// Gets cached product information fetched from the store during initialization.
 		/// Returns null if the product is not found or the service is not initialized.
 		/// </summary>
-		/// <param name="productId">The store product ID.</param>
-		/// <returns>Product info or null.</returns>
 		IAPProductInfo GetProductInfo(string productId);
 
 		/// <summary>
@@ -51,35 +62,45 @@ namespace AK.Services
 		IReadOnlyList<IAPProductInfo> GetAllProducts();
 
 		/// <summary>
-		/// Restores previously completed purchases (primarily needed on iOS).
+		/// Restores previously completed purchases (primarily needed on iOS) and refreshes what is
+		/// owned. Non-consumables and subscriptions are entitlements: check
+		/// <see cref="IsProductOwned"/> and <see cref="IsSubscribed"/>.
 		/// On Android, purchases are restored automatically during initialization.
 		/// </summary>
 		/// <returns>True if restore completed successfully.</returns>
-		UniTask<bool> RestorePurchasesAsync();
+		UniTask<bool> RestorePurchasesAsync(CancellationToken ct = default);
 
 		/// <summary>
 		/// Checks whether a non-consumable or subscription product is currently owned.
 		/// For subscriptions, this checks if the subscription is currently active (not expired).
 		/// </summary>
-		/// <param name="productId">The store product ID.</param>
-		/// <returns>True if the user owns this product (or has an active subscription).</returns>
 		bool IsProductOwned(string productId);
 
 		/// <summary>
 		/// Checks whether a subscription product is currently active (subscribed and not expired).
 		/// Returns false for non-subscription products.
 		/// </summary>
-		/// <param name="productId">The store product ID.</param>
-		/// <returns>True if the user has an active subscription.</returns>
 		bool IsSubscribed(string productId);
 
 		/// <summary>
 		/// Gets the subscription expiration date for a subscription product.
 		/// Returns null for non-subscription products or if not subscribed.
 		/// </summary>
-		/// <param name="productId">The store product ID.</param>
 		/// <returns>UTC expiration date or null.</returns>
-		System.DateTime? GetSubscriptionExpirationDate(string productId);
+		DateTime? GetSubscriptionExpirationDate(string productId);
+	}
+
+	/// <summary>What kind of product a store sells.</summary>
+	public enum IAPProductType
+	{
+		/// <summary>Bought again and again, such as a pack of coins.</summary>
+		Consumable = 0,
+
+		/// <summary>Bought once and owned for good, such as removing ads.</summary>
+		NonConsumable = 1,
+
+		/// <summary>Owned while it renews.</summary>
+		Subscription = 2,
 	}
 
 	/// <summary>
@@ -92,18 +113,12 @@ namespace AK.Services
 		/// </summary>
 		public string ProductId;
 
-		/// <summary>
-		/// The type of product (Consumable, NonConsumable, Subscription).
-		/// Uses an int mapping to avoid coupling to Unity.Purchasing enums:
-		/// 0 = Consumable, 1 = NonConsumable, 2 = Subscription
-		/// </summary>
-		public int ProductType;
+		public IAPProductType ProductType;
 
-		public IAPProductRegistration(string productId, int productType)
+		public IAPProductRegistration(string productId, IAPProductType productType)
 		{
-			ProductId = productId;
+			ProductId   = productId;
 			ProductType = productType;
 		}
 	}
 }
-

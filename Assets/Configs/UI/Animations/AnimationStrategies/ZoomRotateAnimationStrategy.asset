@@ -19,17 +19,12 @@ MonoBehaviour:
   _initialZoom: {x: 0.1, y: 0.1, z: 0.1}
   _targetZoom: {x: 1, y: 1, z: 1}
   _zoomOvershoot: {x: 1.3, y: 1.3, z: 1.3}
-  _addZoomBounce: 1
   _rotationAxis: 2
   _entryRotation: 720
   _exitRotation: -1080
   _rotationDirection: 0
   _addRotationWobble: 0
   _wobbleIntensity: 10
-  _addCameraShake: 0
-  _cameraShakeIntensity: 0.5
-  _addMotionBlur: 0
-  _addLensFlare: 0
   _zoomInDuration: 0.8
   _zoomOutDuration: 0.6
   _addDramaticPause: 1

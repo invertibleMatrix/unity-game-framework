@@ -1,4 +1,4 @@
-namespace AK.StateMachine
+namespace AK.StateMachines
 {
     public abstract class BaseState<TMediator>
     {

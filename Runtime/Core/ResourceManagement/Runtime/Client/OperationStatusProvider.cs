@@ -1,4 +1,5 @@
-﻿using UnityEngine.ResourceManagement.AsyncOperations;
+﻿#if UGFW_ADDRESSABLES
+using UnityEngine.ResourceManagement.AsyncOperations;
 using AK.Core.Extensions;
 
 namespace AK.Core.ResourceManagement
@@ -14,3 +15,4 @@ namespace AK.Core.ResourceManagement
 		public OperationStatus GetStatus() => _asyncOperation.ToOperationStatus();
 	}
 }
+#endif

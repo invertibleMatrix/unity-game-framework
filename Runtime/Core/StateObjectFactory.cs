@@ -4,11 +4,23 @@ using UnityEngine;
 
 namespace AK.Core
 {
+    /// <summary>
+    /// Creates <see cref="StateObject"/>s and ticks them each frame. Disposing the factory, or
+    /// destroying its GameObject, destroys them.
+    /// </summary>
     public sealed class StateObjectFactory : MonoBehaviour
     {
         private static StateObjectFactory _instance;
 
-        private static List<StateObject> _stateObjects = new List<StateObject>();
+        private static readonly List<StateObject> _stateObjects = new List<StateObject>();
+
+        // With domain reload off, statics outlive a Play session: start each one empty.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStatics()
+        {
+            _instance = null;
+            _stateObjects.Clear();
+        }
 
         public static StateObjectFactory Construct(bool dontDestroyOnLoad = true)
         {
@@ -37,6 +49,9 @@ namespace AK.Core
 
         private void Update()
         {
+            // A disposed factory lives until the end of the frame; only the current one ticks.
+            if (_instance != this) return;
+
             for (int i = 0; i < _stateObjects.Count; i++)
             {
                 _stateObjects[i].OnUpdate();
@@ -45,14 +60,35 @@ namespace AK.Core
 
         public void Dispose()
         {
+            Destroy(gameObject);
+            DestroyStateObjects();
+        }
+
+        private void OnDestroy()
+        {
+            DestroyStateObjects();
+        }
+
+        private void DestroyStateObjects()
+        {
+            if (_instance != this) return;
+
+            _instance = null;
+
+            // Each one is destroyed even if another throws.
             for (int i = 0; i < _stateObjects.Count; i++)
             {
-                _stateObjects[i].OnDestroy();
+                try
+                {
+                    _stateObjects[i].DestroyInternal();
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                }
             }
 
             _stateObjects.Clear();
-            Destroy(gameObject);
-            _instance = null;
         }
     }
 }

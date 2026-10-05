@@ -1,4 +1,5 @@
-﻿using AK.StateMachine;
+﻿#if UGFW_CINEMACHINE
+using AK.StateMachines;
 using Unity.Cinemachine;
 using UnityEngine;
 using AK.Core;
@@ -38,3 +39,4 @@ namespace AK.Systems
 		}
 	}
 }
+#endif

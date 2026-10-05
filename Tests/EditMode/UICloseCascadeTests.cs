@@ -1,5 +1,6 @@
 using AK.Systems;
 using AK.Tests.Support;
+using Cysharp.Threading.Tasks;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -249,6 +250,29 @@ namespace AK.Tests
 			UISystemHarness.Complete(_h.System.CloseAsync(host));
 
 			Assert.That(host.Log, Is.EqualTo(new[] { "PrepareHide", "Hide", "Unregister" }), "lifecycle ran once");
+		}
+
+		[Test]
+		public void SecondCloseAsync_WaitsForTheCloseInFlight()
+		{
+			var prefab = _h.MakePrefab<RecordingScreen>(screen: true);
+			_h.AddHoldAnimation(prefab);
+			var host = _h.System.Show<RecordingScreen>();
+			var hold = host.GetComponent<HoldAnimation>();
+			hold.Release();
+			host.Clear();
+
+			UniTask first = _h.System.CloseAsync(host);
+			UniTask second = _h.System.CloseAsync(host);
+
+			Assert.That(first.Status, Is.EqualTo(UniTaskStatus.Pending), "the exit is in flight");
+			Assert.That(second.Status, Is.EqualTo(UniTaskStatus.Pending), "the second close waits for it instead of returning at once");
+
+			hold.Release();
+
+			UISystemHarness.Complete(first);
+			UISystemHarness.Complete(second);
+			Assert.That(host.Log, Is.EqualTo(new[] { "PrepareHide", "Hide", "Unregister" }), "one close ran");
 		}
 
 		[Test]

@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -8,9 +10,6 @@ namespace AK.Systems.Animations
     {
         [SerializeField] [Tooltip("Initial seed size")]
         private Vector3 _seedScale = new Vector3(0.05f, 0.05f, 0.05f);
-        
-        [SerializeField] [Tooltip("Seed wobble amount")]
-        private float _seedWobble = 2f;
         
         [SerializeField] [Tooltip("Germination delay")]
         private float _germinationDelay = 0.3f;
@@ -29,9 +28,6 @@ namespace AK.Systems.Animations
         
         [SerializeField] [Tooltip("Sway intensity")]
         private float _swayIntensity = 5f;
-        
-        [SerializeField] [Tooltip("Sway speed")]
-        private float _swaySpeed = 2f;
         
         [SerializeField] [Tooltip("Add growth imperfections")]
         private bool _addImperfections = true;
@@ -54,9 +50,6 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Add personality twitches")]
         private bool _addPersonalityTwitches = true;
         
-        [SerializeField] [Tooltip("Twitch frequency")]
-        private float _twitchFrequency = 3f;
-        
         [SerializeField] [Tooltip("Add subtle rotation")]
         private bool _addSubtleRotation = true;
         
@@ -71,7 +64,7 @@ namespace AK.Systems.Animations
             Cellular     // Like cell division
         }
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             // Kill any existing tweens on this target to prevent memory leaks
             target.DOKill();
@@ -138,13 +131,13 @@ namespace AK.Systems.Animations
             // Final breathing - it's alive!
             if (_addFinalBreathing)
             {
-                sequence.AppendCallback(() => StartBreathing(target));
+                sequence.AppendCallback(() => StartBreathing(target, time));
             }
             
             // Add personality
             if (_addPersonalityTwitches)
             {
-                sequence.AppendCallback(() => StartPersonalityTwitches(target));
+                sequence.AppendCallback(() => StartPersonalityTwitches(target, time));
             }
             
             // Subtle rotation. Must NOT be appended into the sequence: an infinite-loop child
@@ -156,22 +149,23 @@ namespace AK.Systems.Animations
                     target.DOLocalRotate(new Vector3(0, 0, _subtleRotation), 1f)
                         .SetEase(Ease.InOutSine)
                         .SetLoops(-1, LoopType.Yoyo)
+                        .SetTimeDomain(time)
                         .SetLink(target.gameObject, LinkBehaviour.KillOnDisable));
             }
 
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             // Kill any existing tweens on this target to prevent memory leaks
             target.DOKill();
             
             var sequence = DOTween.Sequence();
-            
-            // Stop life effects
-            StopBreathing(target);
-            StopPersonalityTwitches(target);
+
+            // The idle loops (breathing, twitches, the subtle rotation) all target the content,
+            // so the DOKill above stopped them. Undo the breathing's scale.
+            target.localScale = Vector3.one;
             
             // Withering - reverse growth
             sequence.Append(target.DOScale(Vector3.one * 1.1f, 0.2f).SetEase(Ease.OutBack));
@@ -197,7 +191,7 @@ namespace AK.Systems.Animations
             // Final disappearance
             sequence.Append(target.DOScale(Vector3.zero, 0.2f).SetEase(Ease.InBack));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
         private float GetStageDuration(int stage)
@@ -233,23 +227,17 @@ namespace AK.Systems.Animations
             };
         }
 
-        private void StartBreathing(RectTransform target)
+        private void StartBreathing(RectTransform target, TimeDomain time)
         {
             if (!_addFinalBreathing) return;
             
             var breatheScale = Vector3.one * (1f + _breathingGentleness);
             target.DOScale(breatheScale, 3f).SetEase(Ease.InOutSine).SetLoops(-1, LoopType.Yoyo)
+                .SetTimeDomain(time)
                 .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
         }
 
-        private void StopBreathing(RectTransform target)
-        {
-            // Don't use DOKill() here as it's already called in PlayHideAnimation
-            // Just reset the state
-            target.localScale = Vector3.one;
-        }
-
-        private void StartPersonalityTwitches(RectTransform target)
+        private void StartPersonalityTwitches(RectTransform target, TimeDomain time)
         {
             if (!_addPersonalityTwitches) return;
             
@@ -258,13 +246,10 @@ namespace AK.Systems.Animations
                 .Append(target.DOLocalRotate(Vector3.zero, 0.1f).SetEase(Ease.InOutSine))
                 .SetLoops(-1, LoopType.Restart)
                 .SetDelay(Random.Range(1f, 3f))
+                .SetTarget(target)
+                .SetTimeDomain(time)
                 .SetLink(target.gameObject, LinkBehaviour.KillOnDisable)
                 .Play();
-        }
-
-        private void StopPersonalityTwitches(RectTransform target)
-        {
-            // Twitches will stop when DOKill() is called in StopBreathing
         }
     }
 }

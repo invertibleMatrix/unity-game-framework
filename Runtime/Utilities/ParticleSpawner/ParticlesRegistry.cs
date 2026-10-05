@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using AK.Core;
 using UnityEngine;
 
-namespace Utilities.ParticleSpawner
+namespace AK.Utilities.Particles
 {
 	/// <summary>
 	/// Catalog of all ParticleConfigBase assets. The base registry answers identity → config;

@@ -23,7 +23,7 @@ namespace AK.Utilities
 	{
 		private Action<PoolableObject> _returnAction;
 
-		/// <summary>True while the instance is checked out of the pool.</summary>
+		/// <summary>True while the instance rests in its pool; false while it is checked out, or when no pool made it.</summary>
 		public bool IsInPool { get; internal set; }
 
 		/// <summary>Internal: wired up by ObjectPoolService at creation time.</summary>
@@ -33,7 +33,8 @@ namespace AK.Utilities
 		}
 
 		/// <summary>
-		/// Returns this instance to its pool. Safe to call even if already pooled (logs a warning).
+		/// Returns this instance to its pool. One already back in its pool, or made by no pool, is
+		/// left as it is, with a warning.
 		/// </summary>
 		public void ReturnToPool()
 		{
@@ -45,8 +46,7 @@ namespace AK.Utilities
 
 			if (_returnAction == null)
 			{
-				Debug.LogWarning($"[Pooling] '{name}' was not created by an ObjectPoolService - destroying instead.", this);
-				Destroy(gameObject);
+				Debug.LogWarning($"[Pooling] '{name}' was not made by an ObjectPoolService; left as it is.", this);
 				return;
 			}
 

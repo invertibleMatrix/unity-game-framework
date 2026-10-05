@@ -4,13 +4,24 @@
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
+        "AK.Tests.Support",
+        "AK.Kernel",
         "AK.Core",
         "AK.Jobs",
         "AK.CoreDomain",
         "AK.Services",
+        "AK.Services.Firebase",
         "AK.UISystem",
+        "AK.Tutorials",
+        "AK.Content",
+        "AK.Editor",
+        "AK.Core.UID.Editor",
         "UniTask",
-        "Reflex"
+        "Reflex",
+        "Unity.Addressables",
+        "Unity.ResourceManager",
+        "Unity.TextMeshPro",
+        "Unity.RenderPipelines.Universal.Runtime"
     ],
     "includePlatforms": [
         "Editor"
@@ -26,6 +37,37 @@
     "defineConstraints": [
         "UNITY_INCLUDE_TESTS"
     ],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.ugui",
+            "expression": "2.0.0",
+            "define": "UGFW_TMP"
+        },
+        {
+            "name": "com.unity.textmeshpro",
+            "expression": "",
+            "define": "UGFW_TMP"
+        },
+        {
+            "name": "com.unity.render-pipelines.universal",
+            "expression": "",
+            "define": "UGFW_URP"
+        },
+        {
+            "name": "com.google.firebase.app",
+            "expression": "",
+            "define": "UGFW_FIREBASE"
+        },
+        {
+            "name": "com.google.firebase.remote-config",
+            "expression": "",
+            "define": "UGFW_FIREBASE_REMOTE_CONFIG"
+        },
+        {
+            "name": "com.unity.addressables",
+            "expression": "",
+            "define": "UGFW_ADDRESSABLES"
+        }
+    ],
     "noEngineReferences": false
 }

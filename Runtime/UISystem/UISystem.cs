@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using AK.Kernel.Timing;
 using Cysharp.Threading.Tasks;
 using Reflex.Attributes;
 using Reflex.Core;
@@ -25,6 +26,12 @@ namespace AK.Systems
 		[SerializeField] private bool             _spawnDefaultOverlayView = true;
 		[SerializeField] private bool             _ensureEventSystem       = true;
 
+		[SerializeField, Tooltip("The time the UI runs on: view animations, background dims and the delays before static children show. Unscaled keeps menus working in a game paused at timeScale 0.")]
+		private TimeDomain _timeDomain = TimeDomain.Unscaled;
+
+		[SerializeField, Min(0), Tooltip("Closed views kept for reuse, per kind, among those that return to the pool. A view closed while its kind already has this many is destroyed.")]
+		private int _poolCapacityPerKind = ViewPool.DefaultCapacityPerKind;
+
 		[Inject] private Container _diContainer;
 
 		private ViewRegistry      _registry;
@@ -33,8 +40,13 @@ namespace AK.Systems
 		private ViewFactory       _factory;
 		private ShowPipeline      _show;
 		private ClosePipeline     _close;
+		private UIInputGate       _inputGate;
 
 		public event Action<UIView> ViewShown;
+
+		public UIInputGate InputGate => _inputGate;
+
+		public TimeDomain TimeDomain => _timeDomain;
 
 		// =================================================================
 		// LIFECYCLE
@@ -53,22 +65,52 @@ namespace AK.Systems
 			_registry = new ViewRegistry();
 			_screens = new ScreenStacks(_uiCamera);
 			_histories = new FragmentHistories();
-			_factory = new ViewFactory(_repository, _viewsContainer, _diContainer);
+			_factory = new ViewFactory(_repository, _viewsContainer, _diContainer, _poolCapacityPerKind);
 			_close = new ClosePipeline(_registry, _screens, _histories, _factory);
 			_show = new ShowPipeline(this, _registry, _screens, _histories, _factory, _close);
+			_inputGate = CreateInputGate(transform);
 
 			if (_ensureEventSystem && FindFirstObjectByType<EventSystem>() == null)
 			{
 				var go = new GameObject("EventSystem");
 				go.transform.SetParent(_viewsContainer);
 				go.AddComponent<EventSystem>();
-				go.AddComponent<StandaloneInputModule>();
+				AddInputModule(go);
 			}
 
 			if (_spawnDefaultOverlayView)
 			{
 				Show<UIViewOverlay>();
 			}
+
+			if (Application.isPlaying) Application.lowMemory += OnLowMemory;
+		}
+
+		/// <summary>
+		/// The gate and the blocker that enforces it. The blocker sits on a child of this object,
+		/// which has no pointer handlers, so a press it swallows bubbles up to nothing.
+		/// </summary>
+		private static UIInputGate CreateInputGate(Transform parent)
+		{
+			var gate = new UIInputGate();
+			var go = new GameObject(nameof(UIInputBlocker));
+			go.transform.SetParent(parent, false);
+			go.AddComponent<UIInputBlocker>().Bind(gate);
+			return gate;
+		}
+
+		/// <summary>
+		/// The Input System's UI module when that package is installed and enabled in the
+		/// Player Settings' Active Input Handling; otherwise the Input Manager's module, which
+		/// throws every frame when the Input System is the only one enabled.
+		/// </summary>
+		private static void AddInputModule(GameObject eventSystem)
+		{
+#if UGFW_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
+			eventSystem.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
+#else
+			eventSystem.AddComponent<StandaloneInputModule>();
+#endif
 		}
 
 		public void Dispose()
@@ -79,6 +121,26 @@ namespace AK.Systems
 		private void OnApplicationQuit()
 		{
 			if (_factory != null) _factory.IsShuttingDown = true;
+		}
+
+		private void OnDestroy()
+		{
+			Application.lowMemory -= OnLowMemory;
+		}
+
+		/// <summary>The OS is short of memory: the idle views go first.</summary>
+		private void OnLowMemory()
+		{
+			TrimPool();
+		}
+
+		// =================================================================
+		// IUISystem — MEMORY
+		// =================================================================
+
+		public void TrimPool(int keepPerKind = 0)
+		{
+			_factory?.Pool.Trim(keepPerKind);
 		}
 
 		// =================================================================

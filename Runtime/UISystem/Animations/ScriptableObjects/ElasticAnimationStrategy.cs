@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -11,9 +13,6 @@ namespace AK.Systems.Animations
         
         [SerializeField] [Tooltip("Stretch amount on exit")]
         private Vector3 _exitStretch = new Vector3(2f, 0.3f, 1f);
-        
-        [SerializeField] [Tooltip("Elasticity factor (higher = more bouncy)")]
-        private float _elasticity = 1f;
         
         [SerializeField] [Tooltip("Add elastic movement")]
         private bool _addMovement = true;
@@ -32,9 +31,6 @@ namespace AK.Systems.Animations
         
         [SerializeField] [Tooltip("Scale overshoot amount")]
         private Vector3 _scaleOvershoot = new Vector3(1.3f, 1.3f, 1.3f);
-        
-        [SerializeField] [Tooltip("Number of elastic oscillations")]
-        private int _oscillations = 3;
         
         [SerializeField] [Tooltip("Add wobble effect")]
         private bool _addWobble = true;
@@ -57,7 +53,7 @@ namespace AK.Systems.Animations
             Random
         }
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             var sequence = DOTween.Sequence();
             
@@ -92,7 +88,7 @@ namespace AK.Systems.Animations
             {
                 sequence.AppendCallback(() =>
                 {
-                    target.DOShakeRotation(EntryDuration * 0.3f, new Vector3(0, 0, _wobbleIntensity), 10, 0, true);
+                    target.DOShakeRotation(EntryDuration * 0.3f, new Vector3(0, 0, _wobbleIntensity), 10, 0, true).SetTimeDomain(time);
                 });
             }
             
@@ -104,10 +100,10 @@ namespace AK.Systems.Animations
                 sequence.Append(target.DOScale(Vector3.one, 0.1f).SetEase(Ease.OutBack));
             }
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             var sequence = DOTween.Sequence();
             
@@ -131,7 +127,7 @@ namespace AK.Systems.Animations
             // Final collapse
             sequence.Append(target.DOScale(Vector3.zero, ExitDuration * 0.3f).SetEase(Ease.InBack));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
         private Vector3[] GetMovementPath(Vector2 start, Vector2 distance)

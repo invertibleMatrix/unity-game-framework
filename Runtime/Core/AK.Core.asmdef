@@ -2,6 +2,7 @@
     "name": "AK.Core",
     "rootNamespace": "AK.Core",
     "references": [
+        "AK.Kernel",
         "Unity.RenderPipelines.Universal.Runtime",
         "Unity.Addressables",
         "Unity.ResourceManager",
@@ -10,7 +11,8 @@
         "Reflex",
         "Unity.Cinemachine",
         "DOTween.Modules",
-        "UniTask.DOTween"
+        "UniTask.DOTween",
+        "Unity.TextMeshPro"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
@@ -19,6 +21,32 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.ugui",
+            "expression": "2.0.0",
+            "define": "UGFW_TMP"
+        },
+        {
+            "name": "com.unity.textmeshpro",
+            "expression": "",
+            "define": "UGFW_TMP"
+        },
+        {
+            "name": "com.unity.render-pipelines.universal",
+            "expression": "",
+            "define": "UGFW_URP"
+        },
+        {
+            "name": "com.unity.cinemachine",
+            "expression": "3.0.0",
+            "define": "UGFW_CINEMACHINE"
+        },
+        {
+            "name": "com.unity.addressables",
+            "expression": "",
+            "define": "UGFW_ADDRESSABLES"
+        }
+    ],
     "noEngineReferences": false
 }

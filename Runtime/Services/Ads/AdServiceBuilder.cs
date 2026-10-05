@@ -1,8 +1,7 @@
-using System;
+using System.Collections.Generic;
+using AK.Core;
 using AK.Services.Ads;
 using AK.Services.Ads.Providers;
-using AK.CoreDomain;
-using AK.CoreDomain.RemoteConfig;
 using UnityEngine;
 
 namespace AK.Services
@@ -10,36 +9,22 @@ namespace AK.Services
 	/// <summary>
 	/// Builder class for creating and configuring AdService instances.
 	/// Provides a fluent API for setting up ad providers and configuration.
+	/// Each <see cref="Build"/> makes a new service, which owns the providers it was given.
 	/// </summary>
 	public class AdServiceBuilder
 	{
 		private const string TAG = "[AdServiceBuilder]";
 
-		private readonly AdService _adService;
-		private bool _useAdMob;
+		private readonly List<IAdProvider> _customProviders = new();
+		private AdServiceOptions _options = AdServiceOptions.Default;
+		private IAdsClock _clock;
+		private PrefsStore _capStore;
+		private bool _capStoreSet;
 		private bool _useMax;
 		private bool _useNullProviderAsFallback = false;
 		private bool _simulateAdsInEditor = true;
 		private bool _userCanTrack = true;
 		private bool _userUnderAge = false;
-
-		/// <summary>
-		/// Creates a new AdServiceBuilder.
-		/// </summary>
-		public AdServiceBuilder()
-		{
-			_adService = new AdService();
-		}
-
-		/// <summary>
-		/// Opt in to the AdMob provider. Off unless this is called.
-		/// Ignored when MAX is also enabled — MAX already mediates Google demand.
-		/// </summary>
-		public AdServiceBuilder UseAdMob(bool useAdMob = true)
-		{
-			_useAdMob = useAdMob;
-			return this;
-		}
 
 		/// <summary>
 		/// Opt in to the AppLovin MAX provider. Off unless this is called.
@@ -88,11 +73,44 @@ namespace AK.Services
 		}
 
 		/// <summary>
+		/// Sets how long the service waits for providers and loads. <see cref="AdServiceOptions.Default"/> unless called.
+		/// </summary>
+		public AdServiceBuilder WithOptions(AdServiceOptions options)
+		{
+			_options = options;
+			return this;
+		}
+
+		/// <summary>
+		/// Sets the clock the service's timers run on. A <see cref="ForegroundAdsClock"/> unless called.
+		/// </summary>
+		public AdServiceBuilder WithClock(IAdsClock clock)
+		{
+			_clock = clock;
+			return this;
+		}
+
+		/// <summary>
+		/// Sets where the service keeps frequency caps across launches; null keeps them for the
+		/// service's lifetime only. <see cref="UniPrefs.Store"/> unless called.
+		/// </summary>
+		public AdServiceBuilder WithCapStore(PrefsStore capStore)
+		{
+			_capStore    = capStore;
+			_capStoreSet = true;
+			return this;
+		}
+
+		/// <summary>
 		/// Adds a custom ad provider.
 		/// </summary>
 		public AdServiceBuilder AddProvider(IAdProvider provider)
 		{
-			_adService.AddProvider(provider);
+			if (provider != null && !_customProviders.Contains(provider))
+			{
+				_customProviders.Add(provider);
+			}
+
 			return this;
 		}
 
@@ -102,22 +120,23 @@ namespace AK.Services
 		/// </summary>
 		public AdService Build()
 		{
+			var adService = new AdService(_options, _clock ?? new ForegroundAdsClock(), _capStoreSet ? _capStore : UniPrefs.Store);
+
 			// Set user consent settings
-			_adService.SetUserConsent(_userCanTrack);
-			_adService.SetUserUnderAge(_userUnderAge);
+			adService.SetUserConsent(_userCanTrack);
+			adService.SetUserUnderAge(_userUnderAge);
 
-			if (_useMax && _useAdMob)
-				Debug.LogWarning($"{TAG} UseAdMob and UseMax were both requested; AdMob is skipped because MAX already mediates Google.");
-
-			bool maxAdded = false;
+			foreach (IAdProvider provider in _customProviders)
+			{
+				adService.AddProvider(provider);
+			}
 
 			if (_useMax)
 			{
 				IAdProvider max = AdsProviderFactory.TryCreateMax();
 				if (max != null)
 				{
-					_adService.AddProvider(max);
-					maxAdded = true;
+					adService.AddProvider(max);
 				}
 				else
 				{
@@ -125,29 +144,18 @@ namespace AK.Services
 				}
 			}
 
-			// AdMob requires ADMOB_ENABLED; without it the provider would report initialized with no SDK.
-#if ADMOB_ENABLED && (UNITY_ANDROID || UNITY_IOS)
-			if (_useAdMob && !maxAdded)
-			{
-				_adService.AddProvider(new AdMobAdProvider());
-			}
-#elif !ADMOB_ENABLED
-			if (_useAdMob && !maxAdded)
-				Debug.LogWarning($"{TAG} UseAdMob() was requested but ADMOB_ENABLED is not defined.");
-#endif
-
 			// Add null provider for testing/fallback
 			if (_useNullProviderAsFallback || (Application.isEditor && _simulateAdsInEditor))
 			{
-				_adService.AddProvider(new NullAdProvider(_simulateAdsInEditor));
+				adService.AddProvider(new NullAdProvider(_simulateAdsInEditor));
 			}
 
-			return _adService;
+			return adService;
 		}
 
 		/// <summary>
 		/// Creates an AdService with no network providers. Call
-		/// <see cref="UseAdMob"/>, <see cref="UseMax"/>, or <see cref="AddProvider"/> on a builder instead.
+		/// <see cref="UseMax"/> or <see cref="AddProvider"/> on a builder instead.
 		/// </summary>
 		public static AdService CreateDefault()
 		{
@@ -162,7 +170,6 @@ namespace AK.Services
 		public static AdService CreateForTesting()
 		{
 			return new AdServiceBuilder()
-				.UseAdMob(false)
 				.UseMax(false)
 				.UseNullProviderAsFallback(true)
 				.SimulateAdsInEditor(true)
@@ -177,8 +184,8 @@ namespace AK.Services
 	{
 		/// <summary>
 		/// Creates an AdService with consent flags only — no network provider is selected.
-		/// Use <see cref="AdServiceBuilder"/> and call <see cref="AdServiceBuilder.UseAdMob"/>,
-		/// <see cref="AdServiceBuilder.UseMax"/>, or <see cref="AdServiceBuilder.AddProvider"/>.
+		/// Use <see cref="AdServiceBuilder"/> and call <see cref="AdServiceBuilder.UseMax"/>
+		/// or <see cref="AdServiceBuilder.AddProvider"/>.
 		/// </summary>
 		public static AdService CreateAdService(
 			bool canTrack = true,

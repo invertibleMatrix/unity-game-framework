@@ -1,4 +1,5 @@
 ﻿using System;
+using AK.Kernel.Purchasing;
 
 namespace AK.Services
 {
@@ -29,14 +30,10 @@ namespace AK.Services
 		public string LocalizedDescription { get; set; }
 
 		/// <summary>
-		/// Numeric price in the local currency (e.g., 0.99m).
+		/// The price in whole minor units of its currency (499 USD for $4.99); None when the
+		/// store gave no currency.
 		/// </summary>
-		public decimal Price { get; set; }
-
-		/// <summary>
-		/// ISO 4217 currency code (e.g., "USD", "EUR").
-		/// </summary>
-		public string IsoCurrencyCode { get; set; }
+		public Money Price { get; set; }
 
 		/// <summary>
 		/// Whether this product is currently available for purchase on the store.
@@ -102,10 +99,10 @@ namespace AK.Services
 		public string LocalizedIntroductoryPrice { get; set; }
 
 		/// <summary>
-		/// Numeric introductory price in the local currency.
-		/// Null if no introductory offer is available.
+		/// The introductory price in whole minor units of its currency.
+		/// None if no introductory offer is available.
 		/// </summary>
-		public decimal? IntroductoryPrice { get; set; }
+		public Money IntroductoryPrice { get; set; }
 
 		/// <summary>
 		/// The number of periods the introductory price is available for.

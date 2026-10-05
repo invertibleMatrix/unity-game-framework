@@ -1,4 +1,5 @@
-﻿using Unity.Cinemachine;
+﻿#if UGFW_CINEMACHINE
+using Unity.Cinemachine;
 
 namespace AK.Systems
 {
@@ -10,3 +11,4 @@ namespace AK.Systems
         public CinemachineBrain Brain { get; }
     }
 }
+#endif

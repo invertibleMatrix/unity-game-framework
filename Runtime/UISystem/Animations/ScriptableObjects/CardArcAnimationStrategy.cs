@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -57,7 +59,7 @@ namespace AK.Systems.Animations
             CounterClockwise
         }
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             var sequence = DOTween.Sequence();
             
@@ -95,10 +97,10 @@ namespace AK.Systems.Animations
                 sequence.Append(target.DOScale(Vector3.one, 0.15f).SetEase(Ease.OutBack));
             }
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             var sequence = DOTween.Sequence();
             
@@ -113,7 +115,7 @@ namespace AK.Systems.Animations
             sequence.Join(target.DOScale(_startScale, _arcDuration * 0.6f).SetEase(Ease.InCubic));
             sequence.Join(canvasGroup.DOFade(0, _arcDuration * 0.4f).SetEase(Ease.InQuad));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
         private Vector3[] CalculateArcPath(RectTransform target, Vector2 startPos)

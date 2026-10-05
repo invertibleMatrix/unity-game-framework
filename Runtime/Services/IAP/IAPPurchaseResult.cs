@@ -6,7 +6,7 @@
 	public struct IAPPurchaseResult
 	{
 		/// <summary>
-		/// Whether the purchase completed successfully.
+		/// Whether the store delivered the paid order to the order handler.
 		/// </summary>
 		public bool Success;
 
@@ -87,13 +87,18 @@
 
 		/// <summary>
 		/// The store did not respond in time. NOT a definite failure: the purchase may still
-		/// complete, in which case it is delivered via OnExternalPurchaseConfirmed.
+		/// complete, and its order then goes to the order handler.
 		/// Callers should present a "processing" state, not a "purchase failed" state.
 		/// </summary>
 		Timeout,
 
 		/// <summary>Unknown or unclassified failure.</summary>
-		Unknown
-}
-}
+		Unknown,
 
+		/// <summary>
+		/// The store holds the purchase for approval: Ask to Buy, or a payment still pending.
+		/// If approved, its order goes to the order handler later.
+		/// </summary>
+		Deferred,
+	}
+}

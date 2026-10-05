@@ -80,6 +80,7 @@ namespace AK.Tests
 		[TestCase("01234567-89ab-cdef-0123-456789abcdef")]
 		[TestCase("{01234567-89ab-cdef-0123-456789abcdef}")]
 		[TestCase("(0123456789abcdef0123456789abcdef)")]
+		[TestCase("(01234567-89AB-CDEF-0123-456789ABCDEF)")]
 		[TestCase("  0123456789abcdef0123456789abcdef  ")]
 		public void TryParse_AcceptsCanonicalForms(string text)
 		{
@@ -93,6 +94,14 @@ namespace AK.Tests
 		[TestCase("0123456789abcdef0123456789abcdef0")]
 		[TestCase("0123456789abcdef0123456789abcdeg")]
 		[TestCase("not-a-uid")]
+		[TestCase("{0123456789abcdef0123456789abcdef)")]
+		[TestCase("{0123456789abcdef0123456789abcdefX")]
+		[TestCase("(0123456789abcdef0123456789abcdef")]
+		[TestCase("0123-456789abcdef0123456789abcdef")]
+		[TestCase("--0123456789abcdef0123456789abcdef--")]
+		[TestCase("01234567-89ab-cdef-0123456789abcdef")]
+		[TestCase("0123456789ab-cdef-0123-4567-89abcdef")]
+		[TestCase("{}")]
 		public void TryParse_RejectsInvalid(string text)
 		{
 			Assert.IsFalse(Uid.TryParse(text, out Uid id));

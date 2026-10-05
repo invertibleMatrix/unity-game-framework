@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace AK.CoreDomain.Analytics
 {
@@ -107,6 +109,23 @@ namespace AK.CoreDomain.Analytics
 		{
 			EnsureParameters()[key] = value;
 			return this;
+		}
+
+		/// <summary>
+		/// The parameter under <paramref name="key"/> as text, or null when it is missing, null or
+		/// empty. Numbers format with the invariant culture.
+		/// </summary>
+		public string ParameterText(string key)
+		{
+			if (Parameters == null || key == null || !Parameters.TryGetValue(key, out object raw) || raw == null)
+			{
+				return null;
+			}
+
+			string text = raw is IFormattable formattable
+				? formattable.ToString(null, CultureInfo.InvariantCulture)
+				: raw.ToString();
+			return string.IsNullOrEmpty(text) ? null : text;
 		}
 
 		public AnalyticsEvent Clone()

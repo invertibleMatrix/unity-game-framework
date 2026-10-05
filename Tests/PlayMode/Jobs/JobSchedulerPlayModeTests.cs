@@ -12,7 +12,7 @@ namespace AK.Tests.Jobs
 	/// <summary>The player-loop driver against the real engine loop: timing in frames, thread affinity, attach/detach.</summary>
 	public sealed class JobSchedulerPlayModeTests
 	{
-		private sealed class FrameStampJob : IJob, IJobCallback
+		private sealed class FrameStampJob : IFrameJob, IFrameJobCallback
 		{
 			public int ExecuteCount;
 			public int ExecuteThreadId;
@@ -92,6 +92,27 @@ namespace AK.Tests.Jobs
 		}
 
 		[UnityTest]
+		public IEnumerator WithoutWorkers_RunsOnMainAtTheNextFrame_AndCompletesTwoFramesLater()
+		{
+			JobScheduler scheduler = CreateAttached(workers: 0);
+			int          mainId    = Thread.CurrentThread.ManagedThreadId;
+			var          job       = new FrameStampJob();
+
+			int scheduledFrame = Time.frameCount;
+			scheduler.Schedule(job);
+
+			yield return null;
+			yield return null;
+
+			Assert.AreEqual(1, job.ExecuteCount);
+			Assert.AreEqual(mainId, job.ExecuteThreadId, "no workers: the barrier runs it on the main thread");
+			Assert.AreEqual(scheduledFrame + 1, job.ExecuteCtxFrame, "run by the barrier at the top of the following frame");
+
+			Assert.AreEqual(1, job.CompleteCount);
+			Assert.AreEqual(scheduledFrame + 2, job.CompleteFrame, "collected a frame later, as with workers");
+		}
+
+		[UnityTest]
 		public IEnumerator Repeating_TickCadence_MatchesFrameCount_Over60Frames()
 		{
 			JobScheduler scheduler = CreateAttached();
@@ -149,7 +170,7 @@ namespace AK.Tests.Jobs
 			for (int i = 0; i < 256; i++) Assert.AreEqual(i * i, batch.Results[i].Output);
 		}
 
-		private struct SquareElement : IJob
+		private struct SquareElement : IFrameJob
 		{
 			public int Input;
 			public int Output;

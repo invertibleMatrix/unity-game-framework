@@ -10,7 +10,7 @@ namespace AK.Tests.Jobs
 	[TestFixture]
 	public sealed class JobBatchTests
 	{
-		private struct SquareJob : IJob
+		private struct SquareJob : IFrameJob
 		{
 			public int  Input;
 			public int  Output;
@@ -25,7 +25,7 @@ namespace AK.Tests.Jobs
 			}
 		}
 
-		private struct TallyJob : IJob
+		private struct TallyJob : IFrameJob
 		{
 			public int   Index;
 			public int[] Counts;
@@ -250,22 +250,20 @@ namespace AK.Tests.Jobs
 
 			JobScheduler scheduler = Create(workers: 2);
 			var          batch     = new JobBatch<SquareJob>(capacity: elements);
+			int          frame     = 0;
 			scheduler.Register(batch);
 
-			for (int frame = 1; frame <= 5; frame++)
+			void Frames(int count)
 			{
-				for (int i = 0; i < elements; i++) batch.Add().Input = i;
-				RunFrame(scheduler, frame);
-			}
-
-			int allocations = GcAllocations.Count(() =>
-			{
-				for (int frame = 6; frame <= 55; frame++)
+				for (int f = 0; f < count; f++)
 				{
 					for (int i = 0; i < elements; i++) batch.Add().Input = i;
-					RunFrame(scheduler, frame);
+					RunFrame(scheduler, ++frame);
 				}
-			}, allThreads: true);
+			}
+
+			Frames(5);
+			int allocations = GcAllocations.CountOnAllThreads(() => Frames(50));
 
 			Assert.AreEqual(0, allocations, "fill + rotate + chunked execution must not allocate once warm");
 			Assert.AreEqual(elements, batch.Results.Length);

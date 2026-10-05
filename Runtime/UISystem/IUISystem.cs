@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using AK.Kernel.Timing;
 using Cysharp.Threading.Tasks;
 
 namespace AK.Systems
@@ -65,6 +66,39 @@ namespace AK.Systems
 		TView GetView<TView>(string viewId = "") where TView : UIView;
 
 		bool TryGetView<TView>(out TView view, string viewId = "") where TView : UIView;
+
+		// =====================================================================
+		// INPUT
+		// =====================================================================
+
+		/// <summary>
+		/// Blocks pointer input while anyone holds it: the UI's, and the world's wherever game
+		/// code checks for UI under the pointer. Shared by everything on this system
+		/// (tutorials, spotlights, game code); each holder releases only its own hold.
+		/// </summary>
+		UIInputGate InputGate { get; }
+
+		// =====================================================================
+		// MEMORY
+		// =====================================================================
+
+		/// <summary>
+		/// Destroys the closed views kept for reuse beyond <paramref name="keepPerKind"/> of each
+		/// kind; zero empties the pool. The system trims to zero by itself when the OS reports low
+		/// memory.
+		/// </summary>
+		void TrimPool(int keepPerKind = 0);
+
+		// =====================================================================
+		// TIME
+		// =====================================================================
+
+		/// <summary>
+		/// The time the UI runs on: every view's entrance and exit, its background dim, and the
+		/// delays before its static children show. Unscaled by default, so a game paused at
+		/// timeScale 0 can still open and close its menus.
+		/// </summary>
+		TimeDomain TimeDomain { get; }
 
 		// =====================================================================
 		// EVENTS

@@ -1,10 +1,9 @@
+using AK.Core;
+using AK.Utilities.Audio;
 using Reflex.Extensions;
 using UnityEngine;
-using AK.Core;
-using UI;
-using Utilities.AudioSpawner;
 
-namespace UI
+namespace AK.UI
 {
 	public class UIAudioPlayer : MonoBehaviour
 	{

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using AK.Core;
 using AK.CoreDomain.Facts;
+using AK.Kernel.Persistence;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 
@@ -10,38 +11,64 @@ namespace AK.Services.Facts
 {
 	/// <summary>
 	/// Default IFactService. Persists one count row per fact — the entire disk footprint
-	/// of the fact domain. Identity redirects are applied once at load and the file is
-	/// rewritten, so a redirected fact costs nothing after the first launch.
+	/// of the fact domain. Identity redirects are applied whenever a ledger loads, and the
+	/// ledger is rewritten, so a redirected fact costs nothing after the first launch.
 	///
-	/// Every mutation commits to disk unless inside a <see cref="BeginBatch"/> scope.
+	/// Each account has its own ledger (<see cref="IAccountScoped"/>); until one is bound the
+	/// device's ledger is used. Every mutation commits unless inside a <see cref="BeginBatch"/>
+	/// scope; the store writes it to disk at the end of the frame. When the store deletes all
+	/// its data, the counts go back to zero and <see cref="Changed"/> fires for each fact that
+	/// had one.
 	/// </summary>
 	public class FactService : IFactService, IBatchable
 	{
-		private readonly FactLedgerState      _state;
+		private readonly PrefsStore           _store;
+		private readonly UidRedirectTable     _redirects;
 		private readonly DeferredCommit       _commit;
+		private readonly ResetListener        _resetListener;
 		private readonly Dictionary<Uid, int> _counts = new();
+
+		private FactLedgerState _state;
+		private string          _accountId;
 
 		public event Action<Uid<FactType>> Changed;
 
-		public FactService(UidRedirectTable redirects = null)
+		/// <param name="redirects">Identity redirects applied to each ledger as it loads.</param>
+		/// <param name="store">Where the ledgers live; <see cref="UniPrefs.Store"/> when null.</param>
+		public FactService(UidRedirectTable redirects = null, PrefsStore store = null)
 		{
-			_state  = FactLedgerState.Load();
-			_commit = new DeferredCommit(_state.Commit);
+			_store     = store ?? UniPrefs.Store;
+			_redirects = redirects;
+			_commit    = new DeferredCommit(CommitLedger);
 
-			bool rewritten = ApplyRedirects(redirects);
+			LoadLedger(null);
 
-			foreach (FactCountEntry entry in _state.Counts)
+			_resetListener = new ResetListener(this);
+			_store.AddResetListener(_resetListener);
+		}
+
+		// ---------------------------------------------------------------- account
+
+		public string AccountId => _accountId;
+
+		public void BindAccount(string accountId)
+		{
+			if (string.IsNullOrEmpty(accountId)) accountId = null;
+			else StorageKeys.ValidateScope(accountId);
+
+			if (accountId == _accountId) return;
+
+			if (_commit.IsSuspended)
 			{
-				if (entry.FactId.IsSet)
-				{
-					_counts[entry.FactId] = entry.Count;
-				}
+				throw new InvalidOperationException("[FactService] Can't switch accounts inside a write batch: its writes belong to the account bound when it opened.");
 			}
 
-			if (rewritten)
+			if (accountId != null && FactLedgerState.AdoptDeviceSave(_store, accountId))
 			{
-				_commit.Commit();
+				Debug.Log("[FactService] The device's fact ledger moved to the account just bound, which had none of its own.");
 			}
+
+			Reload(accountId);
 		}
 
 		// ---------------------------------------------------------------- batching
@@ -101,7 +128,10 @@ namespace AK.Services.Facts
 			if (count <= 0)
 			{
 				_counts.Remove(id);
-				_state.Counts.RemoveAll(e => e.FactId == id);
+
+				int row = FindRow(id);
+				if (row >= 0) _state.Counts.RemoveAt(row);
+
 				_commit.Commit();
 			}
 			else
@@ -197,14 +227,16 @@ namespace AK.Services.Facts
 			return id.IsSet && _counts.TryGetValue(id, out int count) ? count : 0;
 		}
 
+		private void CommitLedger() => _state.Commit();
+
 		private void Write(Uid id, int count)
 		{
 			_counts[id] = count;
 
-			FactCountEntry entry = _state.Counts.Find(e => e.FactId == id);
-			if (entry != null)
+			int row = FindRow(id);
+			if (row >= 0)
 			{
-				entry.Count = count;
+				_state.Counts[row].Count = count;
 			}
 			else
 			{
@@ -212,6 +244,64 @@ namespace AK.Services.Facts
 			}
 
 			_commit.Commit();
+		}
+
+		private int FindRow(Uid id)
+		{
+			List<FactCountEntry> rows = _state.Counts;
+			for (int i = 0; i < rows.Count; i++)
+			{
+				if (rows[i].FactId == id) return i;
+			}
+
+			return -1;
+		}
+
+		/// <summary>Loads the ledger for <paramref name="accountId"/>, then raises Changed for each fact whose count differs from before.</summary>
+		private void Reload(string accountId)
+		{
+			var before = new Dictionary<Uid, int>(_counts);
+			LoadLedger(accountId);
+
+			if (Changed == null) return;
+
+			var changed = new List<Uid>();
+			foreach (KeyValuePair<Uid, int> previous in before)
+			{
+				if (Count(previous.Key) != previous.Value) changed.Add(previous.Key);
+			}
+
+			foreach (KeyValuePair<Uid, int> current in _counts)
+			{
+				if (!before.ContainsKey(current.Key) && current.Value != 0) changed.Add(current.Key);
+			}
+
+			for (int i = 0; i < changed.Count; i++)
+			{
+				Changed?.Invoke(new Uid<FactType>(changed[i]));
+			}
+		}
+
+		private void LoadLedger(string accountId)
+		{
+			_state     = FactLedgerState.Load(_store, accountId);
+			_accountId = accountId;
+
+			bool rewritten = ApplyRedirects(_redirects);
+
+			_counts.Clear();
+			foreach (FactCountEntry entry in _state.Counts)
+			{
+				if (entry.FactId.IsSet)
+				{
+					_counts[entry.FactId] = entry.Count;
+				}
+			}
+
+			if (rewritten)
+			{
+				_commit.Commit();
+			}
 		}
 
 		/// <summary>
@@ -244,6 +334,17 @@ namespace AK.Services.Facts
 			}
 
 			return true;
+		}
+
+		// Registered with the store in place of the service, which keeps it alive, so the
+		// service's public type doesn't carry the kernel interface.
+		private sealed class ResetListener : IStoreResetListener
+		{
+			private readonly FactService _service;
+
+			public ResetListener(FactService service) => _service = service;
+
+			public void OnStoreReset() => _service.Reload(_service._accountId);
 		}
 	}
 }

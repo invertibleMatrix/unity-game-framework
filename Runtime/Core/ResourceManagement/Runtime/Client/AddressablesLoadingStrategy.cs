@@ -1,12 +1,15 @@
+#if UGFW_ADDRESSABLES
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using AK.Kernel.Collections;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
+using UnityEngine.ResourceManagement.Exceptions;
 using UnityEngine.ResourceManagement.ResourceLocations;
 using UnityEngine.ResourceManagement.ResourceProviders;
 using UnityEngine.SceneManagement;
@@ -15,23 +18,62 @@ using Object = UnityEngine.Object;
 
 namespace AK.Core.ResourceManagement
 {
+	/// <summary>
+	/// <see cref="IResourceLoadingStrategy"/> over Addressables.
+	///
+	/// Ownership: every object handed out by a load or spawn is one claim, backed by the
+	/// Addressables handle that produced it. <see cref="DisposeAsset"/> and
+	/// <see cref="DisposeInstance"/> give back exactly one claim and release exactly that
+	/// handle, so loading a key N times takes N disposes, and Addressables' own reference
+	/// count stays balanced. Claims on objects that were destroyed without a dispose (an
+	/// instance that died with its scene, an asset destroyed by hand) are released when the
+	/// next scene unloads.
+	///
+	/// Failures surface as exceptions (Addressables' <see cref="OperationException"/> or
+	/// cancellation); nothing that failed reports success. Main thread only.
+	///
+	/// Synchronous loads wait for Addressables, except on WebGL, where Addressables runs on the
+	/// main thread and nothing can wait. There they return only what is already loaded: a Try
+	/// method answers false, and the others throw <see cref="NotSupportedException"/>.
+	/// </summary>
 	public sealed class AddressablesLoadingStrategy : IResourceLoadingStrategy
 	{
-		/// <summary>
-		/// A tracked load claim. Addressables caches completed ops per key, so loading the
-		/// same key twice yields the same object AND the same underlying handle - what differs
-		/// is how many callers hold a claim. We refcount claims and release the handle only
-		/// when the last claim is disposed, so one caller can never unload an asset from
-		/// under another caller.
-		/// </summary>
-		private sealed class TrackedAsset
+		private readonly Dictionary<Guid, AsyncOperationHandle> _groupOperationsLookup = new();
+		private readonly ClaimTable<Object, AsyncOperationHandle> _claims = new(64);
+
+		// Scratch for releasing in bulk without allocating; only touched on the main thread.
+		private readonly List<AsyncOperationHandle> _releaseBuffer = new();
+		private readonly List<Object> _keyBuffer = new();
+		private bool _watchingSceneUnloads;
+
+		// Whether a synchronous load may wait for an operation that isn't done. Addressables' own
+		// WaitForCompletion throws on WebGL for anything not done yet.
+		private readonly bool _canBlock;
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+		private const bool PlatformCanBlock = false;
+#else
+		private const bool PlatformCanBlock = true;
+#endif
+
+		public AddressablesLoadingStrategy() : this(PlatformCanBlock)
 		{
-			public AsyncOperationHandle Handle;
-			public int RefCount;
 		}
 
-		private readonly Dictionary<Guid, AsyncOperationHandle> _groupOperationsLookup = new();
-		private readonly Dictionary<Object, TrackedAsset>       _objectHandleLookup    = new();
+		/// <param name="canBlock">False acts as WebGL, for tests.</param>
+		internal AddressablesLoadingStrategy(bool canBlock)
+		{
+			_canBlock = canBlock;
+		}
+
+		/// <summary>Outstanding claims: loads and spawns not yet disposed.</summary>
+		public int ClaimCount => _claims.ClaimCount;
+
+		/// <summary>Distinct objects holding at least one claim.</summary>
+		public int ClaimedObjectCount => _claims.Count;
+
+		/// <summary>Claims currently held on <paramref name="uObject"/>.</summary>
+		public int ClaimsOf(Object uObject) => ReferenceEquals(uObject, null) ? 0 : _claims.ClaimsOf(uObject);
 
 		public UniTask InitAsync(CancellationToken cToken = default)
 		{
@@ -106,9 +148,8 @@ namespace AK.Core.ResourceManagement
 
 			try
 			{
+				// UniTask surfaces a failed operation as its OperationException.
 				await handle.ToUniTask(cancellationToken: cToken);
-				if (handle.IsValid() && handle.Status == AsyncOperationStatus.Failed)
-					Debug.LogError($"[AddressablesStrategy] Catalog update FAILED: {handle.OperationException}");
 			}
 			finally
 			{
@@ -227,10 +268,13 @@ namespace AK.Core.ResourceManagement
 					await UniTask.Yield(cToken);
 				}
 
-				progress?.Report(1f);
-
 				if (downloadOp.Status == AsyncOperationStatus.Failed)
-					Debug.LogError($"[AddressablesStrategy] Download FAILED: {downloadOp.OperationException}");
+				{
+					// Bundles that finished before the failure stay cached, so a retry resumes.
+					throw new OperationException("Remote content download failed.", downloadOp.OperationException);
+				}
+
+				progress?.Report(1f);
 			}
 			finally
 			{
@@ -301,6 +345,20 @@ namespace AK.Core.ResourceManagement
 			return await AwaitAndTrack(asyncOp, progress, cToken);
 		}
 
+		/// <summary>
+		/// Async <see cref="TryLoadAssetList{TObject}"/>: every sub-asset of the key
+		/// matching TObject (all frames of a sliced sprite sheet). Null when the key
+		/// is unknown — the location probe keeps misses silent.
+		/// </summary>
+		public async UniTask<IList<TObject>> TryLoadAssetListAsync<TObject>(string key, CancellationToken cToken = default)
+		{
+			if (!await HasLocationsAsync(key, typeof(TObject), cToken))
+				return null;
+
+			var op = Addressables.LoadAssetAsync<IList<TObject>>(key);
+			return await AwaitAndTrackList(op, cToken);
+		}
+
 		public async UniTask<AssetsGroup<TObject>> LoadAssetsAsync<TObject>(IEnumerable<string> keys, MergeMode mode = MergeMode.UseFirst,
 		                                                                    IProgress<float> progress = default, CancellationToken cToken = default)
 		{
@@ -361,20 +419,21 @@ namespace AK.Core.ResourceManagement
 		{
 			CheckResourceKey(key);
 			var op = Addressables.LoadAssetAsync<TObject>(key);
-			return WaitAndTrack(op);
+			return WaitAndTrack(op, key);
 		}
 
 		public TObject LoadAsset<TObject>(AssetReference reference)
 		{
 			ValidateReference(reference);
 			var op = Addressables.LoadAssetAsync<TObject>(reference);
-			return WaitAndTrack(op);
+			return WaitAndTrack(op, reference);
 		}
 
 		/// <summary>
 		/// Same as <see cref="LoadAsset{TObject}(string)"/> but missing/empty keys return
 		/// false instead of throwing. Probes locations first so Addressables never raises
 		/// InvalidKeyException (or logs it) for a key that is simply not in the catalog.
+		/// On WebGL, false too for an asset that isn't loaded yet.
 		/// </summary>
 		public bool TryLoadAsset<TObject>(string key, out TObject asset)
 		{
@@ -382,8 +441,8 @@ namespace AK.Core.ResourceManagement
 			if (!HasLocations(key, typeof(TObject)))
 				return false;
 
-			asset = LoadAsset<TObject>(key);
-			return asset != null;
+			var op = Addressables.LoadAssetAsync<TObject>(key);
+			return TryWaitAndTrack(op, out asset) && asset != null;
 		}
 
 		public bool TryLoadAsset<TObject>(AssetReference reference, out TObject asset)
@@ -394,22 +453,37 @@ namespace AK.Core.ResourceManagement
 			if (!HasLocations(reference.RuntimeKey, typeof(TObject)))
 				return false;
 
-			asset = LoadAsset<TObject>(reference);
-			return asset != null;
+			var op = Addressables.LoadAssetAsync<TObject>(reference);
+			return TryWaitAndTrack(op, out asset) && asset != null;
+		}
+
+		/// <summary>
+		/// All sub-assets of the key matching TObject (every frame of a sliced sprite
+		/// sheet). Probes for TObject locations first so missing keys stay silent.
+		/// On WebGL, false for a sheet that isn't loaded yet.
+		/// </summary>
+		public bool TryLoadAssetList<TObject>(string key, out IList<TObject> assets)
+		{
+			assets = null;
+			if (!HasLocations(key, typeof(TObject)))
+				return false;
+
+			var op = Addressables.LoadAssetAsync<IList<TObject>>(key);
+			return TryWaitAndTrackList(op, out assets) && assets != null && assets.Count > 0;
 		}
 
 		public GameObject Spawn(string key, Transform root)
 		{
 			CheckResourceKey(key);
 			var op = Addressables.InstantiateAsync(key, root);
-			return WaitAndTrack(op);
+			return WaitAndTrack(op, key);
 		}
 
 		public GameObject Spawn(AssetReference reference, Transform root)
 		{
 			ValidateReference(reference);
 			var op = Addressables.InstantiateAsync(reference, root);
-			return WaitAndTrack(op);
+			return WaitAndTrack(op, reference);
 		}
 
 		// --------------------------------------------------------------------------
@@ -421,8 +495,46 @@ namespace AK.Core.ResourceManagement
 		{
 			CheckResourceKey(key);
 			var asyncOp = Addressables.LoadSceneAsync(key, mode, activateOnLoad);
-			var result = await asyncOp.ToUniTask(progress: progress, cancellationToken: cToken);
-			return result;
+			try
+			{
+				return await asyncOp.ToUniTask(progress: progress, cancellationToken: cToken);
+			}
+			catch (OperationCanceledException) when (cToken.IsCancellationRequested)
+			{
+				// Unity can't abort a scene load midway. An additive scene is unloaded once it lands
+				// so neither the scene nor its handle outlives the request; a single-mode load has
+				// already replaced everything else, and Addressables releases it with that scene.
+				if (mode == LoadSceneMode.Additive)
+				{
+					UnloadWhenLoadedAsync(asyncOp).Forget();
+				}
+
+				throw;
+			}
+			catch
+			{
+				ReleaseIfValid(asyncOp);
+				throw;
+			}
+		}
+
+		private static async UniTaskVoid UnloadWhenLoadedAsync(AsyncOperationHandle<SceneInstance> asyncOp)
+		{
+			try
+			{
+				await asyncOp.ToUniTask();
+			}
+			catch
+			{
+				ReleaseIfValid(asyncOp);
+				return;
+			}
+
+			if (asyncOp.IsValid())
+			{
+				// The unload releases the load handle, and auto-releases its own.
+				_ = Addressables.UnloadSceneAsync(asyncOp);
+			}
 		}
 
 		public UniTask UnloadSceneAsync(SceneInstance scene, IProgress<float> progress = default, CancellationToken cToken = default)
@@ -437,24 +549,24 @@ namespace AK.Core.ResourceManagement
 		// CLEANUP & HELPERS
 		// --------------------------------------------------------------------------
 
+		/// <summary>
+		/// Gives back one claim on <paramref name="uObject"/>. A destroyed object still gives its
+		/// claim back. Objects this strategy didn't load go to <c>Addressables.Release</c>.
+		/// </summary>
 		public void DisposeAsset(Object uObject)
 		{
-			if (uObject == null) return;
+			if (ReferenceEquals(uObject, null)) return;
 
-			if (_objectHandleLookup.TryGetValue(uObject, out var tracked))
+			if (_claims.TryRelease(uObject, out AsyncOperationHandle handle))
 			{
-				tracked.RefCount--;
-
-				if (tracked.RefCount <= 0)
-				{
-					_objectHandleLookup.Remove(uObject);
-					ReleaseIfValid(tracked.Handle);
-				}
-
+				ReleaseIfValid(handle);
 				return;
 			}
 
-			Addressables.Release(uObject);
+			if (uObject != null)
+			{
+				Addressables.Release(uObject);
+			}
 		}
 
 		public void DisposeAssetsGroup<T>(AssetsGroup<T> group)
@@ -473,42 +585,79 @@ namespace AK.Core.ResourceManagement
 			Debug.LogError("--> Trying To Dispose An Assets Group Which Is Not Getting Track!");
 		}
 
+		/// <summary>
+		/// Gives back the claim on a spawned instance; releasing its handle destroys it. A
+		/// destroyed instance still gives its claim back. An instance this strategy didn't spawn
+		/// goes to <c>Addressables.ReleaseInstance</c>, and is destroyed if Addressables doesn't
+		/// know it either. False only for null or an untracked, already destroyed object.
+		/// </summary>
 		public bool DisposeInstance(GameObject gObject)
 		{
-			if (gObject == null) return false;
+			if (ReferenceEquals(gObject, null)) return false;
 
-			if (_objectHandleLookup.TryGetValue(gObject, out var tracked))
+			if (_claims.TryRelease(gObject, out AsyncOperationHandle handle))
 			{
-				tracked.RefCount--;
-
-				if (tracked.RefCount > 0)
-					return true; // Other callers still hold claims on this instance.
-
-				_objectHandleLookup.Remove(gObject);
+				ReleaseIfValid(handle);
+				return true;
 			}
+
+			if (gObject == null) return false;
 
 			if (Addressables.ReleaseInstance(gObject))
 				return true;
 
-			Object.Destroy(gObject);
+			gObject.DestroyInAnyMode();
 			return true;
 		}
 
+		/// <summary>Releases every claim and group this strategy holds; spawned instances are destroyed.</summary>
 		public void Reset()
 		{
-			foreach (var kvp in _objectHandleLookup)
-			{
-				if (kvp.Key is GameObject go)
-					Addressables.ReleaseInstance(go);
-				else
-					ReleaseIfValid(kvp.Value.Handle);
-			}
-
-			_objectHandleLookup.Clear();
+			_releaseBuffer.Clear();
+			_claims.DrainAll(_releaseBuffer);
+			ReleaseBuffered();
 
 			foreach (var kvp in _groupOperationsLookup)
 				ReleaseIfValid(kvp.Value);
 			_groupOperationsLookup.Clear();
+		}
+
+		/// <summary>
+		/// Releases the claims of objects destroyed without a dispose: instances that died with
+		/// their scene, or assets destroyed by hand. Runs on every scene unload; returns how
+		/// many claims it released.
+		/// </summary>
+		public int ReleaseDestroyed()
+		{
+			if (_claims.Count == 0) return 0;
+
+			_keyBuffer.Clear();
+			_claims.CopyKeysTo(_keyBuffer);
+			_releaseBuffer.Clear();
+
+			foreach (Object key in _keyBuffer)
+			{
+				if (key == null) // Unity null: the native object is gone.
+					_claims.Drain(key, _releaseBuffer);
+			}
+
+			_keyBuffer.Clear();
+			return ReleaseBuffered();
+		}
+
+		// Addressables also releases tracked instances whose scene unloaded. Either side may go
+		// first: whichever releases an instance's operation destroys it, which invalidates the
+		// other side's handle and removes it from Addressables' tracking, so it is released once.
+		private void OnSceneUnloaded(Scene scene) => ReleaseDestroyed();
+
+		private int ReleaseBuffered()
+		{
+			int count = _releaseBuffer.Count;
+			for (int i = 0; i < count; i++)
+				ReleaseIfValid(_releaseBuffer[i]);
+
+			_releaseBuffer.Clear();
+			return count;
 		}
 
 		/// <summary>
@@ -537,7 +686,7 @@ namespace AK.Core.ResourceManagement
 			// unconstrained (matches the IResourceLoadingStrategy interface).
 			if (result is Object tracked)
 			{
-				TrackObjectHandle(tracked, asyncOp);
+				Claim(tracked, asyncOp);
 			}
 			else
 			{
@@ -547,9 +696,26 @@ namespace AK.Core.ResourceManagement
 			return result;
 		}
 
-		private TObject WaitAndTrack<TObject>(AsyncOperationHandle<TObject> op)
+		// A synchronous load can wait for any op, except on WebGL, where only an op that is
+		// already done (a cached asset) has its result.
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private bool CanWaitFor(AsyncOperationHandle op) => _canBlock || op.IsDone;
+
+		/// <summary>
+		/// The blocking <see cref="AwaitAndTrack{TObject}"/>. False when the op isn't done and
+		/// this platform can't wait for it (WebGL): the handle is released, and the op still
+		/// runs to its end, where Addressables destroys it. Internal for tests, which hand it
+		/// operations they finish themselves.
+		/// </summary>
+		internal bool TryWaitAndTrack<TObject>(AsyncOperationHandle<TObject> op, out TObject result)
 		{
-			TObject result;
+			result = default;
+			if (!CanWaitFor(op))
+			{
+				ReleaseIfValid(op);
+				return false;
+			}
+
 			try
 			{
 				result = op.WaitForCompletion();
@@ -562,31 +728,103 @@ namespace AK.Core.ResourceManagement
 
 			if (op.Status == AsyncOperationStatus.Succeeded && result is Object tracked)
 			{
-				TrackObjectHandle(tracked, op);
+				Claim(tracked, op);
 			}
 			else
 			{
 				ReleaseIfValid(op);
 			}
 
+			return true;
+		}
+
+		internal TObject WaitAndTrack<TObject>(AsyncOperationHandle<TObject> op, object key)
+		{
+			return TryWaitAndTrack(op, out TObject result) ? result : throw CannotWait(key);
+		}
+
+		// List loads (every frame of a sprite sheet) produce no Unity Object result to
+		// key on, so the claim is keyed on the first element; DisposeAsset on that
+		// element releases the whole list's handle.
+		internal bool TryWaitAndTrackList<TObject>(AsyncOperationHandle<IList<TObject>> op, out IList<TObject> result)
+		{
+			result = null;
+			if (!CanWaitFor(op))
+			{
+				ReleaseIfValid(op);
+				return false;
+			}
+
+			try
+			{
+				result = op.WaitForCompletion();
+			}
+			catch
+			{
+				ReleaseIfValid(op);
+				throw;
+			}
+
+			if (op.Status == AsyncOperationStatus.Succeeded && result is { Count: > 0 } && result[0] is Object first)
+				Claim(first, op);
+			else
+				ReleaseIfValid(op);
+
+			return true;
+		}
+
+		private static NotSupportedException CannotWait(object key)
+		{
+			return new NotSupportedException(
+				$"UniResources: '{key}' isn't loaded, and a synchronous load can't wait for it on WebGL. Load it with the async API.");
+		}
+
+		private async UniTask<IList<TObject>> AwaitAndTrackList<TObject>(AsyncOperationHandle<IList<TObject>> op, CancellationToken cToken)
+		{
+			IList<TObject> result;
+			try
+			{
+				result = await op.ToUniTask(cancellationToken: cToken, autoReleaseWhenCanceled: true);
+			}
+			catch (OperationCanceledException)
+			{
+				throw; // autoReleaseWhenCanceled already released the handle.
+			}
+			catch
+			{
+				ReleaseIfValid(op);
+				throw;
+			}
+
+			if (result is { Count: > 0 } && result[0] is Object first)
+				Claim(first, op);
+			else
+				ReleaseIfValid(op);
+
 			return result;
 		}
 
-		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		private void TrackObjectHandle(Object obj, AsyncOperationHandle handle)
+		/// <summary>
+		/// Records one claim on <paramref name="obj"/>, backed by the handle that produced it. A
+		/// repeat load of a cached key yields the same object but a new handle (Addressables
+		/// raises the operation's reference count each time), so every handle is kept and each
+		/// dispose releases exactly one of them.
+		/// </summary>
+		private void Claim(Object obj, AsyncOperationHandle handle)
 		{
-			if (obj == null) return;
-
-			if (_objectHandleLookup.TryGetValue(obj, out var existing))
+			if (obj == null)
 			{
-				// Same key loaded again: same object, same underlying op - just add a claim.
-				// Releasing or overwriting here would let one caller unload the asset from
-				// under another.
-				existing.RefCount++;
+				ReleaseIfValid(handle);
 				return;
 			}
 
-			_objectHandleLookup[obj] = new TrackedAsset { Handle = handle, RefCount = 1 };
+			_claims.Acquire(obj, handle);
+
+			if (!_watchingSceneUnloads)
+			{
+				_watchingSceneUnloads = true;
+				SceneManager.sceneUnloaded += OnSceneUnloaded;
+			}
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -621,7 +859,9 @@ namespace AK.Core.ResourceManagement
 			return locations;
 		}
 
-		private static bool HasLocations(object key, Type type)
+		// Whether the catalog has the key for the type. On WebGL the probe can't wait for
+		// Addressables to initialize, so it answers false until then: nothing is loaded yet anyway.
+		private bool HasLocations(object key, Type type)
 		{
 			if (key == null)
 				return false;
@@ -631,8 +871,40 @@ namespace AK.Core.ResourceManagement
 			var handle = Addressables.LoadResourceLocationsAsync(key, type);
 			try
 			{
+				if (!CanWaitFor(handle))
+					return false;
+
 				var locations = handle.WaitForCompletion();
 				return locations != null && locations.Count > 0;
+			}
+			catch
+			{
+				return false;
+			}
+			finally
+			{
+				ReleaseIfValid(handle);
+			}
+		}
+
+		// The probe for the async loads. It waits for Addressables to initialize, and after that
+		// it completes without yielding, as the location lookup is synchronous.
+		private static async UniTask<bool> HasLocationsAsync(object key, Type type, CancellationToken cToken)
+		{
+			if (key == null)
+				return false;
+			if (key is string s && string.IsNullOrEmpty(s))
+				return false;
+
+			var handle = Addressables.LoadResourceLocationsAsync(key, type);
+			try
+			{
+				var locations = await handle.ToUniTask(cancellationToken: cToken);
+				return locations != null && locations.Count > 0;
+			}
+			catch (OperationCanceledException)
+			{
+				throw;
 			}
 			catch
 			{
@@ -659,3 +931,4 @@ namespace AK.Core.ResourceManagement
 		}
 	}
 }
+#endif

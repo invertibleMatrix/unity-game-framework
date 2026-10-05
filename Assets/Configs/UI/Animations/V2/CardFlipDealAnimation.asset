@@ -23,9 +23,7 @@ MonoBehaviour:
   _arcHeight: 80
   _flipCount: 1
   _flipAxis: 1
-  _flipSpeed: 1
   _flipScale: {x: 0.1, y: 1, z: 1}
-  _scaleOvershoot: 1.1
   _dealDuration: 0.5
   _addSettleBounce: 1
   _bounceIntensity: 0.05

@@ -21,11 +21,9 @@ MonoBehaviour:
   _arcHeight: 500
   _swayAmount: 50
   _showRotation: {x: 0, y: 360, z: 0}
-  _rotationSpeedVariation: 0.3
   _initialScale: {x: 0.3, y: 0.3, z: 0.3}
   _bounceScale: {x: 1.2, y: 1.2, z: 1.2}
   _spawnDuration: 0.8
   _settleDuration: 0.4
   _addGlowEffect: 1
   _glowIntensity: 1.5
-  _glowSpeed: 2

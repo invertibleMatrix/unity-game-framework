@@ -2,6 +2,7 @@
     "name": "AK.Tutorials",
     "rootNamespace": "AK.Tutorials",
     "references": [
+        "AK.Kernel",
         "AK.Core",
         "AK.CoreDomain",
         "AK.Services",

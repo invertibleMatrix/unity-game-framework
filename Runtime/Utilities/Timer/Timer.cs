@@ -1,457 +1,435 @@
 using System;
 using System.Threading;
+using AK.Kernel.Timing;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 
 namespace AK.Utilities
 {
-	/// <summary>
-	/// A robust, self-contained timer utility using UniTask.
-	/// Each instance is owned by its creator - no centralized manager required.
-	/// Supports countdown, count-up, pausing, and rich callbacks.
-	/// </summary>
-	public class Timer
+	/// <summary>The clocks a <see cref="Timer"/> reads.</summary>
+	public interface ITimerClock
 	{
-		#region Events
+		/// <summary>Game time in seconds: it follows the time scale, and stops while the time scale is zero.</summary>
+		double GameTime { get; }
 
 		/// <summary>
-		/// Called every tick with remaining/elapsed time and normalized progress (0-1).
+		/// Real time in seconds from a fixed start: it ignores the time scale, and may run on while
+		/// the app is in the background. An unscaled run reads it every frame, and counts the time
+		/// between two readings for at most <see cref="ForegroundTime.MaxFrameSeconds"/>.
+		/// </summary>
+		double RealTime { get; }
+
+		/// <summary>The wall clock in UTC: it ignores the time scale and runs on while the app is in the background.</summary>
+		DateTime UtcNow { get; }
+	}
+
+	/// <summary>
+	/// Unity's clocks: <see cref="Time.timeAsDouble"/>, <see cref="Time.realtimeSinceStartupAsDouble"/>
+	/// and <see cref="DateTime.UtcNow"/>.
+	/// </summary>
+	public sealed class UnityTimerClock : ITimerClock
+	{
+		public static readonly UnityTimerClock Instance = new();
+
+		private UnityTimerClock() { }
+
+		public double GameTime => Time.timeAsDouble;
+
+		public double RealTime => Time.realtimeSinceStartupAsDouble;
+
+		public DateTime UtcNow => DateTime.UtcNow;
+	}
+
+	/// <summary>
+	/// Counts down, counts up or passes intervals, and raises its events on the main thread from
+	/// Unity's player loop. A timer belongs to whoever creates it; no manager holds it.
+	///
+	/// <para>A run counts a <see cref="AK.Kernel.Timing.TimeBase"/>. <b>Scaled</b> game time
+	/// follows the time scale and stops at zero. <b>Unscaled</b> time ignores the time scale and,
+	/// like every unscaled wait, counts a stall such as time in the background as one short frame.
+	/// The <b>wall</b> clock ignores the time scale and counts the time the app spends in the
+	/// background, so a countdown to a deadline completes at the deadline.</para>
+	///
+	/// <para><b>Ticks</b> come when a run starts, whenever its time reaches a multiple of the tick
+	/// interval, and at its end, so a countdown shown rounded up changes on its ticks and its
+	/// last tick shows zero just before it completes. A frame that covers several tick intervals
+	/// raises one tick. Intervals each raise their own event, in order.
+	/// <see cref="TimerSchedule"/> has the rules.</para>
+	///
+	/// <para>Callbacks passed to a start belong to that run only. Each event goes to the timer's
+	/// own handlers first, then to the run's callback. A handler that throws is logged and the
+	/// timer carries on. Once the owner's token is cancelled, the timer stops without raising
+	/// anything and ignores later starts.</para>
+	///
+	/// Use it on the main thread. Ticks allocate nothing.
+	/// </summary>
+	public sealed class Timer : IDisposable
+	{
+		public static readonly TimeSpan DefaultTickInterval = TimeSpan.FromMilliseconds(100);
+
+		private readonly TimerSchedule _schedule = new();
+		private readonly ITimerClock   _clock;
+
+		private CancellationTokenRegistration _ownerRegistration;
+		private volatile bool _ownerGone;
+		private bool _disposed;
+
+		private Runner _runner;
+		private bool   _registered;
+
+		// Foreground time for unscaled runs, moved on by each reading of the real-time clock.
+		// NaN until the first reading, whose step FrameStep counts as nothing.
+		private double _foregroundSeconds;
+		private double _lastRealTime = double.NaN;
+
+		// Bumped by every start, stop and dispose, so events of a replaced run stop at once.
+		private int _run;
+
+		private Action<TimeSpan, float> _runOnTick;
+		private Action<int>             _runOnInterval;
+		private Action                  _runOnComplete;
+
+		/// <summary>
+		/// A countdown or count-up ticked: with the time left, or for a count-up the time counted,
+		/// and the progress from 0 to 1.
 		/// </summary>
 		public event Action<TimeSpan, float> OnTick;
 
-		/// <summary>
-		/// Called when timer completes naturally.
-		/// </summary>
+		/// <summary>An interval passed: with how many have, this one included.</summary>
+		public event Action<int> OnInterval;
+
+		/// <summary>The run reached its end.</summary>
 		public event Action OnComplete;
 
-		/// <summary>
-		/// Called when timer is paused.
-		/// </summary>
 		public event Action OnPause;
 
-		/// <summary>
-		/// Called when timer is resumed from pause.
-		/// </summary>
 		public event Action OnResume;
 
-		/// <summary>
-		/// Called when timer is cancelled/disposed.
-		/// </summary>
+		/// <summary>The timer was disposed.</summary>
 		public event Action OnCancel;
 
-		#endregion
+		/// <param name="cancellationToken">The owner's lifetime, such as <c>GetCancellationTokenOnDestroy()</c>.</param>
+		public Timer(CancellationToken cancellationToken = default) : this(UnityTimerClock.Instance, cancellationToken) { }
 
-		#region Properties
-
-		/// <summary>
-		/// Current state of the timer.
-		/// </summary>
-		public TimerState State { get; private set; } = TimerState.Idle;
-
-		/// <summary>
-		/// Total duration for countdown mode.
-		/// </summary>
-		public TimeSpan Duration { get; private set; }
-
-		/// <summary>
-		/// Remaining time for countdown timers.
-		/// </summary>
-		public TimeSpan RemainingTime { get; private set; }
-
-		/// <summary>
-		/// Elapsed time for count-up timers.
-		/// </summary>
-		public TimeSpan ElapsedTime { get; private set; }
-
-		/// <summary>
-		/// Normalized progress from 0 (start) to 1 (complete) for countdown timers.
-		/// </summary>
-		public float Progress => Duration > TimeSpan.Zero
-			? 1f - (float)(RemainingTime.TotalSeconds / Duration.TotalSeconds)
-			: 0f;
-
-		/// <summary>
-		/// Whether timer uses real-time (ignores Time.timeScale).
-		/// </summary>
-		public bool UseRealTime { get; private set; }
-
-		/// <summary>
-		/// Tick interval for OnTick callbacks. Default 100ms.
-		/// </summary>
-		public TimeSpan TickInterval { get; private set; } = TimeSpan.FromMilliseconds(100);
-
-		#endregion
-
-		#region Private Fields
-
-		private CancellationTokenSource _cts;
-		private CancellationToken       _cancellationToken;
-		private UniTask                 _timerTask;
-		private bool                    _isDisposed;
-		private TimeSpan                _pauseRemainingTime;
-
-		private enum Mode { None, Countdown, CountUp, Interval }
-
-		private Mode        _mode = Mode.None;
-		private int         _intervalRemainingCount;
-
-		private int         _intervalFiredCount;
-		private Action<int> _intervalOnInterval;
-		private Action      _intervalOnComplete;
-
-		#endregion
-
-		#region Public Methods
-
-		public Timer(CancellationToken cancellationToken = default)
+		/// <param name="clock">The clocks to read, such as a manual clock in tests.</param>
+		/// <param name="cancellationToken">The owner's lifetime, such as <c>GetCancellationTokenOnDestroy()</c>.</param>
+		public Timer(ITimerClock clock, CancellationToken cancellationToken = default)
 		{
-			_cancellationToken = cancellationToken;
-		}
+			_clock = clock ?? throw new ArgumentNullException(nameof(clock));
 
-		/// <summary>
-		/// Starts a countdown timer from the specified duration.
-		/// </summary>
-		public void StartCountdown(
-			TimeSpan duration,
-			Action<TimeSpan, float> onTick = null,
-			Action onComplete = null,
-			TimeSpan? tickInterval = null,
-			bool useRealTime = false)
-		{
-			if (_isDisposed)
-				throw new ObjectDisposedException(nameof(Timer));
-
-			Stop();
-
-			Duration = duration;
-			RemainingTime = duration;
-			UseRealTime = useRealTime;
-			TickInterval = tickInterval ?? TimeSpan.FromMilliseconds(100);
-			_mode = Mode.Countdown;
-
-			// Remove-before-add: restarting with the same handlers must not duplicate them.
-			if (onTick != null) { OnTick -= onTick; OnTick += onTick; }
-			if (onComplete != null) { OnComplete -= onComplete; OnComplete += onComplete; }
-
-			if (duration <= TimeSpan.Zero)
+			if (cancellationToken.CanBeCanceled)
 			{
-				// A zero/negative-duration countdown completes immediately.
-				RemainingTime = TimeSpan.Zero;
-				State = TimerState.Completed;
-				InvokeSafe(OnComplete);
-				return;
+				// The token may be cancelled on any thread: only mark it, and stop on the main thread.
+				_ownerRegistration = cancellationToken.Register(timer => ((Timer)timer)._ownerGone = true, this);
 			}
-
-			_cts = CreateCts();
-			_timerTask = RunCountdownAsync(_cts.Token);
 		}
 
-		/// <summary>
-		/// Starts a count-up timer (stopwatch mode).
-		/// </summary>
-		public void StartCountUp(
-			TimeSpan? duration = null,
-			Action<TimeSpan, float> onTick = null,
-			Action onComplete = null,
-			TimeSpan? tickInterval = null,
-			bool useRealTime = false)
+		// ------------------------------------------------------------------ state
+
+		public TimerState State
 		{
-			if (_isDisposed)
-				throw new ObjectDisposedException(nameof(Timer));
-
-			Stop();
-
-			Duration = duration ?? TimeSpan.Zero;
-			ElapsedTime = TimeSpan.Zero;
-			UseRealTime = useRealTime;
-			TickInterval = tickInterval ?? TimeSpan.FromMilliseconds(100);
-			_mode = Mode.CountUp;
-
-			// Remove-before-add: restarting with the same handlers must not duplicate them.
-			if (onTick != null) { OnTick -= onTick; OnTick += onTick; }
-			if (onComplete != null) { OnComplete -= onComplete; OnComplete += onComplete; }
-
-			_cts = CreateCts();
-			_timerTask = RunCountUpAsync(_cts.Token);
+			get
+			{
+				SyncOwner();
+				return _schedule.State;
+			}
 		}
 
-		/// <summary>
-		/// Starts a repeating interval timer.
-		/// </summary>
-		public void StartInterval(
-			TimeSpan interval,
-			int repeatCount = -1,
-			Action<int> onInterval = null,
-			Action onComplete = null,
-			bool useRealTime = false)
+		public TimerKind Kind => _schedule.Kind;
+
+		/// <summary>The duration of a countdown or count-up, zero for a count-up without end. The interval of an interval run.</summary>
+		public TimeSpan Duration => _schedule.Duration;
+
+		/// <summary>How often a countdown or count-up ticks. The interval of an interval run.</summary>
+		public TimeSpan TickInterval => _schedule.TickLength;
+
+		/// <summary>The time the run counts.</summary>
+		public TimeBase TimeBase { get; private set; }
+
+		/// <summary>The time left to the end, or for an interval run to the next interval. Zero for a count-up without end.</summary>
+		public TimeSpan RemainingTime
 		{
-			if (_isDisposed)
-				throw new ObjectDisposedException(nameof(Timer));
+			get
+			{
+				SyncOwner();
+				return _schedule.RemainingAt(Now);
+			}
+		}
 
-			if (interval <= TimeSpan.Zero)
-				throw new ArgumentException("Interval must be greater than zero", nameof(interval));
+		/// <summary>How long the run has counted.</summary>
+		public TimeSpan ElapsedTime
+		{
+			get
+			{
+				SyncOwner();
+				return _schedule.ElapsedAt(Now);
+			}
+		}
 
-			Stop();
+		/// <summary>From 0 to 1, how far through the run, or for an interval run through the current interval.</summary>
+		public float Progress
+		{
+			get
+			{
+				SyncOwner();
+				return (float)_schedule.ProgressAt(Now);
+			}
+		}
 
-			Duration = interval;
-			UseRealTime = useRealTime;
-			TickInterval = interval;
-			_mode = Mode.Interval;
-			_intervalRemainingCount = repeatCount;
-			_intervalFiredCount = 0;
-			_intervalOnInterval = onInterval;
-			_intervalOnComplete = onComplete;
+		/// <summary>What a tick would carry now: the time counted for a count-up, otherwise the time left.</summary>
+		internal TimeSpan TickValue => Kind == TimerKind.CountUp ? ElapsedTime : RemainingTime;
 
-			_cts = CreateCts();
-			_timerTask = RunIntervalAsync(interval, _cts.Token);
+		// ------------------------------------------------------------------ control
+
+		/// <summary>
+		/// Counts <paramref name="duration"/> down, replacing any run. A duration of zero or less
+		/// ticks once and completes before this returns.
+		/// </summary>
+		/// <param name="onTick">This run's tick callback: the time left and the progress.</param>
+		/// <param name="onComplete">This run's completion callback.</param>
+		/// <param name="tickInterval">How often to tick; <see cref="DefaultTickInterval"/> when null.</param>
+		/// <param name="timeBase">The time to count.</param>
+		/// <exception cref="ArgumentOutOfRangeException"><paramref name="tickInterval"/> isn't above zero.</exception>
+		/// <exception cref="ObjectDisposedException">The timer was disposed.</exception>
+		public void StartCountdown(TimeSpan duration, Action<TimeSpan, float> onTick = null, Action onComplete = null,
+		                           TimeSpan? tickInterval = null, TimeBase timeBase = TimeBase.Scaled)
+		{
+			if (!CanStart()) return;
+
+			_schedule.StartCountdown(Read(timeBase), duration, tickInterval ?? DefaultTickInterval);
+			Launch(timeBase, onTick, null, onComplete);
+		}
+
+		/// <summary>Counts up to <paramref name="duration"/>, or without end when it is null, replacing any run.</summary>
+		/// <param name="onTick">This run's tick callback: the time counted and the progress, which stays 0 without an end.</param>
+		/// <param name="onComplete">This run's completion callback.</param>
+		/// <param name="tickInterval">How often to tick; <see cref="DefaultTickInterval"/> when null.</param>
+		/// <param name="timeBase">The time to count.</param>
+		/// <exception cref="ArgumentOutOfRangeException"><paramref name="duration"/> is below zero, or <paramref name="tickInterval"/> isn't above zero.</exception>
+		/// <exception cref="ObjectDisposedException">The timer was disposed.</exception>
+		public void StartCountUp(TimeSpan? duration = null, Action<TimeSpan, float> onTick = null, Action onComplete = null,
+		                         TimeSpan? tickInterval = null, TimeBase timeBase = TimeBase.Scaled)
+		{
+			if (!CanStart()) return;
+
+			_schedule.StartCountUp(Read(timeBase), duration, tickInterval ?? DefaultTickInterval);
+			Launch(timeBase, onTick, null, onComplete);
 		}
 
 		/// <summary>
-		/// Pauses the timer. Can be resumed with Resume().
+		/// Passes <paramref name="interval"/> <paramref name="repeatCount"/> times, or without end
+		/// when it is below zero, replacing any run. A repeat count of zero completes before this
+		/// returns.
 		/// </summary>
+		/// <param name="onInterval">This run's interval callback: how many intervals have passed, this one included.</param>
+		/// <param name="onComplete">This run's completion callback.</param>
+		/// <param name="timeBase">The time to count.</param>
+		/// <exception cref="ArgumentOutOfRangeException"><paramref name="interval"/> isn't above zero.</exception>
+		/// <exception cref="ObjectDisposedException">The timer was disposed.</exception>
+		public void StartInterval(TimeSpan interval, int repeatCount = -1, Action<int> onInterval = null, Action onComplete = null,
+		                          TimeBase timeBase = TimeBase.Scaled)
+		{
+			if (!CanStart()) return;
+
+			_schedule.StartInterval(Read(timeBase), interval, repeatCount);
+			Launch(timeBase, null, onInterval, onComplete);
+		}
+
+		/// <summary>Holds the time until <see cref="Resume"/>. Does nothing unless running.</summary>
 		public void Pause()
 		{
-			if (_isDisposed || State != TimerState.Running)
-				return;
+			if (_disposed) return;
 
-			_pauseRemainingTime = RemainingTime;
-			_cts?.Cancel();
-			State = TimerState.Paused;
-			OnPause?.Invoke();
+			SyncOwner();
+			if (_schedule.Pause(Now)) InvokeSafe(OnPause);
 		}
 
-		/// <summary>
-		/// Resumes a paused timer, continuing whichever mode it was started in.
-		/// </summary>
+		/// <summary>Counts on from where <see cref="Pause"/> held the time. Does nothing unless paused.</summary>
 		public void Resume()
 		{
-			if (_isDisposed || State != TimerState.Paused)
-				return;
+			if (_disposed) return;
 
-			RemainingTime = _pauseRemainingTime;
-			_cts = CreateCts();
+			SyncOwner();
+			if (!_schedule.Resume(Now)) return;
 
-			_timerTask = _mode switch
-			{
-				Mode.CountUp   => RunCountUpAsync(_cts.Token),
-				Mode.Interval  => RunIntervalAsync(Duration, _cts.Token),
-				_              => RunCountdownAsync(_cts.Token)
-			};
-
+			Register();
 			InvokeSafe(OnResume);
 		}
 
-		/// <summary>
-		/// Stops the timer without completing it. Clears all state.
-		/// </summary>
+		/// <summary>Ends the run without completing it, and raises nothing.</summary>
 		public void Stop()
 		{
-			if (_isDisposed)
-				return;
+			if (_disposed) return;
 
-			_cts?.Cancel();
-			_cts?.Dispose();
-			_cts = null;
-
-			State = TimerState.Idle;
-			RemainingTime = TimeSpan.Zero;
-			ElapsedTime = TimeSpan.Zero;
+			_run++;
+			_schedule.Stop();
+			ClearRun();
 		}
 
-		/// <summary>
-		/// Stops and cleans up the timer. Instance cannot be reused after disposal.
-		/// </summary>
+		/// <summary>Stops the timer for good: raises <see cref="OnCancel"/> once, then drops every handler. Later starts throw.</summary>
 		public void Dispose()
 		{
-			if (_isDisposed)
-				return;
+			if (_disposed) return;
 
-			Stop();
-			OnCancel?.Invoke();
+			_disposed = true;
+			_run++;
+			_schedule.Stop();
+			ClearRun();
+			_ownerRegistration.Dispose();
 
-			// Clear all event subscriptions
-			OnTick = null;
+			InvokeSafe(OnCancel);
+
+			OnTick     = null;
+			OnInterval = null;
 			OnComplete = null;
-			OnPause = null;
-			OnResume = null;
-			OnCancel = null;
+			OnPause    = null;
+			OnResume   = null;
+			OnCancel   = null;
+		}
 
-			_isDisposed = true;
+		/// <summary>Steps the timer as a frame of the player loop does: for tests that drive time by hand.</summary>
+		internal void Step()
+		{
+			SyncOwner();
+			if (_schedule.State == TimerState.Running) Pump();
+		}
+
+		// ------------------------------------------------------------------ internals
+
+		private TimeSpan Now => Read(TimeBase);
+
+		private TimeSpan Read(TimeBase timeBase)
+		{
+			switch (timeBase)
+			{
+				case TimeBase.Wall:     return new TimeSpan(_clock.UtcNow.Ticks);
+				case TimeBase.Unscaled: return FromSeconds(ReadForeground());
+				default:                return FromSeconds(_clock.GameTime);
+			}
 		}
 
 		/// <summary>
-		/// Returns formatted string MM:SS from remaining time.
+		/// Moves the foreground time on by the real time since the last reading, at most
+		/// <see cref="ForegroundTime.MaxFrameSeconds"/>, and returns it. A running timer reads it
+		/// every frame and whenever it is queried, so a stall between two readings, such as time in
+		/// the background, counts for at most that. The gaps while it is paused or idle don't count
+		/// towards any run.
 		/// </summary>
-		public string GetFormattedRemaining(string format = "hh\\:mm\\:ss") => RemainingTime.ToString(format);
-
-		/// <summary>
-		/// Returns formatted string MM:SS from elapsed time.
-		/// </summary>
-		public string GetFormattedElapsed(string format = "hh\\:mm\\:ss") => ElapsedTime.ToString(format);
-
-		#endregion
-
-		#region Private Methods
-
-		private async UniTask RunCountdownAsync(CancellationToken token)
+		private double ReadForeground()
 		{
-			State = TimerState.Running;
+			double reading = _clock.RealTime;
+			_foregroundSeconds += ForegroundTime.FrameStep(reading - _lastRealTime);
+			_lastRealTime = reading;
+			return _foregroundSeconds;
+		}
 
-			// Resume-safe baseline: accounts for time already elapsed before this (re)start.
-			var startTime = UseRealTime ? DateTime.UtcNow - (Duration - RemainingTime) : DateTime.MinValue;
+		private static TimeSpan FromSeconds(double seconds) => new((long)Math.Round(seconds * TimeSpan.TicksPerSecond));
 
-			try
+		/// <summary>True when a start may go ahead; false once the owner is gone, where starts do nothing.</summary>
+		private bool CanStart()
+		{
+			if (_disposed) throw new ObjectDisposedException(nameof(Timer));
+
+			SyncOwner();
+			return !_ownerGone;
+		}
+
+		/// <summary>Takes over a run the schedule just started: its callbacks, its first events and the player loop.</summary>
+		private void Launch(TimeBase timeBase, Action<TimeSpan, float> onTick, Action<int> onInterval, Action onComplete)
+		{
+			_run++;
+			TimeBase       = timeBase;
+			_runOnTick     = onTick;
+			_runOnInterval = onInterval;
+			_runOnComplete = onComplete;
+
+			int run = _run;
+			Pump();
+
+			if (_run == run && _schedule.State == TimerState.Running) Register();
+		}
+
+		/// <summary>Raises every event due now, until none is left or a handler replaces or stops the run.</summary>
+		private void Pump()
+		{
+			int run = _run;
+			TimeSpan now = Now;
+
+			while (_run == run && _schedule.TryNext(now, out TimerEvent next))
 			{
-				while (RemainingTime > TimeSpan.Zero)
+				Raise(next, now, run);
+			}
+		}
+
+		private void Raise(TimerEvent next, TimeSpan now, int run)
+		{
+			switch (next.Kind)
+			{
+				case TimerEventKind.Tick:
 				{
-					if (token.IsCancellationRequested)
-						return;
+					TimeSpan value = _schedule.Kind == TimerKind.CountUp ? _schedule.ElapsedAt(now) : _schedule.RemainingAt(now);
+					float progress = (float)_schedule.ProgressAt(now);
 
-					// Calculate remaining
-					if (UseRealTime)
-					{
-						var elapsed = DateTime.UtcNow - startTime;
-						RemainingTime = Duration - elapsed;
-					}
-					else
-					{
-						// Game time: UniTask.Delay is timeScale-scaled by default, so the delay
-						// itself already stretches with timeScale (and freezes at timeScale 0).
-						// Subtract the full tick interval - scaling it again would apply timeScale twice.
-						await UniTask.Delay(TickInterval, cancellationToken: token);
-						if (token.IsCancellationRequested) return;
-
-						RemainingTime -= TickInterval;
-					}
-
-					if (RemainingTime < TimeSpan.Zero)
-						RemainingTime = TimeSpan.Zero;
-
-					// Invoke tick
-					InvokeSafe(OnTick, RemainingTime, Progress);
-
-					// Real-time delay
-					if (UseRealTime)
-					{
-						await UniTask.Delay(TickInterval, cancellationToken: token);
-					}
+					InvokeSafe(OnTick, value, progress);
+					if (_run == run) InvokeSafe(_runOnTick, value, progress);
+					break;
 				}
-
-				if (!token.IsCancellationRequested && State == TimerState.Running)
+				case TimerEventKind.Interval:
 				{
-					State = TimerState.Completed;
+					InvokeSafe(OnInterval, next.Interval);
+					if (_run == run) InvokeSafe(_runOnInterval, next.Interval);
+					break;
+				}
+				case TimerEventKind.Complete:
+				{
+					// The run is over: let go of its callbacks before anything can start another.
+					Action onComplete = _runOnComplete;
+					ClearRun();
+
 					InvokeSafe(OnComplete);
+					InvokeSafe(onComplete);
+					break;
 				}
-			}
-			catch (OperationCanceledException)
-			{
-				// Expected on cancellation
 			}
 		}
 
-		private async UniTask RunCountUpAsync(CancellationToken token)
+		/// <summary>Stops the run, raising nothing, once the owner's token is cancelled.</summary>
+		private void SyncOwner()
 		{
-			State = TimerState.Running;
+			if (!_ownerGone || _schedule.State == TimerState.Idle) return;
 
-			// Resume-safe baseline: accounts for time already elapsed before this (re)start.
-			var startTime = UseRealTime ? DateTime.UtcNow - ElapsedTime : DateTime.MinValue;
-
-			try
-			{
-				while (Duration == TimeSpan.Zero || ElapsedTime < Duration)
-				{
-					if (token.IsCancellationRequested)
-						return;
-
-					if (UseRealTime)
-					{
-						ElapsedTime = DateTime.UtcNow - startTime;
-					}
-					else
-					{
-						// Game time: UniTask.Delay is timeScale-scaled by default - add the full
-						// tick interval (see RunCountdownAsync for why scaling twice is wrong).
-						await UniTask.Delay(TickInterval, cancellationToken: token);
-						if (token.IsCancellationRequested) return;
-
-						ElapsedTime += TickInterval;
-					}
-
-					var progress = Duration > TimeSpan.Zero
-						? (float)(ElapsedTime.TotalSeconds / Duration.TotalSeconds)
-						: 0f;
-
-					InvokeSafe(OnTick, ElapsedTime, progress);
-
-					if (UseRealTime)
-					{
-						await UniTask.Delay(TickInterval, cancellationToken: token);
-					}
-				}
-
-				if (!token.IsCancellationRequested && Duration > TimeSpan.Zero && State == TimerState.Running)
-				{
-					State = TimerState.Completed;
-					InvokeSafe(OnComplete);
-				}
-			}
-			catch (OperationCanceledException)
-			{
-				// Expected
-			}
+			_run++;
+			_schedule.Stop();
+			ClearRun();
 		}
 
-		private async UniTask RunIntervalAsync(TimeSpan interval, CancellationToken token)
+		private void ClearRun()
 		{
-			State = TimerState.Running;
-
-			try
-			{
-				while (_intervalRemainingCount < 0 || _intervalFiredCount < _intervalRemainingCount)
-				{
-					if (token.IsCancellationRequested)
-						return;
-
-					var delayType = UseRealTime ? DelayType.UnscaledDeltaTime : DelayType.DeltaTime;
-					await UniTask.Delay(interval, delayType, cancellationToken: token);
-					if (token.IsCancellationRequested) return;
-
-					_intervalFiredCount++;
-					InvokeSafe(_intervalOnInterval, _intervalFiredCount);
-				}
-
-				// Consume the remaining count so a later Resume() starts fresh.
-				if (_intervalRemainingCount > 0)
-					_intervalRemainingCount = 0;
-
-				if (!token.IsCancellationRequested)
-				{
-					State = TimerState.Completed;
-					InvokeSafe(_intervalOnComplete);
-				}
-			}
-			catch (OperationCanceledException)
-			{
-				// Expected
-			}
+			_runOnTick     = null;
+			_runOnInterval = null;
+			_runOnComplete = null;
 		}
 
-		private CancellationTokenSource CreateCts()
+		private void Register()
 		{
-			return _cancellationToken != CancellationToken.None
-				? CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken)
-				: new CancellationTokenSource();
+			if (_registered) return;
+
+			_runner ??= new Runner(this);
+			PlayerLoopHelper.AddAction(PlayerLoopTiming.Update, _runner);
+			_registered = true;
+		}
+
+		/// <summary>A frame of the player loop: steps the timer, and leaves the loop once it isn't running.</summary>
+		private bool OnFrame()
+		{
+			Step();
+			_registered = _schedule.State == TimerState.Running;
+			return _registered;
 		}
 
 		private static void InvokeSafe(Action handler)
 		{
 			try { handler?.Invoke(); }
-			catch (Exception e) { Debug.LogException(e); }
-		}
-
-		private static void InvokeSafe(Action<TimeSpan, float> handler, TimeSpan time, float progress)
-		{
-			try { handler?.Invoke(time, progress); }
 			catch (Exception e) { Debug.LogException(e); }
 		}
 
@@ -461,14 +439,19 @@ namespace AK.Utilities
 			catch (Exception e) { Debug.LogException(e); }
 		}
 
-		#endregion
-	}
+		private static void InvokeSafe(Action<TimeSpan, float> handler, TimeSpan time, float progress)
+		{
+			try { handler?.Invoke(time, progress); }
+			catch (Exception e) { Debug.LogException(e); }
+		}
 
-	public enum TimerState
-	{
-		Idle,
-		Running,
-		Paused,
-		Completed
+		private sealed class Runner : IPlayerLoopItem
+		{
+			private readonly Timer _timer;
+
+			public Runner(Timer timer) => _timer = timer;
+
+			public bool MoveNext() => _timer.OnFrame();
+		}
 	}
 }

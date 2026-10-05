@@ -1,0 +1,31 @@
+{
+  "name": "com.invertiblematrix.ugfw",
+  "displayName": "UGFW - Unity Game Framework",
+  "version": "2.0.0-pre.1",
+  "unity": "6000.3",
+  "description": "A modular framework for Unity mobile games: an engine-free kernel, Reflex-based services, a UI view system, tutorials, a frame job scheduler and UID asset identities, with optional adapters for ads, analytics, purchasing, remote config and notification SDKs.",
+  "keywords": [
+    "framework",
+    "mobile",
+    "ui",
+    "dependency-injection",
+    "analytics",
+    "ads",
+    "iap"
+  ],
+  "author": {
+    "name": "MAK"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "com.cysharp.unitask": "2.5.11",
+    "com.gustavopsantos.reflex": "14.3.0",
+    "com.unity.ugui": "2.0.0",
+    "com.unity.modules.animation": "1.0.0",
+    "com.unity.modules.audio": "1.0.0",
+    "com.unity.modules.imgui": "1.0.0",
+    "com.unity.modules.jsonserialize": "1.0.0",
+    "com.unity.modules.particlesystem": "1.0.0",
+    "com.unity.modules.ui": "1.0.0"
+  }
+}

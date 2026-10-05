@@ -31,13 +31,11 @@ namespace AK.Tutorials
 		[SerializeField, Tooltip("Seconds to linger after the fragment reports finish before closing.")]
 		protected float CloseDelay;
 
+		/// <summary>A step with a parent target is due only while that target is registered.</summary>
+		public override bool IsTargetPresent(TutorialStepContext context) => IsTargetRegistered(context, ParentTarget);
+
 		public override async UniTask PresentAsync(TutorialStepContext context, CancellationToken ct)
 		{
-			if (BlockInputUntilPresented)
-			{
-				context.InputGate.Hold();
-			}
-
 			System.Type fragmentType = FragmentType != null ? FragmentType.Value : null;
 			if (fragmentType == null)
 			{
@@ -45,18 +43,21 @@ namespace AK.Tutorials
 				return;
 			}
 
+			await WaitForStartDelayAsync(ct);
+
+			// Resolved after the delay: the parent may have closed during it.
 			UIView parent = ResolveParent(context);
 
 			var view = context.UiSystem.Show<UIView>(fragmentType, new ShowOptions(context: BuildContext(), parent: parent, viewId: ViewId ?? string.Empty));
 			if (view == null)
 			{
-				Debug.LogWarning($"[FragmentStep] Failed to show fragment of type '{fragmentType.Name}'.");
-				return;
+				Debug.LogWarning($"[FragmentStep] '{name}' could not show '{fragmentType.Name}' — declining; the next checkpoint retries.", this);
+				throw new TutorialStepDeclinedException($"Step '{name}': fragment '{fragmentType.Name}' could not be shown.");
 			}
 
 			// The fragment is up and owns its interaction contract - open the
 			// gate so its controls are clickable.
-			context.InputGate.Release();
+			context.InputHold.Release();
 
 			try
 			{
@@ -69,9 +70,9 @@ namespace AK.Tutorials
 					Debug.LogWarning($"[FragmentStep] '{view.name}' does not implement ITutorialStepView — the step completes immediately.");
 				}
 
-				if (CloseOnFinish && CloseDelay > 0f)
+				if (CloseOnFinish)
 				{
-					await UniTask.WaitForSeconds(CloseDelay, cancellationToken: ct);
+					await WaitAsync(CloseDelay, ct);
 				}
 			}
 			finally
@@ -90,17 +91,12 @@ namespace AK.Tutorials
 			return null;
 		}
 
+		/// <summary>The view hosting the parent target. Declines when the target is not registered.</summary>
 		private UIView ResolveParent(TutorialStepContext context)
 		{
 			if (ParentTarget == null) return null;
 
-			if (context.Targets.TryGet(ParentTarget, out var parentTarget) && parentTarget != null)
-			{
-				return parentTarget.GetComponentInParent<UIView>();
-			}
-
-			Debug.LogWarning($"[FragmentStep] Parent target '{ParentTarget.name}' is not registered — showing without a parent.");
-			return null;
+			return ResolveRegisteredTarget(context, ParentTarget).GetComponentInParent<UIView>();
 		}
 	}
 }

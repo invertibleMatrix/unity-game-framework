@@ -1,33 +1,39 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
-using UnityEngine;
+using AK.Kernel.Collections;
+using AK.Kernel.Threading;
 
 namespace AK.Core
 {
 	/// <summary>
-	/// An event bus that has the concept of a target and a source object for every raised event.
+	/// An event bus whose events can be aimed at a target object and come from a source object.
+	/// Besides listeners that hear every event of a type, a listener can hear only the events aimed
+	/// at one target (<see cref="SubscribeToTarget{TEvent}"/>) or only those from one source
+	/// (<see cref="SubscribeToSource{TEvent}"/>). An event reaches all three kinds of listener in
+	/// one order: higher priority first, and in the order they subscribed within a priority.
 	/// </summary>
 	/// <inheritdoc/>
-	/// <typeparam name="TObject">The type for the target and source objects, e.g. <see cref="UnityEngine.GameObject"/>.</typeparam>
+	/// <typeparam name="TObject">The type of targets and sources, such as <see cref="UnityEngine.GameObject"/>.</typeparam>
 	public class GenericEventBus<TBaseEvent, TObject> : GenericEventBus<TBaseEvent>
 	{
 		public delegate void TargetedEventHandler<TEvent>(ref TEvent eventData, TObject target, TObject source);
 
 		private static readonly EqualityComparer<TObject> ObjectComparer = EqualityComparer<TObject>.Default;
 
-		/// <summary>
-		/// <para>The default object value used if <c>target</c> and/or <c>source</c> are omitted in a raised event.</para>
-		/// <para>If a listener subscribes to an event to or from an object that equals this, the listener will receive all the events, regardless of the target or source.</para>
-		/// </summary>
-		public ref TObject DefaultObject => ref _defaultObject;
+		public GenericEventBus() : this(default) { }
 
-		private TObject _defaultObject;
-
-		private bool IsDefaultObject(TObject obj)
+		/// <param name="defaultObject">The object that stands for no object. See <see cref="DefaultObject"/>.</param>
+		public GenericEventBus(TObject defaultObject)
 		{
-			return ObjectComparer.Equals(obj, _defaultObject);
+			DefaultObject = defaultObject;
 		}
+
+		/// <summary>
+		/// <para>The object that stands for no object: the target and source of an event raised
+		/// without them.</para>
+		/// Subscribing to it, or to null, as a target or a source subscribes to every event.
+		/// </summary>
+		public TObject DefaultObject { get; }
 
 		public override bool Raise<TEvent>(in TEvent @event)
 		{
@@ -35,13 +41,11 @@ namespace AK.Core
 		}
 
 		/// <summary>
-		/// <para>Raises the given event. If there are other events currently being raised, this event will be raised after those events finish.</para>
+		/// Delivers <paramref name="event"/>, aimed at <paramref name="target"/> and from
+		/// <paramref name="source"/>, after the event being delivered and those waiting before
+		/// it, if any.
 		/// </summary>
-		/// <param name="event">The event to raise.</param>
-		/// <param name="target">The target object for this event.</param>
-		/// <param name="source">The source object for this event.</param>
-		/// <typeparam name="TEvent">The type of event to raise.</typeparam>
-		/// <returns>If the event was raised immediately, returns true if the event was consumed with <see cref="GenericEventBus{TBaseEvent}.ConsumeCurrentEvent"/>.</returns>
+		/// <returns>Whether a listener consumed it, when it was delivered at once. False when it waits.</returns>
 		public bool Raise<TEvent>(TEvent @event, TObject target, TObject source) where TEvent : TBaseEvent
 		{
 			if (!IsEventBeingRaised)
@@ -49,9 +53,11 @@ namespace AK.Core
 				return RaiseImmediately(ref @event, target, source);
 			}
 
-			var listeners = TargetedEventListeners<TEvent>.Get(this);
-			listeners.EnqueueEvent(in @event, target, source);
+			ThrowIfUnusable("GenericEventBus.Raise");
 
+			TargetedChannel<TEvent> channel = GetChannel<TEvent, TargetedChannel<TEvent>>();
+			channel.Waiting.Enqueue((@event, target, source));
+			Wait(channel);
 			return false;
 		}
 
@@ -60,613 +66,225 @@ namespace AK.Core
 			return RaiseImmediately(ref @event, DefaultObject, DefaultObject);
 		}
 
-		/// <summary>
-		/// <para>Raises the given event immediately, regardless if another event is currently still being raised.</para>
-		/// </summary>
-		/// <param name="event">The event to raise.</param>
-		/// <param name="target">The target object for this event.</param>
-		/// <param name="source">The source object for this event.</param>
-		/// <typeparam name="TEvent">The type of event to raise.</typeparam>
-		/// <returns>Returns true if the event was consumed with <see cref="GenericEventBus{TBaseEvent}.ConsumeCurrentEvent"/>.</returns>
+		/// <summary>Delivers <paramref name="event"/> now, aimed at <paramref name="target"/> and from <paramref name="source"/>.</summary>
+		/// <returns>Whether a listener consumed it.</returns>
 		public bool RaiseImmediately<TEvent>(TEvent @event, TObject target, TObject source) where TEvent : TBaseEvent
 		{
 			return RaiseImmediately(ref @event, target, source);
 		}
 
-		/// <summary>
-		/// <para>Raises the given event immediately, regardless if another event is currently still being raised.</para>
-		/// </summary>
-		/// <param name="event">The event to raise.</param>
-		/// <param name="target">The target object for this event.</param>
-		/// <param name="source">The source object for this event.</param>
-		/// <typeparam name="TEvent">The type of event to raise.</typeparam>
-		/// <returns>Returns true if the event was consumed with <see cref="GenericEventBus{TBaseEvent}.ConsumeCurrentEvent"/>.</returns>
+		/// <summary>Delivers <paramref name="event"/> now, aimed at <paramref name="target"/> and from <paramref name="source"/>.</summary>
+		/// <returns>Whether a listener consumed it.</returns>
 		public bool RaiseImmediately<TEvent>(ref TEvent @event, TObject target, TObject source)
 			where TEvent : TBaseEvent
 		{
-			var wasConsumed = false;
-			
-			OnBeforeRaiseEvent();
+			ThrowIfUnusable("GenericEventBus.RaiseImmediately");
 
+			TargetedChannel<TEvent> channel = FindChannel<TEvent, TargetedChannel<TEvent>>();
+
+			BeginRaise();
 			try
 			{
-				var listeners = TargetedEventListeners<TEvent>.Get(this);
-
-				foreach (var listener in listeners.GetListeners(target, source))
-				{
-					try
-					{
-						listener?.Invoke(ref @event, target, source);
-					}
-					catch (Exception e)
-					{
-						Debug.LogException(e);
-					}
-
-					if (CurrentEventIsConsumed)
-					{
-						wasConsumed = true;
-						break;
-					}
-				}
-			}
-			catch (Exception e)
-			{
-				Debug.LogException(e);
+				return channel != null && channel.Deliver(this, ref @event, target, source);
 			}
 			finally
 			{
-				OnAfterRaiseEvent();
+				EndRaise();
 			}
-
-			return wasConsumed;
 		}
 
 		public override void SubscribeTo<TEvent>(EventHandler<TEvent> handler, float priority = 0)
 		{
-			var listeners = TargetedEventListeners<TEvent>.Get(this);
-			listeners.AddListener(handler, priority);
+			AddListener<TEvent>(DefaultObject, handler, priority, bySource: false);
 		}
 
-		/// <summary>
-		/// Subscribe to a given event type.
-		/// </summary>
-		/// <param name="handler">The method that should be invoked when the event is raised.</param>
-		/// <param name="priority">Higher priority means this listener will receive the event earlier than other listeners with lower priority.
-		///                        If multiple listeners have the same priority, they will be invoked in the order they subscribed.</param>
-		/// <typeparam name="TEvent">The event type to subscribe to.</typeparam>
+		/// <summary>Subscribes <paramref name="handler"/> to every event of <typeparamref name="TEvent"/>.</summary>
+		/// <param name="priority">Higher hears the event earlier. Equal priorities hear it in the order they subscribed.</param>
 		public void SubscribeTo<TEvent>(TargetedEventHandler<TEvent> handler, float priority = 0)
 			where TEvent : TBaseEvent
 		{
-			var listeners = TargetedEventListeners<TEvent>.Get(this);
-			listeners.AddListener(handler, priority);
+			AddListener<TEvent>(DefaultObject, handler, priority, bySource: false);
 		}
 
 		public override void UnsubscribeFrom<TEvent>(EventHandler<TEvent> handler)
 		{
-			var listeners = TargetedEventListeners<TEvent>.Get(this);
-			listeners.RemoveListener(handler);
+			RemoveListener<TEvent>(DefaultObject, handler, bySource: false);
 		}
 
-		/// <summary>
-		/// Unsubscribe from a given event type.
-		/// </summary>
-		/// <param name="handler">The method that was previously given in SubscribeTo.</param>
-		/// <typeparam name="TEvent">The event type to unsubscribe from.</typeparam>
+		/// <summary>Removes one subscription of <paramref name="handler"/> to every event, the latest. Nothing happens when it has none.</summary>
 		public void UnsubscribeFrom<TEvent>(TargetedEventHandler<TEvent> handler) where TEvent : TBaseEvent
 		{
-			var listeners = TargetedEventListeners<TEvent>.Get(this);
-			listeners.RemoveListener(handler);
+			RemoveListener<TEvent>(DefaultObject, handler, bySource: false);
 		}
 
-		/// <summary>
-		/// Subscribe to a given event type, but only if it targets the given object.
-		/// </summary>
-		/// <param name="target">The target object.</param>
-		/// <param name="handler">The method that should be invoked when the event is raised.</param>
-		/// <param name="priority">Higher priority means this listener will receive the event earlier than other listeners with lower priority.
-		///                        If multiple listeners have the same priority, they will be invoked in the order they subscribed.</param>
-		/// <typeparam name="TEvent">The event type to subscribe to.</typeparam>
+		/// <summary>Subscribes <paramref name="handler"/> to the events of <typeparamref name="TEvent"/> aimed at <paramref name="target"/>.</summary>
+		/// <param name="priority">Higher hears the event earlier. Equal priorities hear it in the order they subscribed.</param>
 		public void SubscribeToTarget<TEvent>(TObject target, TargetedEventHandler<TEvent> handler, float priority = 0)
 			where TEvent : TBaseEvent
 		{
-			var listeners = TargetedEventListeners<TEvent>.Get(this);
-			listeners.AddTargetListener(target, handler, priority);
+			AddListener<TEvent>(target, handler, priority, bySource: false);
 		}
 
-		/// <summary>
-		/// Unsubscribe from a given event type, but only if it targets the given object.
-		/// </summary>
-		/// <param name="target">The target object.</param>
-		/// <param name="handler">The method that was previously given in SubscribeToTarget.</param>
-		/// <typeparam name="TEvent">The event type to unsubscribe from.</typeparam>
+		/// <summary>Removes one subscription of <paramref name="handler"/> to <paramref name="target"/>, the latest.</summary>
 		public void UnsubscribeFromTarget<TEvent>(TObject target, TargetedEventHandler<TEvent> handler)
 			where TEvent : TBaseEvent
 		{
-			var listeners = TargetedEventListeners<TEvent>.Get(this);
-			listeners.RemoveTargetListener(target, handler);
+			RemoveListener<TEvent>(target, handler, bySource: false);
 		}
 
-		/// <summary>
-		/// Subscribe to a given event type, but only if it comes from the given object.
-		/// </summary>
-		/// <param name="source">The source object.</param>
-		/// <param name="handler">The method that should be invoked when the event is raised.</param>
-		/// <param name="priority">Higher priority means this listener will receive the event earlier than other listeners with lower priority.
-		///                        If multiple listeners have the same priority, they will be invoked in the order they subscribed.</param>
-		/// <typeparam name="TEvent">The event type to subscribe to.</typeparam>
+		/// <summary>Subscribes <paramref name="handler"/> to the events of <typeparamref name="TEvent"/> from <paramref name="source"/>.</summary>
+		/// <param name="priority">Higher hears the event earlier. Equal priorities hear it in the order they subscribed.</param>
 		public void SubscribeToSource<TEvent>(TObject source, TargetedEventHandler<TEvent> handler, float priority = 0)
 			where TEvent : TBaseEvent
 		{
-			var listeners = TargetedEventListeners<TEvent>.Get(this);
-			listeners.AddSourceListener(source, handler, priority);
+			AddListener<TEvent>(source, handler, priority, bySource: true);
 		}
 
-		/// <summary>
-		/// Unsubscribe from a given event type, but only if it comes from the given object.
-		/// </summary>
-		/// <param name="source">The source object.</param>
-		/// <param name="handler">The method that was previously given in SubscribeToSource.</param>
-		/// <typeparam name="TEvent">The event type to unsubscribe from.</typeparam>
+		/// <summary>Removes one subscription of <paramref name="handler"/> to <paramref name="source"/>, the latest.</summary>
 		public void UnsubscribeFromSource<TEvent>(TObject source, TargetedEventHandler<TEvent> handler)
 			where TEvent : TBaseEvent
 		{
-			var listeners = TargetedEventListeners<TEvent>.Get(this);
-			listeners.RemoveSourceListener(source, handler);
+			RemoveListener<TEvent>(source, handler, bySource: true);
 		}
 
-		protected override void ClearAllListeners<TEvent>()
+		private bool IsNoObject(TObject obj) => obj == null || ObjectComparer.Equals(obj, DefaultObject);
+
+		private void AddListener<TEvent>(TObject obj, Delegate handler, float priority, bool bySource) where TEvent : TBaseEvent
 		{
-			var listeners = TargetedEventListeners<TEvent>.Get(this);
-			listeners.Clear();
+			if (handler == null) throw new ArgumentNullException(nameof(handler));
+			ThrowIfUnusable("GenericEventBus.SubscribeTo");
+
+			TargetedChannel<TEvent> channel = GetChannel<TEvent, TargetedChannel<TEvent>>();
+			Rank rank = NextRank(priority);
+
+			if (IsNoObject(obj))
+			{
+				channel.All.Add(handler, rank);
+				return;
+			}
+
+			Dictionary<TObject, RankedList<Delegate>> byObject = bySource ? channel.BySource : channel.ByTarget;
+			if (!byObject.TryGetValue(obj, out RankedList<Delegate> listeners))
+			{
+				listeners = new RankedList<Delegate>();
+				byObject.Add(obj, listeners);
+			}
+
+			listeners.Add(handler, rank);
 		}
 
-		private class TargetedEventListeners<TEvent> where TEvent : TBaseEvent
+		private void RemoveListener<TEvent>(TObject obj, Delegate handler, bool bySource) where TEvent : TBaseEvent
 		{
-			private static readonly Dictionary<GenericEventBus<TBaseEvent, TObject>,
-				TargetedEventListeners<TEvent>> Listeners =
-				new Dictionary<GenericEventBus<TBaseEvent, TObject>, TargetedEventListeners<TEvent>>();
+			MainThreadGuard.Assert("GenericEventBus.UnsubscribeFrom");
 
-			// Instance-level: this cache maps untargeted -> targeted delegates per bus instance.
-			// A static cache is shared by every bus instance: unsubscribing a handler on bus A
-			// removes the mapping while bus B still holds the converted delegate, making B's
-			// listener unremovable (a ghost listener).
-			private readonly Dictionary<EventHandler<TEvent>, TargetedEventHandler<TEvent>>
-				ConvertedEventHandlers = new Dictionary<EventHandler<TEvent>, TargetedEventHandler<TEvent>>();
+			TargetedChannel<TEvent> channel = FindChannel<TEvent, TargetedChannel<TEvent>>();
+			if (channel == null || handler == null) return;
 
-			private static readonly ObjectPool<Enumerator> EnumeratorPool = new ObjectPool<Enumerator>();
-
-			private static readonly ObjectPool<DerivedQueuedEvent> QueuedEventPool =
-				new ObjectPool<DerivedQueuedEvent>();
-
-			private static readonly ObjectPool<List<Listener>> ListenerListPool = new ObjectPool<List<Listener>>();
-
-			static TargetedEventListeners()
+			if (IsNoObject(obj))
 			{
-				// Initialize some things that would normally initialize with the first Raise, causing allocation.
-				var enumeratorComparer = EqualityComparer<Enumerator>.Default;
+				channel.All.RemoveLatest(handler);
+				return;
 			}
 
-			public static TargetedEventListeners<TEvent> Get(GenericEventBus<TBaseEvent, TObject> eventBus)
+			Dictionary<TObject, RankedList<Delegate>> byObject = bySource ? channel.BySource : channel.ByTarget;
+			if (byObject.TryGetValue(obj, out RankedList<Delegate> listeners) && listeners.RemoveLatest(handler) && listeners.Count == 0)
 			{
-				if (!Listeners.TryGetValue(eventBus, out var listeners))
+				// A delivery in progress looks the list up at every step, so dropping it is safe.
+				byObject.Remove(obj);
+			}
+		}
+
+		private sealed class TargetedChannel<TEvent> : Channel where TEvent : TBaseEvent
+		{
+			// Each holds EventHandler<TEvent> and TargetedEventHandler<TEvent> listeners. Their ranks
+			// come from one counter, so the three lists merge in subscription order.
+			public readonly RankedList<Delegate>                       All      = new();
+			public readonly Dictionary<TObject, RankedList<Delegate>> ByTarget = new(ObjectComparer);
+			public readonly Dictionary<TObject, RankedList<Delegate>> BySource = new(ObjectComparer);
+
+			public readonly Queue<(TEvent Event, TObject Target, TObject Source)> Waiting = new();
+
+			/// <returns>Whether a listener consumed the event.</returns>
+			public bool Deliver(GenericEventBus<TBaseEvent, TObject> bus, ref TEvent @event, TObject target, TObject source)
+			{
+				bool aimed = !bus.IsNoObject(target);
+				bool sourced = !bus.IsNoObject(source);
+
+				for (Rank last = Rank.BeforeAll; ;)
 				{
-					listeners = new TargetedEventListeners<TEvent>(eventBus);
-					Listeners.Add(eventBus, listeners);
-					
-					eventBus.DisposeEvent += EventBusOnDisposeEvent;
-				}
+					// The next listener after the last one called, from whichever list ranks it first.
+					RankedList<Delegate> list = All;
+					int next = All.IndexAfter(last);
 
-				return listeners;
-			}
-
-			private static void EventBusOnDisposeEvent(GenericEventBus<TBaseEvent> eventBus)
-			{
-				Listeners.Remove((GenericEventBus<TBaseEvent, TObject>) eventBus);
-			}
-
-			private readonly GenericEventBus<TBaseEvent, TObject> _eventBus;
-			private readonly List<Listener> _sortedListeners = new List<Listener>();
-
-			private readonly Dictionary<TObject, List<Listener>> _targetListeners =
-				new Dictionary<TObject, List<Listener>>();
-
-			private readonly Dictionary<TObject, List<Listener>> _sourceListeners =
-				new Dictionary<TObject, List<Listener>>();
-
-			private readonly List<Enumerator> _activeEnumerators = new List<Enumerator>(4);
-
-			private TargetedEventListeners(GenericEventBus<TBaseEvent, TObject> eventBus)
-			{
-				_eventBus = eventBus;
-			}
-
-			public void AddListener(TargetedEventHandler<TEvent> handler, float priority)
-			{
-				var listener = new Listener(handler, priority);
-
-				var index = _sortedListeners.InsertIntoSortedList(listener);
-
-				foreach (var enumerator in _activeEnumerators)
-				{
-					if (enumerator.Index > index)
+					if (aimed && ByTarget.TryGetValue(target, out RankedList<Delegate> forTarget))
 					{
-						enumerator.Index++;
+						PickEarlier(forTarget, last, ref list, ref next);
 					}
-				}
-			}
 
-			public void RemoveListener(TargetedEventHandler<TEvent> handler)
-			{
-				for (var i = _sortedListeners.Count - 1; i >= 0; i--)
-				{
-					if (!Equals(_sortedListeners[i].Handler, handler)) continue;
-
-					_sortedListeners.RemoveAt(i);
-
-					foreach (var enumerator in _activeEnumerators)
+					if (sourced && BySource.TryGetValue(source, out RankedList<Delegate> fromSource))
 					{
-						// Index points to the NEXT listener to deliver; decrement only when the
-						// removed listener sits before it (see GenericEventBus<TBaseEvent>).
-						if (enumerator.Index > i)
-						{
-							enumerator.Index--;
-						}
+						PickEarlier(fromSource, last, ref list, ref next);
 					}
-				}
-			}
 
-			public void AddListener(EventHandler<TEvent> handler, float priority)
-			{
-				if (!ConvertedEventHandlers.TryGetValue(handler, out var convertedHandler))
-				{
-					convertedHandler = (ref TEvent data, TObject target, TObject source) => handler(ref data);
-					ConvertedEventHandlers.Add(handler, convertedHandler);
-				}
-				
-				AddListener(convertedHandler, priority);
-			}
+					if (next == list.Count) return false;
 
-			public void RemoveListener(EventHandler<TEvent> handler)
-			{
-				if (ConvertedEventHandlers.TryGetValue(handler, out var targetedHandler))
-				{
-					RemoveListener(targetedHandler);
+					last = list.RankAt(next);
+					Delegate handler = list.ItemAt(next);
 
-					ConvertedEventHandlers.Remove(handler);
-				}
-			}
-
-			public void AddTargetListener(TObject target, TargetedEventHandler<TEvent> handler, float priority)
-			{
-				if (_eventBus.IsDefaultObject(target)) return;
-
-				if (!_targetListeners.TryGetValue(target, out var listeners))
-				{
-					listeners = ListenerListPool.Get();
-
-					_targetListeners[target] = listeners;
-				}
-
-				var listener = new Listener(handler, priority);
-
-				var index = listeners.InsertIntoSortedList(listener);
-
-				foreach (var enumerator in _activeEnumerators)
-				{
-					if (!ObjectComparer.Equals(target, enumerator.Target)) continue;
-
-					enumerator.TargetListeners = listeners;
-
-					if (enumerator.TargetIndex > index)
+					if (handler is TargetedEventHandler<TEvent> targeted)
 					{
-						enumerator.TargetIndex++;
+						InvokeTargeted(targeted, ref @event, target, source);
 					}
-				}
-			}
-
-			public void RemoveTargetListener(TObject target, TargetedEventHandler<TEvent> handler)
-			{
-				if (!_targetListeners.TryGetValue(target, out var listeners)) return;
-
-				for (var i = listeners.Count - 1; i >= 0; i--)
-				{
-					if (!Equals(listeners[i].Handler, handler)) continue;
-
-					listeners.RemoveAt(i);
-
-					foreach (var enumerator in _activeEnumerators)
+					else
 					{
-						if (!ObjectComparer.Equals(target, enumerator.Target)) continue;
-
-						if (enumerator.TargetIndex > i)
-						{
-							enumerator.TargetIndex--;
-						}
-
-						if (listeners.Count == 0)
-						{
-							enumerator.TargetListeners = null;
-						}
+						Invoke((EventHandler<TEvent>)handler, ref @event);
 					}
-				}
 
-				if (listeners.Count == 0)
-				{
-					ListenerListPool.Release(listeners);
-					_targetListeners.Remove(target);
+					if (bus.CurrentEventIsConsumed) return true;
 				}
 			}
 
-			public void AddSourceListener(TObject source, TargetedEventHandler<TEvent> handler, float priority)
+			public override void DeliverOldestWaiting(GenericEventBus<TBaseEvent> bus)
 			{
-				if (_eventBus.IsDefaultObject(source)) return;
+				(TEvent @event, TObject target, TObject source) = Waiting.Dequeue();
+				((GenericEventBus<TBaseEvent, TObject>)bus).RaiseImmediately(ref @event, target, source);
+			}
 
-				if (!_sourceListeners.TryGetValue(source, out var listeners))
+			public override void ClearListeners()
+			{
+				All.Clear();
+				ByTarget.Clear();
+				BySource.Clear();
+			}
+
+			public override void Clear()
+			{
+				ClearListeners();
+				Waiting.Clear();
+			}
+
+			private static void PickEarlier(RankedList<Delegate> candidates, Rank last, ref RankedList<Delegate> list, ref int next)
+			{
+				int index = candidates.IndexAfter(last);
+				if (index == candidates.Count) return;
+
+				if (next == list.Count || candidates.RankAt(index).CompareTo(list.RankAt(next)) < 0)
 				{
-					listeners = ListenerListPool.Get();
-
-					_sourceListeners[source] = listeners;
-				}
-
-				var listener = new Listener(handler, priority);
-
-				var index = listeners.InsertIntoSortedList(listener);
-
-				foreach (var enumerator in _activeEnumerators)
-				{
-					if (!ObjectComparer.Equals(source, enumerator.Source)) continue;
-
-					enumerator.SourceListeners = listeners;
-
-					if (enumerator.SourceIndex > index)
-					{
-						enumerator.SourceIndex++;
-					}
+					list = candidates;
+					next = index;
 				}
 			}
 
-			public void RemoveSourceListener(TObject source, TargetedEventHandler<TEvent> handler)
+			private static void InvokeTargeted(TargetedEventHandler<TEvent> handler, ref TEvent @event, TObject target, TObject source)
 			{
-				if (!_sourceListeners.TryGetValue(source, out var listeners)) return;
-
-				for (var i = listeners.Count - 1; i >= 0; i--)
+				try
 				{
-					if (!Equals(listeners[i].Handler, handler)) continue;
-
-					listeners.RemoveAt(i);
-
-					foreach (var enumerator in _activeEnumerators)
-					{
-						if (!ObjectComparer.Equals(source, enumerator.Source)) continue;
-
-						if (enumerator.SourceIndex > i)
-						{
-							enumerator.SourceIndex--;
-						}
-
-						if (listeners.Count == 0)
-						{
-							enumerator.SourceListeners = null;
-						}
-					}
+					handler(ref @event, target, source);
 				}
-
-				if (listeners.Count == 0)
+				catch (Exception e)
 				{
-					ListenerListPool.Release(listeners);
-					_sourceListeners.Remove(source);
+					UnityEngine.Debug.LogException(e);
 				}
-			}
-
-			public void EnqueueEvent(in TEvent @event, TObject target, TObject source)
-			{
-				var queuedEvent = QueuedEventPool.Get();
-				queuedEvent.EventData = @event;
-				queuedEvent.Target = target;
-				queuedEvent.Source = source;
-
-				_eventBus.QueuedEvents.Enqueue(queuedEvent);
-			}
-
-			private class DerivedQueuedEvent : QueuedEvent
-			{
-				public TEvent EventData;
-				public TObject Target;
-				public TObject Source;
-
-				public override void Raise(GenericEventBus<TBaseEvent> eventBus)
-				{
-					var bus = (GenericEventBus<TBaseEvent, TObject>)eventBus;
-
-					bus.Raise(EventData, Target, Source);
-
-					EventData = default;
-					Target = default;
-					Source = default;
-
-					QueuedEventPool.Release(this);
-				}
-			}
-
-			private readonly struct Listener : IEquatable<Listener>, IComparable<Listener>
-			{
-				public readonly TargetedEventHandler<TEvent> Handler;
-				public readonly float Priority;
-
-				public Listener(TargetedEventHandler<TEvent> handler, float priority)
-				{
-					Handler = handler;
-					Priority = priority;
-				}
-
-				public bool Equals(Listener other)
-				{
-					return Handler.Equals(other.Handler);
-				}
-
-				public override bool Equals(object obj)
-				{
-					return obj is Listener other && Equals(other);
-				}
-
-				public override int GetHashCode()
-				{
-					return Handler.GetHashCode();
-				}
-
-				public int CompareTo(Listener other)
-				{
-					return other.Priority.CompareTo(Priority);
-				}
-			}
-
-			public IEnumerable<TargetedEventHandler<TEvent>> GetListeners(TObject target, TObject source)
-			{
-				var enumerator = EnumeratorPool.Get();
-				enumerator.Owner = this;
-				enumerator.SortedListeners = _sortedListeners;
-
-				if (!_eventBus.IsDefaultObject(target))
-				{
-					enumerator.Target = target;
-
-					if (_targetListeners.TryGetValue(target, out var targetListeners))
-					{
-						enumerator.TargetListeners = targetListeners;
-					}
-				}
-
-				if (!_eventBus.IsDefaultObject(source))
-				{
-					enumerator.Source = source;
-
-					if (_sourceListeners.TryGetValue(source, out var sourceListeners))
-					{
-						enumerator.SourceListeners = sourceListeners;
-					}
-				}
-
-				_activeEnumerators.Add(enumerator);
-
-				return enumerator;
-			}
-
-			private class Enumerator : IEnumerator<TargetedEventHandler<TEvent>>,
-				IEnumerable<TargetedEventHandler<TEvent>>
-			{
-				public TargetedEventListeners<TEvent> Owner;
-				public int Index;
-				public int TargetIndex;
-				public int SourceIndex;
-				public List<Listener> SortedListeners;
-				public List<Listener> TargetListeners;
-				public List<Listener> SourceListeners;
-				public TObject Target;
-				public TObject Source;
-				public float LastPriority = float.MaxValue;
-
-				public TargetedEventHandler<TEvent> Current { get; private set; }
-
-				public bool MoveNext()
-				{
-					// Every iteration advances exactly one list head, so this loop always makes
-					// progress. The previous do/while re-evaluated the same heads without advancing
-					// and could spin forever when a higher-priority listener subscribed mid-dispatch.
-					while (true)
-					{
-						Listener? nextListener = null;
-						var nextList = 0; // 0 = global, 1 = target, 2 = source
-
-						if (SortedListeners != null && Index < SortedListeners.Count)
-						{
-							nextListener = SortedListeners[Index];
-						}
-
-						if (TargetListeners != null && TargetIndex < TargetListeners.Count)
-						{
-							var candidate = TargetListeners[TargetIndex];
-
-							if (!nextListener.HasValue || candidate.Priority > nextListener.Value.Priority)
-							{
-								nextListener = candidate;
-								nextList = 1;
-							}
-						}
-
-						if (SourceListeners != null && SourceIndex < SourceListeners.Count)
-						{
-							var candidate = SourceListeners[SourceIndex];
-
-							if (!nextListener.HasValue || candidate.Priority > nextListener.Value.Priority)
-							{
-								nextListener = candidate;
-								nextList = 2;
-							}
-						}
-
-						if (!nextListener.HasValue)
-						{
-							return false;
-						}
-
-						switch (nextList)
-						{
-							case 0: Index++; break;
-							case 1: TargetIndex++; break;
-							default: SourceIndex++; break;
-						}
-
-						// A listener that surfaced mid-dispatch with priority higher than the last
-						// delivered one was already passed over - skip it to preserve ordering.
-						if (nextListener.Value.Priority > LastPriority)
-						{
-							continue;
-						}
-
-						Current = nextListener.Value.Handler;
-						LastPriority = nextListener.Value.Priority;
-
-						return true;
-					}
-				}
-
-				public void Dispose()
-				{
-					Owner._activeEnumerators.Remove(this);
-					Reset();
-					EnumeratorPool.Release(this);
-				}
-
-				public void Reset()
-				{
-					Owner = null;
-					Index = 0;
-					TargetIndex = 0;
-					SourceIndex = 0;
-					SortedListeners = null;
-					TargetListeners = null;
-					SourceListeners = null;
-					Target = default;
-					Source = default;
-					LastPriority = float.MaxValue;
-				}
-
-				object IEnumerator.Current => Current;
-
-				public IEnumerator<TargetedEventHandler<TEvent>> GetEnumerator() => this;
-
-				IEnumerator IEnumerable.GetEnumerator()
-				{
-					return GetEnumerator();
-				}
-			}
-
-			public void Clear()
-			{
-				_sortedListeners.Clear();
-				_targetListeners.Clear();
-				_sourceListeners.Clear();
 			}
 		}
 	}

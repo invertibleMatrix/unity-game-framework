@@ -30,7 +30,6 @@ MonoBehaviour:
   _randomRotationDirection: 1
   _addImpactEffect: 1
   _impactScale: {x: 1.5, y: 1.5, z: 1.5}
-  _addDustEffect: 0
   _dropThroughFloor: 1
   _fallDistance: 500
   _fallDuration: 0.6

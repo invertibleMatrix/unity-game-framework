@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using AK.Kernel.Timing;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using UnityEngine;
@@ -37,14 +38,14 @@ namespace AK.Systems
 			}
 		}
 
-		/// <summary>True when the entrance finished; false when it was cancelled.</summary>
-		public async UniTask<bool> PlayShowAsync(IAnimationStrategy strategy, Vector2 entryPosition, CancellationToken ct)
+		/// <summary>Plays the entrance on <paramref name="time"/>. True when it finished; false when it was cancelled.</summary>
+		public async UniTask<bool> PlayShowAsync(IAnimationStrategy strategy, Vector2 entryPosition, TimeDomain time, CancellationToken ct)
 		{
 			CancellationToken token = Begin(ct);
 
 			try
 			{
-				await strategy.PlayShowAsync(_content, _group, entryPosition, token);
+				await strategy.PlayShowAsync(_content, _group, time, entryPosition, token);
 				return true;
 			}
 			catch (OperationCanceledException)
@@ -53,14 +54,14 @@ namespace AK.Systems
 			}
 		}
 
-		/// <summary>True when the exit finished; false when it was cancelled.</summary>
-		public async UniTask<bool> PlayHideAsync(IAnimationStrategy strategy, CancellationToken ct)
+		/// <summary>Plays the exit on <paramref name="time"/>. True when it finished; false when it was cancelled.</summary>
+		public async UniTask<bool> PlayHideAsync(IAnimationStrategy strategy, TimeDomain time, CancellationToken ct)
 		{
 			CancellationToken token = Begin(ct);
 
 			try
 			{
-				await strategy.PlayHideAsync(_content, _group, token);
+				await strategy.PlayHideAsync(_content, _group, time, token);
 				return true;
 			}
 			catch (OperationCanceledException)

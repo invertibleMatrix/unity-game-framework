@@ -1,26 +1,50 @@
 using System;
 using System.Collections.Generic;
 using AK.Core;
+using AK.Kernel.Persistence;
 using UnityEngine;
 
 namespace AK.CoreDomain.RemoteConfig
 {
 	/// <summary>
-	/// Container for all remote config variables with query methods and Firebase integration helpers.
-	/// This is the main entry point for remote config operations.
+	/// All remote config variables, looked up by identity or by key, and the one place values
+	/// reach them: a remote config service hands this meta what it fetched, and the meta applies
+	/// it and keeps the cache.
+	///
+	/// <para><b>Fetches are whole.</b> <see cref="ApplyFetchedValues"/> takes everything the
+	/// provider holds. A variable whose key isn't there, or whose value can't be read, loses its
+	/// remote value and reads as its default.</para>
+	///
+	/// <para><b>Cache.</b> The fetched text of every variable that caches is kept in a
+	/// <see cref="PrefsStore"/> under <see cref="CacheKey"/>, replaced after each fetch.
+	/// <see cref="LoadCachedValues"/> brings it back at the next start, for when the provider
+	/// can't be reached.</para>
+	///
+	/// <para>Main thread only.</para>
 	/// </summary>
 	[CreateAssetMenu(fileName = "RemoteConfigMeta", menuName = "AK/MetaData/RemoteConfig/RemoteConfigMeta")]
 	public class RemoteConfigMeta : MetaDataAsset, IMetaWithRegistry
 	{
+		/// <summary>The key the cached values are kept under.</summary>
+		public const string CacheKey = "UGFW_REMOTE_CONFIG";
+
+		// Earlier versions cached each value on its own, typed, under this prefix and the variable's key.
+		private const string LegacyCachePrefix = "remote_config_";
+
+		private const string LogTag       = "[RemoteConfig]";
+		private const int    ExcerptLength = 80;
+
 		[SerializeField] private RemoteVariablesRegistry _registry;
 
-		/// <summary>
-		/// The registry containing all remote variables.
-		/// </summary>
+		[NonSerialized] private Dictionary<string, RemoteVariableBase> _byKey;
+		[NonSerialized] private RemoteVariablesRegistry                _indexedRegistry;
+		[NonSerialized] private int                                    _indexedVersion;
+
+		/// <summary>The registry containing all remote variables.</summary>
 		public RemoteVariablesRegistry Registry      => _registry;
 		public UidRegistryAssetBase    RegistryAsset => _registry;
 
-		public override void InitializeMeta() { }
+		public void InitializeMeta() { }
 
 		#region Query Methods
 
@@ -40,38 +64,23 @@ namespace AK.CoreDomain.RemoteConfig
 
 		public RemoteVariable<T> GetVariable<T>(RemoteVariableBase asset) => GetVariable(asset) as RemoteVariable<T>;
 
-		/// <summary>
-		/// Gets a remote variable by its VariableKey.
-		/// </summary>
+		/// <summary>The variable with <paramref name="variableKey"/>, or null. One hash lookup.</summary>
 		public RemoteVariableBase GetVariableByKey(string variableKey)
 		{
-			if (_registry == null || string.IsNullOrEmpty(variableKey))
-				return null;
-
-			var allVariables = _registry.Objects;
-			foreach (var variable in allVariables)
-			{
-				if (variable != null && variable.VariableKey == variableKey)
-					return variable;
-			}
-
-			return null;
+			Dictionary<string, RemoteVariableBase> index = KeyIndex;
+			return index != null && variableKey != null && index.TryGetValue(variableKey, out RemoteVariableBase variable) ? variable : null;
 		}
 
-		/// <summary>
-		/// Gets a typed remote variable by its VariableKey.
-		/// </summary>
+		/// <summary>The variable with <paramref name="variableKey"/> when it holds a <typeparamref name="T"/>, or null.</summary>
 		public RemoteVariable<T> GetVariableByKey<T>(string variableKey)
 		{
 			return GetVariableByKey(variableKey) as RemoteVariable<T>;
 		}
 
-		/// <summary>
-		/// Gets the value of a remote variable by its VariableKey.
-		/// </summary>
+		/// <summary>The value of the variable with <paramref name="variableKey"/>, or <c>default</c> when there is none.</summary>
 		public T GetValue<T>(string variableKey)
 		{
-			var variable = GetVariableByKey(variableKey) as RemoteVariable<T>;
+			RemoteVariable<T> variable = GetVariableByKey<T>(variableKey);
 			return variable != null ? variable.Value : default;
 		}
 
@@ -102,77 +111,72 @@ namespace AK.CoreDomain.RemoteConfig
 			return variable != null ? variable.Value : default;
 		}
 
-		/// <summary>
-		/// Gets all enabled remote variables.
-		/// </summary>
+		/// <summary>Gets all enabled remote variables, in a new list.</summary>
 		public List<RemoteVariableBase> GetEnabledVariables()
 		{
 			var result = new List<RemoteVariableBase>();
 			if (_registry == null)
-				return result;
-
-			var allVariables = _registry.Objects;
-			foreach (var variable in allVariables)
 			{
-				if (variable.IsEnabled)
+				return result;
+			}
+
+			foreach (RemoteVariableBase variable in _registry.Objects)
+			{
+				if (variable != null && variable.IsEnabled)
+				{
 					result.Add(variable);
+				}
 			}
 
 			return result;
 		}
 
-		/// <summary>
-		/// Gets all remote variables (enabled and disabled).
-		/// </summary>
+		/// <summary>Gets all remote variables (enabled and disabled).</summary>
 		public IReadOnlyList<RemoteVariableBase> GetAllVariables()
 		{
-			if (_registry == null)
-				return new List<RemoteVariableBase>();
-
-			return _registry.Objects;
+			return _registry != null ? _registry.Objects : Array.Empty<RemoteVariableBase>();
 		}
+
 		#endregion
 
-		#region Firebase Integration Helpers
+		#region Provider Integration
 
 		/// <summary>
-		/// Builds a dictionary of default values for Firebase Remote Config initialization.
-		/// Only includes enabled variables.
+		/// Each enabled variable's default as text, by key, for a provider's in-app defaults.
+		/// Text, never objects: Firebase, for one, stores an object as its type's name.
 		/// </summary>
-		/// <returns>Dictionary mapping VariableKey to default value.</returns>
-		public Dictionary<string, object> GetDefaultsForFirebase()
+		public Dictionary<string, string> GetDefaultValueTexts()
 		{
-			var defaults = new Dictionary<string, object>();
-
+			var defaults = new Dictionary<string, string>(StringComparer.Ordinal);
 			if (_registry == null)
-				return defaults;
-
-			var enabledVariables = GetEnabledVariables();
-			foreach (var variable in enabledVariables)
 			{
-				if (!string.IsNullOrEmpty(variable.VariableKey))
+				return defaults;
+			}
+
+			foreach (RemoteVariableBase variable in _registry.Objects)
+			{
+				if (IsLive(variable) && !defaults.ContainsKey(variable.VariableKey))
 				{
-					defaults[variable.VariableKey] = variable.GetDefaultValueObject();
+					defaults.Add(variable.VariableKey, variable.GetDefaultValueText());
 				}
 			}
 
 			return defaults;
 		}
 
-		/// <summary>
-		/// Gets all VariableKeys for enabled variables.
-		/// Useful for registering keys with the remote config service.
-		/// </summary>
+		/// <summary>The keys of the enabled variables, each once, in registry order.</summary>
 		public List<string> GetEnabledVariableKeys()
 		{
 			var keys = new List<string>();
 			if (_registry == null)
-				return keys;
-
-			var enabledVariables = GetEnabledVariables();
-			foreach (var variable in enabledVariables)
 			{
-				if (!string.IsNullOrEmpty(variable.VariableKey))
+				return keys;
+			}
+
+			var seen = new HashSet<string>(StringComparer.Ordinal);
+			foreach (RemoteVariableBase variable in _registry.Objects)
+			{
+				if (IsLive(variable) && seen.Add(variable.VariableKey))
 				{
 					keys.Add(variable.VariableKey);
 				}
@@ -182,111 +186,247 @@ namespace AK.CoreDomain.RemoteConfig
 		}
 
 		/// <summary>
-		/// Applies a fetched value to a remote variable.
-		/// Called by the remote config service after fetching from server.
+		/// Brings back the values cached by the last fetch, for the variables that cache and have
+		/// no value fetched this session yet. A cached value that can no longer be read, because
+		/// the variable's type changed, is dropped with a warning. Returns how many were loaded.
+		/// The per-variable cache of earlier versions is deleted, not read.
 		/// </summary>
-		public void ApplyRemoteValue(string variableKey, string value)
+		/// <exception cref="ArgumentNullException"><paramref name="cache"/> is null.</exception>
+		public int LoadCachedValues(PrefsStore cache)
 		{
-			var variable = GetVariableByKey(variableKey);
-			if (variable != null)
+			if (cache == null) throw new ArgumentNullException(nameof(cache));
+			if (_registry == null) return 0;
+
+			DeleteLegacyCache(cache);
+
+			if (!cache.TryGet(CacheKey, out CachedValues saved) || saved.Values == null)
 			{
-				variable.SetRemoteValueFromString(value);
+				return 0;
 			}
-			else
+
+			int loaded = 0;
+			foreach (CachedValue entry in saved.Values)
 			{
-				Debug.LogWarning($"RemoteConfigMeta: Variable with key '{variableKey}' not found.");
+				RemoteVariableBase variable = GetVariableByKey(entry.Key);
+				if (variable == null || !variable.IsEnabled || !variable.CacheValue || variable.Origin == RemoteValueOrigin.Fetched)
+				{
+					continue;
+				}
+
+				if (variable.TrySetRemoteText(entry.Text, RemoteValueOrigin.Cached))
+				{
+					loaded++;
+				}
+				else
+				{
+					Debug.LogWarning($"{LogTag} The cached value of '{entry.Key}' can't be read as {variable.ValueType.Name} and was dropped: '{Excerpt(entry.Text)}'.", variable);
+				}
 			}
+
+			return loaded;
 		}
 
 		/// <summary>
-		/// Applies a fetched value directly to a remote variable.
-		/// Called by the remote config service for typed values.
+		/// Applies a fetch: <paramref name="values"/> is everything the provider holds, by key.
+		/// Each enabled variable takes its value; one without a value there, or with one that
+		/// can't be read, loses its remote value and reads as its default. A disabled variable
+		/// always does. The cache is then replaced with the fetched values of the variables that
+		/// cache.
 		/// </summary>
-		public void ApplyRemoteValue<T>(string variableKey, T value)
+		/// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="cache"/> is null.</exception>
+		public RemoteConfigUpdate ApplyFetchedValues(IReadOnlyDictionary<string, string> values, PrefsStore cache)
 		{
-			var variable = GetVariableByKey(variableKey) as RemoteVariable<T>;
-			if (variable != null)
+			if (values == null) throw new ArgumentNullException(nameof(values));
+			if (cache == null) throw new ArgumentNullException(nameof(cache));
+			if (_registry == null) return default;
+
+			int applied = 0, rejected = 0, cleared = 0;
+
+			foreach (RemoteVariableBase variable in _registry.Objects)
 			{
-				variable.SetRemoteValue(value);
+				if (variable == null)
+				{
+					continue;
+				}
+
+				if (IsLive(variable) && values.TryGetValue(variable.VariableKey, out string text) && !string.IsNullOrEmpty(text))
+				{
+					if (variable.TrySetRemoteText(text, RemoteValueOrigin.Fetched))
+					{
+						applied++;
+						continue;
+					}
+
+					rejected++;
+					Debug.LogError($"{LogTag} The fetched value of '{variable.VariableKey}' can't be read as {variable.ValueType.Name}, so it reads as its default: '{Excerpt(text)}'.", variable);
+				}
+
+				if (variable.HasRemoteValue)
+				{
+					variable.ClearRemoteValue();
+					cleared++;
+				}
 			}
-			else
-			{
-				Debug.LogWarning($"RemoteConfigMeta: Variable with key '{variableKey}' not found or type mismatch.");
-			}
+
+			SaveCache(cache);
+			return new RemoteConfigUpdate(applied, rejected, cleared);
 		}
 
-		/// <summary>
-		/// Clears all remote values, resetting all variables to their defaults.
-		/// </summary>
+		/// <summary>Clears all remote values, so every variable reads as its default. The cache is kept.</summary>
 		public void ClearAllRemoteValues()
 		{
 			if (_registry == null)
-				return;
-
-			var allVariables = _registry.Objects;
-			foreach (var variable in allVariables)
 			{
-				variable.ClearRemoteValue();
+				return;
 			}
-		}
 
-		/// <summary>
-		/// Loads cached values for all variables that have caching enabled.
-		/// Called during initialization to provide offline access.
-		/// </summary>
-		public void LoadAllCachedValues()
-		{
-			if (_registry == null)
-				return;
-
-			var allVariables = _registry.Objects;
-			foreach (var variable in allVariables)
+			foreach (RemoteVariableBase variable in _registry.Objects)
 			{
-				if (variable.CacheValue)
+				if (variable != null)
 				{
-					variable.LoadCachedValue();
+					variable.ClearRemoteValue();
 				}
 			}
 		}
 
-		/// <summary>
-		/// Saves all current values to cache for variables with caching enabled.
-		/// </summary>
-		public void SaveAllCachedValues()
+		/// <summary>Deletes the cached values. The values the variables hold now are kept.</summary>
+		/// <exception cref="ArgumentNullException"><paramref name="cache"/> is null.</exception>
+		public void ClearCachedValues(PrefsStore cache)
 		{
-			if (_registry == null)
-				return;
+			if (cache == null) throw new ArgumentNullException(nameof(cache));
 
-			var allVariables = _registry.Objects;
-			foreach (var variable in allVariables)
+			cache.Delete(CacheKey);
+			DeleteLegacyCache(cache);
+		}
+
+		#endregion
+
+		#region Cache
+
+		private void SaveCache(PrefsStore cache)
+		{
+			var saved = new CachedValues();
+			foreach (RemoteVariableBase variable in _registry.Objects)
 			{
-				if (variable.CacheValue)
+				if (IsLive(variable) && variable.CacheValue && variable.HasRemoteValue)
 				{
-					variable.SaveCachedValue();
+					saved.Values.Add(new CachedValue(variable.VariableKey, variable.RemoteText));
+				}
+			}
+
+			if (saved.Values.Count > 0)
+			{
+				cache.Set(CacheKey, saved);
+			}
+			else
+			{
+				cache.Delete(CacheKey);
+			}
+		}
+
+		private void DeleteLegacyCache(PrefsStore cache)
+		{
+			foreach (RemoteVariableBase variable in _registry.Objects)
+			{
+				if (variable == null || string.IsNullOrEmpty(variable.VariableKey))
+				{
+					continue;
+				}
+
+				string legacyKey = LegacyCachePrefix + variable.VariableKey;
+				if (StorageKeys.IsValid(legacyKey))
+				{
+					cache.Delete(legacyKey);
 				}
 			}
 		}
 
-		/// <summary>
-		/// Clears all cached values from PlayerPrefs.
-		/// </summary>
-		public void ClearAllCachedValues()
+		/// <summary>The values the last fetch left, as saved: <c>{"Values":[{"Key":…,"Text":…}]}</c>.</summary>
+		[Serializable]
+		private sealed class CachedValues
 		{
-			if (_registry == null)
-				return;
+			public List<CachedValue> Values = new();
+		}
 
-			var allVariables = _registry.Objects;
-			foreach (var variable in allVariables)
+		[Serializable]
+		private struct CachedValue
+		{
+			public string Key;
+			public string Text;
+
+			public CachedValue(string key, string text)
 			{
-				variable.ClearCachedValue();
+				Key  = key;
+				Text = text;
 			}
 		}
+
+		#endregion
+
+		#region Lookup
+
+		/// <summary>Variables by key, rebuilt when the registry changes. Null without a registry.</summary>
+		private Dictionary<string, RemoteVariableBase> KeyIndex
+		{
+			get
+			{
+				if (_registry == null)
+				{
+					return null;
+				}
+
+				int version = _registry.Registry.Version;
+				if (_byKey == null || !ReferenceEquals(_indexedRegistry, _registry) || _indexedVersion != version)
+				{
+					BuildKeyIndex(version);
+				}
+
+				return _byKey;
+			}
+		}
+
+		private void BuildKeyIndex(int version)
+		{
+			IReadOnlyList<RemoteVariableBase> variables = _registry.Objects;
+			var index = new Dictionary<string, RemoteVariableBase>(variables.Count, StringComparer.Ordinal);
+
+			for (int i = 0; i < variables.Count; i++)
+			{
+				RemoteVariableBase variable = variables[i];
+				if (variable == null || string.IsNullOrEmpty(variable.VariableKey))
+				{
+					continue;
+				}
+
+				// The first variable with a key wins, as in a linear search; ValidateVariables reports the others.
+				if (!index.ContainsKey(variable.VariableKey))
+				{
+					index.Add(variable.VariableKey, variable);
+				}
+			}
+
+			_byKey           = index;
+			_indexedRegistry = _registry;
+			_indexedVersion  = version;
+		}
+
+		/// <summary>Whether the variable takes remote values: it exists, is enabled and has a key.</summary>
+		private static bool IsLive(RemoteVariableBase variable) =>
+			variable != null && variable.IsEnabled && !string.IsNullOrEmpty(variable.VariableKey);
+
+		private static string Excerpt(string text) =>
+			text == null ? string.Empty : text.Length <= ExcerptLength ? text : text.Substring(0, ExcerptLength) + "…";
 
 		#endregion
 
 		#region Editor Helpers
 
 #if UNITY_EDITOR
+		private void OnValidate()
+		{
+			_byKey = null;
+		}
+
 		[ContextMenu("Refresh Registry")]
 		public void RefreshRegistry()
 		{
@@ -306,44 +446,47 @@ namespace AK.CoreDomain.RemoteConfig
 				return;
 			}
 
-			var allVariables = _registry.Objects;
 			var keySet = new HashSet<string>();
 			int validCount = 0;
 			int enabledCount = 0;
 
-			foreach (var variable in allVariables)
+			foreach (RemoteVariableBase variable in _registry.Objects)
 			{
-				// Check for missing VariableKey
+				if (variable == null)
+				{
+					continue;
+				}
+
 				if (string.IsNullOrEmpty(variable.VariableKey))
 				{
-					Debug.LogWarning($"RemoteConfigMeta: Variable '{variable.name}' has no VariableKey set.");
+					Debug.LogWarning($"RemoteConfigMeta: Variable '{variable.name}' has no VariableKey set.", variable);
 					continue;
 				}
 
-				// Check for duplicate keys
-				if (keySet.Contains(variable.VariableKey))
+				if (!keySet.Add(variable.VariableKey))
 				{
-					Debug.LogError($"RemoteConfigMeta: Duplicate VariableKey '{variable.VariableKey}' found!");
+					Debug.LogError($"RemoteConfigMeta: Duplicate VariableKey '{variable.VariableKey}' on '{variable.name}'; the first variable with it wins.", variable);
 					continue;
 				}
 
-				keySet.Add(variable.VariableKey);
 				validCount++;
 
 				if (variable.IsEnabled)
+				{
 					enabledCount++;
+				}
 			}
 
 			Debug.Log($"RemoteConfigMeta: Validation complete. {validCount} valid variables, {enabledCount} enabled.");
 		}
 
-		[ContextMenu("Print Defaults Dictionary")]
-		public void PrintDefaultsDictionary()
+		[ContextMenu("Print Default Values")]
+		public void PrintDefaultValues()
 		{
-			var defaults = GetDefaultsForFirebase();
-			foreach (var kvp in defaults)
+			Dictionary<string, string> defaults = GetDefaultValueTexts();
+			foreach (KeyValuePair<string, string> pair in defaults)
 			{
-				Debug.Log($"  {kvp.Key}: {kvp.Value}");
+				Debug.Log($"  {pair.Key}: {pair.Value}");
 			}
 
 			Debug.Log($"Total: {defaults.Count} default values.");
@@ -351,5 +494,41 @@ namespace AK.CoreDomain.RemoteConfig
 #endif
 
 		#endregion
+	}
+
+	/// <summary>What one fetch did to the variables (<see cref="RemoteConfigMeta.ApplyFetchedValues"/>).</summary>
+	public readonly struct RemoteConfigUpdate : IEquatable<RemoteConfigUpdate>
+	{
+		/// <summary>Variables that took a fetched value.</summary>
+		public readonly int Applied;
+
+		/// <summary>Fetched values that couldn't be read; those variables read as their defaults.</summary>
+		public readonly int Rejected;
+
+		/// <summary>Variables that lost a remote value and read as their defaults again.</summary>
+		public readonly int Cleared;
+
+		public RemoteConfigUpdate(int applied, int rejected, int cleared)
+		{
+			Applied  = applied;
+			Rejected = rejected;
+			Cleared  = cleared;
+		}
+
+		public bool Equals(RemoteConfigUpdate other) => Applied == other.Applied && Rejected == other.Rejected && Cleared == other.Cleared;
+
+		public override bool Equals(object obj) => obj is RemoteConfigUpdate other && Equals(other);
+
+		public override int GetHashCode()
+		{
+			unchecked
+			{
+				int hash = Applied;
+				hash = hash * 397 ^ Rejected;
+				return hash * 397 ^ Cleared;
+			}
+		}
+
+		public override string ToString() => $"{Applied} applied, {Rejected} rejected, {Cleared} cleared";
 	}
 }

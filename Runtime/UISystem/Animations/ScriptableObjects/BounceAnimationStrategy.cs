@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -43,7 +45,7 @@ namespace AK.Systems.Animations
             Both
         }
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             var sequence = DOTween.Sequence();
             
@@ -99,10 +101,10 @@ namespace AK.Systems.Animations
             sequence.Append(target.DOScale(Vector3.one * 1.05f, 0.1f).SetEase(Ease.OutBack));
             sequence.Append(target.DOScale(Vector3.one, 0.1f).SetEase(Ease.OutBack));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             var sequence = DOTween.Sequence();
             
@@ -118,7 +120,7 @@ namespace AK.Systems.Animations
             // Final shrink
             sequence.Append(target.DOScale(Vector3.zero, ExitDuration * 0.4f).SetEase(Ease.InBack));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
     }
 }

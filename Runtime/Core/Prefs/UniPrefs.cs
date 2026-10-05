@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using UnityEngine;
-using AK.Core.Extensions;
+﻿using UnityEngine;
 
 namespace AK.Core
 {
@@ -26,94 +22,62 @@ namespace AK.Core
 	}
 
 	/// <summary>
-	/// Provides methods for storing and retrieving preferences using Unity's <see cref="PlayerPrefs"/>.
+	/// The app's <see cref="PrefsStore"/> over PlayerPrefs (<see cref="Store"/>), and shortcuts
+	/// to it. Code that can take a store as a dependency should, so tests can hand it one over
+	/// an <see cref="AK.Kernel.Persistence.InMemoryKeyValueStore"/>.
+	///
+	/// The store is created on first use and lives as long as the scripting domain. Its index of
+	/// owned keys has to stay in step with PlayerPrefs, so a second instance over the same
+	/// PlayerPrefs is never made. Main thread only.
 	/// </summary>
 	public static class UniPrefs
 	{
-		/// <summary>
-		/// <see cref="OnReset"/> is going to dispatch when <see cref="DeleteAll"/> is invoked...
-		/// </summary>
-		public static event Action OnReset = default;
+		private static PlayerPrefsKeyValueStore _backend;
+		private static PrefsStore               _store;
 
 		/// <summary>
-		/// Stores a value in <see cref="PlayerPrefs"/> as a JSON string.
+		/// The app's store: PlayerPrefs, written to disk at the end of each frame that changed
+		/// something, and when the app loses focus or quits (<see cref="PlayerPrefsKeyValueStore"/>).
 		/// </summary>
-		/// <typeparam name="T">The type of the data to store.</typeparam>
-		/// <param name="key">The key under which the value is stored.</param>
-		/// <param name="data">The value to store.</param>
-		public static void Set<T>(string key, T data)
-		{
-			ValidateKey(key);
+		public static PrefsStore Store => _store ??= CreateStore();
 
-			var json = JsonUtility.ToJson(new DataWrapper<T>(data));
-			PlayerPrefs.SetString(key, json);
-			PlayerPrefs.Save();
-		}
+		// A Play session can start without a domain reload, after the editor left the last one
+		// without running the flush it had scheduled.
+		[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+		private static void OnSessionStart() => _backend?.ResetFlushSchedule();
+
+		/// <summary>Stores <paramref name="data"/> under <paramref name="key"/> (<see cref="PrefsStore.Set{T}"/>).</summary>
+		public static void Set<T>(string key, T data) => Store.Set(key, data);
 
 		/// <summary>
-		/// Retrieves a value from <see cref="PlayerPrefs"/> and deserializes it from JSON.
+		/// The value under <paramref name="key"/>, or <paramref name="default"/> when there is
+		/// none. An unreadable value is set aside first (<see cref="PrefsStore.TryGet{T}"/>).
 		/// </summary>
-		/// <typeparam name="TReturn">The type of the data to retrieve.</typeparam>
-		/// <param name="key">The key under which the value is stored.</param>
-		/// <param name="default">The default value to return if the key does not exist or the value is null.</param>
-		/// <returns>The retrieved value or the default value if the key does not exist or the value is null.</returns>
-		public static TReturn Get<TReturn>(string key, TReturn @default = default)
-		{
-			ValidateKey(key);
+		public static T Get<T>(string key, T @default = default) => Store.Get(key, @default);
 
-			var json = PlayerPrefs.GetString(key);
-			if (string.IsNullOrEmpty(json)) return @default;
+		/// <summary>The value under <paramref name="key"/>, if there is a readable one (<see cref="PrefsStore.TryGet{T}"/>).</summary>
+		public static bool TryGet<T>(string key, out T value) => Store.TryGet(key, out value);
 
-			try
-			{
-				var dataWrapper = JsonUtility.FromJson<DataWrapper<TReturn>>(json);
-				return dataWrapper.Data ?? @default;
-			}
-			catch (Exception e)
-			{
-				Debug.LogWarning($"[UniPrefs] Failed to deserialize key '{key}': {e.Message}. Returning default.");
-				return @default;
-			}
-		}
+		/// <summary>True when <paramref name="key"/> holds a value.</summary>
+		public static bool HasKey(string key) => Store.Has(key);
+
+		/// <summary>Deletes the value under <paramref name="key"/>.</summary>
+		public static void Delete(string key) => Store.Delete(key);
 
 		/// <summary>
-		/// Checks if the specified key exists in PlayerPrefs.
+		/// Deletes every key the store owns, and nothing else in PlayerPrefs, then resets the live
+		/// models over it, so their next save starts from defaults instead of writing the deleted
+		/// data back (<see cref="PrefsStore.DeleteAll"/>).
 		/// </summary>
-		/// <param name="key">The key to check for existence in PlayerPrefs.</param>
-		/// <returns>True if the key exists; otherwise, false.</returns>
-		public static bool HasKey(string key)
-		{
-			ValidateKey(key);
-			return PlayerPrefs.HasKey(key);
-		}
+		public static void DeleteAll() => Store.DeleteAll();
 
-		/// <summary>
-		/// Deletes the specified key from PlayerPrefs.
-		/// </summary>
-		/// <param name="key">The key to delete from PlayerPrefs.</param>
-		public static void Delete(string key)
-		{
-			ValidateKey(key);
-			PlayerPrefs.DeleteKey(key);
-			PlayerPrefs.Save();
-		}
+		/// <summary>Writes every earlier change to disk now.</summary>
+		public static void Flush() => Store.Flush();
 
-		public static void DeleteAll()
+		private static PrefsStore CreateStore()
 		{
-			PlayerPrefs.DeleteAll();
-			PlayerPrefs.Save();
-
-			OnReset.SafeInvoke();
-		}
-
-		/// <summary>
-		/// Validates that the specified key is usable.
-		/// </summary>
-		/// <param name="key">The key to validate.</param>
-		/// <exception cref="Exception">Thrown if the key is null or empty.</exception>
-		private static void ValidateKey(string key)
-		{
-			if (string.IsNullOrEmpty(key)) throw new Exception("Cannot use a null or blank key");
+			_backend = new PlayerPrefsKeyValueStore();
+			return new PrefsStore(_backend);
 		}
 	}
 }

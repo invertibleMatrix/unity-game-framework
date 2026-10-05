@@ -1,3 +1,4 @@
+#if UGFW_CINEMACHINE
 using Unity.Cinemachine;
 
 namespace AK.Systems
@@ -23,3 +24,4 @@ namespace AK.Systems
 		bool IsLive { get; }
 	}
 }
+#endif

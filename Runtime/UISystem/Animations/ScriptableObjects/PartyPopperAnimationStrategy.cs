@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -11,12 +13,6 @@ namespace AK.Systems.Animations
         
         [SerializeField] [Tooltip("Explosion duration")]
         private float _explosionDuration = 0.15f;
-        
-        [SerializeField] [Tooltip("Number of particles to simulate")]
-        private int _particleCount = 12;
-        
-        [SerializeField] [Tooltip("Particle burst radius")]
-        private float _burstRadius = 200f;
         
         [SerializeField] [Tooltip("Birth scale (tiny start)")]
         private Vector3 _birthScale = new Vector3(0.01f, 0.01f, 0.01f);
@@ -39,9 +35,6 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Add personality wobble")]
         private bool _addPersonalityWobble = true;
         
-        [SerializeField] [Tooltip("Wobble speed")]
-        private float _wobbleSpeed = 8f;
-        
         [SerializeField] [Tooltip("Add breathing effect")]
         private bool _addBreathing = true;
         
@@ -54,15 +47,6 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Flash intensity")]
         private float _flashIntensity = 2f;
         
-        [SerializeField] [Tooltip("Add color celebration")]
-        private bool _addColorCelebration = false;
-        
-        [SerializeField] [Tooltip("Pop sound timing")]
-        private bool _triggerPopSound = true;
-        
-        [SerializeField] [Tooltip("Celebration sound timing")]
-        private bool _triggerCelebrationSound = false;
-        
         public enum GrowthFeel
         {
             Organic,     // Natural, uneven growth
@@ -71,7 +55,7 @@ namespace AK.Systems.Animations
             Explosive    // Quick, powerful growth
         }
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             // Kill any existing tweens on this target to prevent memory leaks
             target.DOKill();
@@ -83,14 +67,7 @@ namespace AK.Systems.Animations
             canvasGroup.alpha = 0f;
             
             // THE POP! - Explosive birth
-            sequence.AppendCallback(() => {
-                canvasGroup.alpha = 1f;
-                
-                // Trigger pop sound
-                if (_triggerPopSound) {
-                    Debug.Log("🎊 POP! Sound would play here");
-                }
-            });
+            sequence.AppendCallback(() => canvasGroup.alpha = 1f);
             
             // Explosive appearance
             sequence.Append(target.DOScale(_explosionScale, _explosionDuration).SetEase(Ease.OutBack));
@@ -102,8 +79,8 @@ namespace AK.Systems.Animations
             
             // Chaotic wobble during explosion - like confetti settling
             sequence.AppendCallback(() => {
-                target.DOShakePosition(0.5f, new Vector3(30, 30, 0), 20, 0, true);
-                target.DOShakeRotation(0.5f, new Vector3(0, 0, _wobbleIntensity), 15, 0, true);
+                target.DOShakePosition(0.5f, new Vector3(30, 30, 0), 20, 0, true).SetTimeDomain(time);
+                target.DOShakeRotation(0.5f, new Vector3(0, 0, _wobbleIntensity), 15, 0, true).SetTimeDomain(time);
             });
             
             // Growth phase - coming to life
@@ -140,20 +117,13 @@ namespace AK.Systems.Animations
             
             // Breathing effect - it's alive!
             if (_addBreathing) {
-                sequence.AppendCallback(() => StartBreathing(target));
+                sequence.AppendCallback(() => StartBreathing(target, time));
             }
             
-            // Celebration sound
-            if (_triggerCelebrationSound) {
-                sequence.AppendCallback(() => {
-                    Debug.Log("🎉 Celebration sound would play here");
-                });
-            }
-            
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             // Kill any existing tweens on this target to prevent memory leaks
             target.DOKill();
@@ -170,15 +140,8 @@ namespace AK.Systems.Animations
             // Quick fade and shrink
             sequence.Append(target.DOScale(_birthScale, 0.3f).SetEase(Ease.InBack));
             sequence.Join(canvasGroup.DOFade(0, 0.3f).SetEase(Ease.InQuad));
-            
-            // Final pop sound
-            if (_triggerPopSound) {
-                sequence.AppendCallback(() => {
-                    Debug.Log("👋 Goodbye pop! Sound would play here");
-                });
-            }
-            
-            return sequence.Play();
+
+            return sequence.SetTimeDomain(time).Play();
         }
 
         private float GetGrowthDuration()
@@ -205,12 +168,13 @@ namespace AK.Systems.Animations
             };
         }
 
-        private void StartBreathing(RectTransform target)
+        private void StartBreathing(RectTransform target, TimeDomain time)
         {
             if (!_addBreathing) return;
             
             var breatheScale = Vector3.one * (1f + _breathingIntensity);
             target.DOScale(breatheScale, 2f).SetEase(Ease.InOutSine).SetLoops(-1, LoopType.Yoyo)
+                .SetTimeDomain(time)
                 .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
         }
 

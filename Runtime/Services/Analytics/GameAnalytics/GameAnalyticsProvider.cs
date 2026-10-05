@@ -11,7 +11,7 @@ namespace AK.Services.Analytics.Providers
 	/// <summary>
 	/// GameAnalytics SDK adapter. Lives in AK.Services.GameAnalytics so AK.Services
 	/// does not reference the vendor assembly. This assembly is compiled only when
-	/// com.gameanalytics.sdk is installed (versionDefine GAME_ANALYTICS_SDK).
+	/// com.gameanalytics.sdk is installed (versionDefine UGFW_GAME_ANALYTICS_SDK).
 	/// </summary>
 	public class GameAnalyticsProvider : BaseAnalyticsProvider, IGameAnalyticsATTListener
 	{
@@ -66,7 +66,7 @@ namespace AK.Services.Analytics.Providers
 					GameAnalytics.SetBuildAllPlatforms(build);
 				}
 
-				ApplyDimensionWhitelist(_options);
+				ApplyDimensionWhitelist(_taxonomy);
 
 				if (!string.IsNullOrEmpty(_pendingUserId))
 				{
@@ -101,13 +101,29 @@ namespace AK.Services.Analytics.Providers
 			}
 		}
 
-		public void GameAnalyticsATTListenerNotDetermined() => CompleteSdkInitialize("Initialized (ATT not determined)");
+		public void GameAnalyticsATTListenerNotDetermined()
+		{
+			AttConsentStatus.Report(false);
+			CompleteSdkInitialize("Initialized (ATT not determined)");
+		}
 
-		public void GameAnalyticsATTListenerRestricted() => CompleteSdkInitialize("Initialized (ATT restricted)");
+		public void GameAnalyticsATTListenerRestricted()
+		{
+			AttConsentStatus.Report(false);
+			CompleteSdkInitialize("Initialized (ATT restricted)");
+		}
 
-		public void GameAnalyticsATTListenerDenied() => CompleteSdkInitialize("Initialized (ATT denied)");
+		public void GameAnalyticsATTListenerDenied()
+		{
+			AttConsentStatus.Report(false);
+			CompleteSdkInitialize("Initialized (ATT denied)");
+		}
 
-		public void GameAnalyticsATTListenerAuthorized() => CompleteSdkInitialize("Initialized (ATT authorized)");
+		public void GameAnalyticsATTListenerAuthorized()
+		{
+			AttConsentStatus.Report(true);
+			CompleteSdkInitialize("Initialized (ATT authorized)");
+		}
 
 		private void CompleteSdkInitialize(string logMessage)
 		{
@@ -245,15 +261,7 @@ namespace AK.Services.Analytics.Providers
 				return;
 			}
 
-			int dimension = propertyName switch
-			{
-				"age" or "current_age" => 1,
-				"content_state" => 2,
-				"life_index" or "meeple_lives" => 3,
-				_ => 0
-			};
-
-			if (dimension > 0)
+			if (_taxonomy.TryGetDimensionSlot(propertyName, out int dimension))
 			{
 				SetCustomDimension(dimension, value);
 				return;
@@ -577,27 +585,28 @@ namespace AK.Services.Analytics.Providers
 			}
 		}
 
-		private static void ApplyDimensionWhitelist(AnalyticsInitOptions options)
+		// GA drops a dimension value it was not told about before it started.
+		private static void ApplyDimensionWhitelist(AnalyticsTaxonomy taxonomy)
 		{
 			var settings = GameAnalytics.SettingsGA;
-			if (settings == null || options == null)
+			if (settings == null)
 			{
 				return;
 			}
 
-			TryFillDimensionList(settings.CustomDimensions01, options.CustomDimension01Values);
-			TryFillDimensionList(settings.CustomDimensions02, options.CustomDimension02Values);
-			TryFillDimensionList(settings.CustomDimensions03, options.CustomDimension03Values);
+			TryFillDimensionList(settings.CustomDimensions01, taxonomy.AllowedValues(1));
+			TryFillDimensionList(settings.CustomDimensions02, taxonomy.AllowedValues(2));
+			TryFillDimensionList(settings.CustomDimensions03, taxonomy.AllowedValues(3));
 		}
 
-		private static void TryFillDimensionList(IList<string> target, string[] values)
+		private static void TryFillDimensionList(IList<string> target, IReadOnlyList<string> values)
 		{
-			if (target == null || values == null || values.Length == 0)
+			if (target == null || values.Count == 0)
 			{
 				return;
 			}
 
-			for (int i = 0; i < values.Length; i++)
+			for (int i = 0; i < values.Count; i++)
 			{
 				if (string.IsNullOrEmpty(values[i]))
 				{

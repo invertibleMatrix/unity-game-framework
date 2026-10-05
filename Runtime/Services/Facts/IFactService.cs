@@ -15,10 +15,14 @@ namespace AK.Services.Facts
 	///
 	/// Counts are keyed by <see cref="Uid{T}"/>. The asset overloads are conveniences that
 	/// read <c>fact.Id</c>; nothing here ever resolves an identity back to an asset.
+	///
+	/// Counts belong to the bound account (<see cref="IAccountScoped"/>). Binding another
+	/// account switches to its counts and raises <see cref="Changed"/> for each fact whose
+	/// count differs.
 	/// </summary>
-	public interface IFactService
+	public interface IFactService : IAccountScoped
 	{
-		/// <summary>Fires after a fact's count changes.</summary>
+		/// <summary>Fires after a fact's count changes, including through an account switch or a store reset.</summary>
 		event Action<Uid<FactType>> Changed;
 
 		/// <summary>Records one occurrence. Facts are born counted — there is no pending state.</summary>

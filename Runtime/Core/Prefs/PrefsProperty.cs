@@ -1,108 +1,103 @@
-﻿using System;
-
-namespace AK.Core
+﻿namespace AK.Core
 {
 	/// <summary>
-	/// <see cref="PrefsProperty{TProp}"/> is a wrapper around <see cref="UniPrefs"/>'s API
-	/// which save/load operations over a property...
+	/// One saved value under one key, cached after the first read.
+	///
+	/// The cache follows its store: once the store has deleted all its data
+	/// (<see cref="PrefsStore.DeleteAll"/>), the property reads as its default again, and
+	/// <see cref="Save()"/> writes the default rather than the deleted value.
+	///
+	/// Nothing to dispose: the property holds no subscriptions. Main thread only.
 	/// </summary>
-	/// <remarks>
-	/// Implements <see cref="IDisposable"/>: instances subscribe to the static
-	/// <see cref="UniPrefs.OnReset"/> event, so call <see cref="Dispose"/> when the property
-	/// is no longer needed (a finalizer cannot save you - the static event keeps the
-	/// instance alive forever).
-	/// </remarks>
-	/// <typeparam name="T">TypeOf property to wrap around, Make sure It's Serializable</typeparam>
-	public sealed class PrefsProperty<T> : IDisposable
+	/// <typeparam name="T">The value's type; anything JsonUtility can serialize.</typeparam>
+	public sealed class PrefsProperty<T>
 	{
-		private T _current = default;
-		private bool _isSyncWithPrefs = false;
-		private bool _disposed;
+		private readonly string     _saveKey;
+		private readonly T          _default;
+		private readonly PrefsStore _store;
 
-		private readonly T _default = default;
-		private readonly string _saveKey = default;
+		private T          _current;
+		private bool       _cached;
+		private PrefsStore _cachedFrom;
+		private int        _cachedGeneration;
 
-		/// <summary>
-		/// Create & Returns the InstanceOf <see cref="PrefsProperty{TProp}"/> with the given SaveKey...
-		/// </summary>
-		/// <param name="saveKey"><see cref="string"/> Key To Use As Key In Database...</param>
-		/// <param name="default">Default Value To Save On Creation...</param>
-		public PrefsProperty(string saveKey, T @default = default)
+		/// <param name="saveKey">The key the value is saved under.</param>
+		/// <param name="default">The value until one is saved, and after <see cref="Reset"/>.</param>
+		/// <param name="store">The store to save in; null for <see cref="UniPrefs.Store"/>, looked up at each use.</param>
+		public PrefsProperty(string saveKey, T @default = default, PrefsStore store = null)
 		{
 			_saveKey = saveKey;
 			_default = @default;
-
+			_store   = store;
 			_current = @default;
-			_isSyncWithPrefs = false;
-
-			UniPrefs.OnReset += Reset;
 		}
 
+		/// <summary>The key the value is saved under.</summary>
+		public string SaveKey => _saveKey;
+
+		private PrefsStore Store => _store ?? UniPrefs.Store;
+
 		/// <summary>
-		/// Unsubscribes from <see cref="UniPrefs.OnReset"/>. Without this the static event
-		/// roots the instance for the lifetime of the process.
+		/// Saves the current value (<see cref="Read"/>), such as a list changed in place. Never
+		/// <c>default(T)</c> unless that is the current value.
 		/// </summary>
-		public void Dispose()
+		public void Save()
 		{
-			if (_disposed) return;
-			_disposed = true;
-			UniPrefs.OnReset -= Reset;
+			Write(Store, Read());
 		}
 
-		/// <summary>
-		/// <see cref="Save"/> is going to save the given data in <see cref="UniPrefs"/>
-		/// & also update <see cref="_current"/> runtime state...
-		/// </summary>
-		public void Save(T toSave = default)
+		/// <summary>Makes <paramref name="value"/> the current value and saves it.</summary>
+		public void Save(T value)
 		{
-			if (toSave is not null)
-			{
-				_current = toSave;
-			}
-
-			_isSyncWithPrefs = true;
-			UniPrefs.Set(_saveKey, _current);
+			_current = value;
+			Write(Store, value);
 		}
 
-		/// <summary>
-		/// <see cref="Read"/> this property data from save system & also update current runtime state...
-		/// </summary>
-		/// <returns>returns save data if exists...</returns>
+		/// <summary>The current value: the saved one, or the default when none is saved.</summary>
 		public T Read()
 		{
-			if (_isSyncWithPrefs) return _current;
+			PrefsStore store = Store;
+			if (IsCachedFrom(store)) return _current;
 
-			_isSyncWithPrefs = true;
-			return _current = UniPrefs.Get(_saveKey, _current);
+			_current = store.TryGet(_saveKey, out T saved) ? saved : _default;
+			MarkCached(store);
+			return _current;
 		}
 
-		/// <summary>
-		/// Reset this <see cref="PrefsProperty{T}"/> & delete it from <see cref="UniPrefs"/>...
-		/// </summary>
+		/// <summary>Deletes the saved value; the property reads as its default again.</summary>
 		public void Reset()
 		{
-			if (UniPrefs.HasKey(_saveKey))
-			{
-				UniPrefs.Delete(_saveKey);
-			}
+			Store.Delete(_saveKey);
 
 			_current = _default;
-			_isSyncWithPrefs = false;
+			_cached  = false;
 		}
 
-		/// <summary>
-		/// <see cref="ToString"/> override for <see cref="PrefsProperty{TProp}"/> which converts <see cref="_current"/>'s
-		/// <see cref="ToString"/> & Returns...
-		/// </summary>
-		/// <returns></returns>
 		public override string ToString()
 		{
-			return _current == null ? string.Empty : _current.ToString();
+			T value = Read();
+			return value == null ? string.Empty : value.ToString();
 		}
 
-		/// <summary>
-		/// an implicit operator overload to get <see cref="_current"/> state of this property...
-		/// </summary>
+		/// <summary>The current value (<see cref="Read"/>).</summary>
 		public static implicit operator T(PrefsProperty<T> property) => property.Read();
+
+		private void Write(PrefsStore store, T value)
+		{
+			store.Set(_saveKey, value);
+			MarkCached(store);
+		}
+
+		private bool IsCachedFrom(PrefsStore store)
+		{
+			return _cached && ReferenceEquals(_cachedFrom, store) && _cachedGeneration == store.Generation;
+		}
+
+		private void MarkCached(PrefsStore store)
+		{
+			_cached           = true;
+			_cachedFrom       = store;
+			_cachedGeneration = store.Generation;
+		}
 	}
 }

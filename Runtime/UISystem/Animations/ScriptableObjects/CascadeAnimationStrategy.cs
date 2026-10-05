@@ -1,6 +1,7 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
-using System.Collections.Generic;
 
 namespace AK.Systems.Animations
 {
@@ -15,9 +16,6 @@ namespace AK.Systems.Animations
         
         [SerializeField] [Tooltip("Trigger intensity")]
         private float _triggerIntensity = 1.5f;
-        
-        [SerializeField] [Tooltip("Cascade pattern")]
-        private CascadePattern _cascadePattern = CascadePattern.OutwardWave;
         
         [SerializeField] [Tooltip("Wave speed")]
         private float _waveSpeed = 2f;
@@ -52,30 +50,12 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Add glow propagation")]
         private bool _addGlowPropagation = true;
         
-        [SerializeField] [Tooltip("Add screen shake on cascade")]
-        private bool _addScreenShake = false;
-        
-        [SerializeField] [Tooltip("Cascade sound pattern")]
-        private CascadeSoundPattern _soundPattern = CascadeSoundPattern.Escalating;
-        
-        [SerializeField] [Tooltip("Sound pitch variation")]
-        private bool _addPitchVariation = true;
-        
         public enum TriggerType
         {
             Explosion,
             Implosion,
             Ripple,
             Shockwave
-        }
-        
-        public enum CascadePattern
-        {
-            OutwardWave,
-            InwardWave,
-            CircularWave,
-            SpiralWave,
-            RandomBurst
         }
         
         public enum ElementReaction
@@ -86,17 +66,8 @@ namespace AK.Systems.Animations
             ShakeAndSettle,
             FlipAndReveal
         }
-        
-        public enum CascadeSoundPattern
-        {
-            Escalating,
-            Descending,
-            Rhythmic,
-            Chaotic,
-            Melodic
-        }
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             // Kill any existing tweens on this target to prevent memory leaks
             target.DOKill();
@@ -124,10 +95,10 @@ namespace AK.Systems.Animations
             sequence.Append(target.DOScale(Vector3.one, 0.3f).SetEase(Ease.OutBack));
             sequence.Join(canvasGroup.DOFade(1f, 0.3f).SetEase(Ease.OutQuad));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             // Kill any existing tweens on this target to prevent memory leaks
             target.DOKill();
@@ -148,22 +119,16 @@ namespace AK.Systems.Animations
             // Final trigger reverse
             ExecuteReverseTrigger(sequence, target, canvasGroup);
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
         private void ExecuteTrigger(Sequence sequence, RectTransform target, CanvasGroup canvasGroup)
         {
-            sequence.AppendCallback(() => {
-                canvasGroup.alpha = 0.3f;
-                PlayCascadeSound(0);
-            });
+            sequence.AppendCallback(() => canvasGroup.alpha = 0.3f);
             
             switch (_triggerType) {
                 case TriggerType.Explosion:
                     sequence.Append(target.DOScale(Vector3.one * _triggerIntensity, 0.2f).SetEase(Ease.OutBack));
-                    if (_addScreenShake) {
-                        sequence.AppendCallback(() => Debug.Log("💥 Screen shake from explosion!"));
-                    }
                     break;
                     
                 case TriggerType.Implosion:
@@ -189,10 +154,7 @@ namespace AK.Systems.Animations
             var variation = _addElementVariation ? Random.Range(0.8f, 1.2f) : 1f;
             intensity *= variation;
             
-            sequence.AppendCallback(() => {
-                canvasGroup.alpha = Mathf.Min(1f, 0.3f + (stage * 0.2f));
-                PlayCascadeSound(stage);
-            });
+            sequence.AppendCallback(() => canvasGroup.alpha = Mathf.Min(1f, 0.3f + (stage * 0.2f)));
             
             switch (_elementReaction) {
                 case ElementReaction.PopAndBounce:
@@ -238,10 +200,7 @@ namespace AK.Systems.Animations
         {
             var intensity = _reactionIntensity * Mathf.Pow(_waveDecay, stage);
             
-            sequence.AppendCallback(() => {
-                canvasGroup.alpha = Mathf.Max(0f, 1f - (stage * 0.2f));
-                PlayCascadeSound(stage, true);
-            });
+            sequence.AppendCallback(() => canvasGroup.alpha = Mathf.Max(0f, 1f - (stage * 0.2f)));
             
             // Reverse reaction
             sequence.Append(target.DOScale(Vector3.one * (1f + intensity * 0.3f), 0.15f).SetEase(Ease.InBack));
@@ -250,10 +209,6 @@ namespace AK.Systems.Animations
 
         private void ExecuteReverseTrigger(Sequence sequence, RectTransform target, CanvasGroup canvasGroup)
         {
-            sequence.AppendCallback(() => {
-                PlayCascadeSound(_cascadeStages, true);
-            });
-            
             switch (_triggerType) {
                 case TriggerType.Explosion:
                     sequence.Append(target.DOScale(Vector3.zero, 0.3f).SetEase(Ease.InBack));
@@ -288,24 +243,6 @@ namespace AK.Systems.Animations
             }
             
             return stageDelay;
-        }
-
-        private void PlayCascadeSound(int stage, bool reverse = false)
-        {
-            var pitch = _addPitchVariation ? 1f + (stage * 0.1f) : 1f;
-            if (reverse) pitch = 2f - pitch;
-            
-            var soundType = _soundPattern switch
-            {
-                CascadeSoundPattern.Escalating => reverse ? "descending" : "ascending",
-                CascadeSoundPattern.Descending => reverse ? "ascending" : "descending",
-                CascadeSoundPattern.Rhythmic => "rhythmic",
-                CascadeSoundPattern.Chaotic => "chaotic",
-                CascadeSoundPattern.Melodic => "melodic",
-                _ => "cascade"
-            };
-            
-            Debug.Log($"🎵 {soundType} cascade sound! Stage: {stage}, Pitch: {pitch:F2}");
         }
     }
 }

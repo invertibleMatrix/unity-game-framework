@@ -25,12 +25,9 @@ MonoBehaviour:
   _tensionAmount: 0.2
   _addPopFlash: 1
   _flashIntensity: 1.5
-  _addRippleEffect: 0
   _popSequence: 0
   _popCount: 3
   _popInterval: 0.1
   _addSettleWobble: 1
   _settleIntensity: 2
   _addFinalBreathing: 0
-  _popSoundType: 0
-  _addPitchVariation: 1
