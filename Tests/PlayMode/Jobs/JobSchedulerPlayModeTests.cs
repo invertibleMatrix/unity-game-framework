@@ -9,7 +9,11 @@ using UnityEngine.TestTools;
 
 namespace AK.Tests.Jobs
 {
-	/// <summary>The player-loop driver against the real engine loop: timing in frames, thread affinity, attach/detach.</summary>
+	/// <summary>
+	/// The player-loop driver against the real engine loop: timing in frames, thread affinity, attach/detach.
+	/// A barrier that finds the workers busy skips its frame by design (the core tests cover that), and a frame
+	/// can be shorter than the workers' run, as in batch mode, so the tests that count frames wait out each run.
+	/// </summary>
 	public sealed class JobSchedulerPlayModeTests
 	{
 		private sealed class FrameStampJob : IFrameJob, IFrameJobCallback
@@ -80,6 +84,7 @@ namespace AK.Tests.Jobs
 			scheduler.Schedule(job);
 
 			yield return null;
+			scheduler.WaitForIdle();
 			yield return null;
 
 			Assert.AreEqual(1, job.ExecuteCount);
@@ -121,9 +126,12 @@ namespace AK.Tests.Jobs
 			scheduler.ScheduleRepeating(job);
 			int firstRunFrame = Time.frameCount + 1;
 
-			for (int i = 0; i < 60; i++) yield return null;
+			for (int i = 0; i < 60; i++)
+			{
+				yield return null;
+				scheduler.WaitForIdle();
+			}
 
-			scheduler.WaitForIdle();
 			int framesKicked = Time.frameCount - firstRunFrame + 1;
 
 			Assert.AreEqual(framesKicked, job.ExecuteCount, "one execution per frame, none skipped, none doubled");
@@ -165,6 +173,7 @@ namespace AK.Tests.Jobs
 			yield return null;
 			Assert.AreEqual(0, batch.Results.Length, "still executing during this frame");
 
+			scheduler.WaitForIdle();
 			yield return null;
 			Assert.AreEqual(256, batch.Results.Length);
 			for (int i = 0; i < 256; i++) Assert.AreEqual(i * i, batch.Results[i].Output);

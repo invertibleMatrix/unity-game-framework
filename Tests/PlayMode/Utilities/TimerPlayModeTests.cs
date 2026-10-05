@@ -82,10 +82,16 @@ namespace AK.Tests.Utilities
 			var owner = new GameObject("Timer owner");
 			var timer = new Timer(owner.GetCancellationTokenOnDestroy());
 			int ticks = 0;
-			timer.StartCountUp(onTick: (_, _) => ticks++, tickInterval: TimeSpan.FromMilliseconds(1), timeBase: TimeBase.Wall);
+			TimeSpan tickInterval = TimeSpan.FromMilliseconds(1);
+			timer.StartCountUp(onTick: (_, _) => ticks++, tickInterval: tickInterval, timeBase: TimeBase.Wall);
 
-			yield return null;
-			yield return null;
+			// A frame can be shorter than the tick interval, as in batch mode, so wait on the wall clock.
+			float limit = Time.realtimeSinceStartup + WaitLimitSeconds;
+			while (ticks < 2 && Time.realtimeSinceStartup < limit)
+			{
+				yield return null;
+			}
+
 			Assert.Greater(ticks, 1, "the player loop steps the timer");
 
 			Object.Destroy(owner);
@@ -93,9 +99,14 @@ namespace AK.Tests.Utilities
 
 			Assert.AreEqual(TimerState.Idle, timer.State);
 
+			// Twenty tick intervals: a timer still running would tick again, however short the frames.
 			int ticksWhenDestroyed = ticks;
-			yield return null;
-			yield return null;
+			float quietUntil = Time.realtimeSinceStartup + 20 * (float)tickInterval.TotalSeconds;
+			while (Time.realtimeSinceStartup < quietUntil)
+			{
+				yield return null;
+			}
+
 			Assert.AreEqual(ticksWhenDestroyed, ticks, "no ticks once the owner is gone");
 		}
 	}
