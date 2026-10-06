@@ -15,6 +15,7 @@
         "AK.Tutorials",
         "AK.Content",
         "AK.Editor",
+        "AK.UISystem.Editor",
         "AK.Core.UID.Editor",
         "UniTask",
         "Reflex",
