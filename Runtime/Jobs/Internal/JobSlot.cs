@@ -12,11 +12,11 @@ namespace AK.Jobs
 	/// </summary>
 	internal struct JobSlot
 	{
-		public IJob         Job;
-		public IJobCallback Callback;
-		public JobKind      Kind;
-		public byte         Phase;
-		public bool         Cancelled;
+		public IFrameJob         Job;
+		public IFrameJobCallback Callback;
+		public JobKind           Kind;
+		public byte              Phase;
+		public bool              Cancelled;
 
 		/// <summary>Hand-off generation the job was scheduled in; equal to the scheduler's current one while the job is still pending.</summary>
 		public int ScheduledGen;

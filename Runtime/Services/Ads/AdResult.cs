@@ -14,6 +14,14 @@ namespace AK.Services
 		public bool Success;
 
 		/// <summary>
+		/// Whether the ad reached the screen: an impression, whether or not it completed. True
+		/// for every success, and for an ad the user closed early or that never reported
+		/// closing. Frequency caps count these, and a show that was displayed is never handed
+		/// to another provider.
+		/// </summary>
+		public bool Displayed;
+
+		/// <summary>
 		/// The placement ID that was requested.
 		/// </summary>
 		public string PlacementId;
@@ -53,6 +61,7 @@ namespace AK.Services
 		public static AdResult Succeeded(string placementId, AdType adType, string networkName = null, double revenue = 0, bool rewardGranted = false) => new()
 		{
 			Success = true,
+			Displayed = true,
 			PlacementId = placementId,
 			AdType = adType,
 			FailureReason = null,
@@ -72,6 +81,24 @@ namespace AK.Services
 			RewardGranted = false,
 			NetworkName = null,
 			Revenue = 0
+		};
+
+		/// <summary>
+		/// An ad that reached the screen but didn't complete: closed before its reward, or
+		/// failed or went silent after displaying. It still counts as an impression and may
+		/// have earned revenue.
+		/// </summary>
+		public static AdResult Incomplete(string placementId, AdType adType, AdErrorType errorType, string reason, string networkName = null, double revenue = 0) => new()
+		{
+			Success = false,
+			Displayed = true,
+			PlacementId = placementId,
+			AdType = adType,
+			FailureReason = reason,
+			ErrorType = errorType,
+			RewardGranted = false,
+			NetworkName = networkName,
+			Revenue = revenue
 		};
 
 		/// <summary>
@@ -180,6 +207,18 @@ namespace AK.Services
 		UnsupportedAdType,
 
 		/// <summary>Unknown or unclassified error.</summary>
-		Unknown
+		Unknown,
+
+		/// <summary>A wait ran out: no load result, or an ad that never reached the screen or never reported closing.</summary>
+		Timeout,
+
+		/// <summary>Another fullscreen ad is already showing.</summary>
+		AlreadyShowing,
+
+		/// <summary>Switched off, locally or by remote config: the placement, its ad type, or all ads.</summary>
+		PlacementDisabled,
+
+		/// <summary>The player's level is outside the range the placement or its ad type shows at.</summary>
+		LevelRestricted
 	}
 }

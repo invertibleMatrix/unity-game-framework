@@ -7,7 +7,7 @@ namespace AK.Systems
 	/// <summary>
 	/// Where view instances come from and go to: the repository's prefabs (cached by kind,
 	/// with whether each is a screen so the show path never re-queries components), the
-	/// pool, template clones, and destruction.
+	/// pool, template clones, and destruction. A view the pool has no room for is destroyed.
 	/// </summary>
 	internal sealed class ViewFactory
 	{
@@ -29,11 +29,12 @@ namespace AK.Systems
 
 		private Dictionary<ViewKey, PrefabEntry> _prefabs;
 
-		public ViewFactory(UIViewRepository repository, Transform viewsRoot, Container container)
+		public ViewFactory(UIViewRepository repository, Transform viewsRoot, Container container,
+		                   int poolCapacityPerKind = ViewPool.DefaultCapacityPerKind)
 		{
 			_repository = repository;
 			_viewsRoot = viewsRoot;
-			_pool = new ViewPool(viewsRoot);
+			_pool = new ViewPool(viewsRoot, poolCapacityPerKind);
 			Container = container;
 		}
 
@@ -47,6 +48,9 @@ namespace AK.Systems
 		/// instead of pooled: reparenting a GameObject that is itself being destroyed is an error.
 		/// </summary>
 		public bool IsShuttingDown { get; set; }
+
+		/// <summary>True when a closing view of this kind goes to the pool: not shutting down, and room for its kind.</summary>
+		public bool CanPool(UIView view) => !IsShuttingDown && _pool.HasRoomFor(view);
 
 		public bool TryGetPrefab(ViewKey key, out PrefabEntry entry)
 		{
@@ -80,7 +84,11 @@ namespace AK.Systems
 			return go.GetComponent<TView>();
 		}
 
-		public void Release(UIView view) => _pool.Release(view);
+		/// <summary>Shelves a settled view, or destroys it when its kind's pool has filled up meanwhile.</summary>
+		public void Release(UIView view)
+		{
+			if (!_pool.Release(view)) Destroy(view);
+		}
 
 		public static void Destroy(UIView view)
 		{

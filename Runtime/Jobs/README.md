@@ -53,8 +53,8 @@ The two barrier events are the memory fences. The only atomics in the system are
 | Your code | Thread | Unity API allowed? |
 |---|---|---|
 | `Schedule`, `Cancel`, `Register`, `batch.Add`, reading `batch.Results`, `Stats` | main (the scheduler's creating thread; anything else throws) | yes |
-| `IJob.Execute` | a worker | **no** |
-| `IJobCallback.OnComplete` | main, inside the barrier, before workers are kicked | yes |
+| `IFrameJob.Execute` | a worker | **no** |
+| `IFrameJobCallback.OnComplete` | main, inside the barrier, before workers are kicked | yes |
 
 "Unity API" means engine calls: `UnityEngine.Object` and everything derived from it, `Time`, `Physics`, `NavMesh`, `UnityEngine.Random`, `Resources`, `Debug.Log` in a hot loop. Pure value types — `Vector3`, `Quaternion`, `Mathf`, `Color`, `Bounds` — are just arithmetic and are fine anywhere.
 
@@ -81,13 +81,13 @@ Everything lives in `AK.Jobs`. This is the whole public surface.
 ```csharp
 public interface IJobScheduler : IDisposable
 {
-    JobHandle Schedule(IJob job, int phase = 0);            // runs once, next frame
-    JobHandle ScheduleRepeating(IJob job, int phase = 0);   // every frame from the next one until cancelled
-    bool      Cancel(JobHandle handle);                     // false if stale or already cancelled
-    bool      IsPending(JobHandle handle);                  // true until the completion is delivered
+    FrameJobHandle Schedule(IFrameJob job, int phase = 0);            // runs once, next frame
+    FrameJobHandle ScheduleRepeating(IFrameJob job, int phase = 0);   // every frame from the next one until cancelled
+    bool           Cancel(FrameJobHandle handle);                     // false if stale or already cancelled
+    bool           IsPending(FrameJobHandle handle);                  // true until the completion is delivered
 
-    void Register<TJob>(JobBatch<TJob> batch)   where TJob : struct, IJob;   // rotate it at every barrier
-    void Unregister<TJob>(JobBatch<TJob> batch) where TJob : struct, IJob;
+    void Register<TJob>(JobBatch<TJob> batch)   where TJob : struct, IFrameJob;   // rotate it at every barrier
+    void Unregister<TJob>(JobBatch<TJob> batch) where TJob : struct, IFrameJob;
 
     bool IsIdle { get; }
     void WaitForIdle();                                     // blocks; teardown only
@@ -105,25 +105,25 @@ public sealed class JobScheduler : IJobScheduler
 
 public sealed class JobSchedulerOptions
 {
-    public int WorkerCount        = clamp(cores - 2, 1, 4);
+    public int WorkerCount        = clamp(cores - 2, 1, 4);   // 0: no threads; always 0 on WebGL
     public int PhaseCount         = 1;      // ordered phases per frame (section 5.6)
     public int ChunksPerWorker    = 4;      // automatic chunking target
     public int MinBatchChunkItems = 16;     // never split a batch finer than this
     public int SpinCount          = 20;     // spins before a worker parks in the kernel
 }
 
-public interface IJob          { void Execute(in FrameContext ctx); }        // worker thread
-public interface IJobCallback  { void OnComplete(bool cancelled); }          // main thread, exactly once per Schedule
+public interface IFrameJob          { void Execute(in FrameContext ctx); }        // worker thread
+public interface IFrameJobCallback  { void OnComplete(bool cancelled); }          // main thread, exactly once per Schedule
 
 public readonly struct FrameContext { int Frame; float Time, UnscaledTime, DeltaTime; }
 
-public readonly struct JobHandle : IEquatable<JobHandle>   // 8 bytes, generational; stale handles are rejected, never aliased
+public readonly struct FrameJobHandle : IEquatable<FrameJobHandle>   // 8 bytes, generational; stale handles are rejected, never aliased
 {
-    public static readonly JobHandle Invalid;
+    public static readonly FrameJobHandle Invalid;
     public bool IsValid { get; }
 }
 
-public sealed class JobBatch<TJob> where TJob : struct, IJob
+public sealed class JobBatch<TJob> where TJob : struct, IFrameJob
 {
     public JobBatch(int capacity, int phase = 0, int itemsPerChunk = 0);   // 0 = automatic chunking
     public ref TJob    Add();                 // reserve the next element, cleared, filled in place
@@ -144,12 +144,12 @@ public readonly struct JobSchedulerStats
 // Convenience. Allocates a wrapper per call — for event-rate work, not per-frame work.
 public static class JobSchedulerExtensions
 {
-    public static JobHandle Schedule(this IJobScheduler s, Action<FrameContext> execute, Action<bool> onComplete = null, int phase = 0);
-    public static JobHandle ScheduleRepeating(this IJobScheduler s, Action<FrameContext> execute, Action<bool> onComplete = null, int phase = 0);
+    public static FrameJobHandle Schedule(this IJobScheduler s, Action<FrameContext> execute, Action<bool> onComplete = null, int phase = 0);
+    public static FrameJobHandle ScheduleRepeating(this IJobScheduler s, Action<FrameContext> execute, Action<bool> onComplete = null, int phase = 0);
 }
 ```
 
-Two things the signatures do not say. First, the callback is not a parameter: a job that also implements `IJobCallback` gets its `OnComplete` called; a job that does not is fire-and-forget. Second, `Schedule`/`ScheduleRepeating` accept any `IJob`, including a struct boxed once, but the fast path for many small homogeneous jobs is `JobBatch<TJob>`, not many `Schedule` calls.
+Two things the signatures do not say. First, the callback is not a parameter: a job that also implements `IFrameJobCallback` gets its `OnComplete` called; a job that does not is fire-and-forget. Second, `Schedule`/`ScheduleRepeating` accept any `IFrameJob`, including a struct boxed once, but the fast path for many small homogeneous jobs is `JobBatch<TJob>`, not many `Schedule` calls.
 
 ---
 
@@ -170,7 +170,7 @@ public void InstallBindings(ContainerBuilder builder)
 
 `AttachToPlayerLoop` inserts a `JobScheduler.PlayerLoopTick` system at index 0 of `EarlyUpdate`, so the barrier runs before any script's `Update`, and subscribes `Application.quitting` and (in the editor) exit-play-mode to `Dispose`. You therefore normally never call `Dispose` yourself for an app-lifetime scheduler. A scheduler scoped to a scene or a mode should be disposed explicitly when that scope ends; `Dispose` waits up to 2 s for the frame in flight, delivers its completions, then delivers `OnComplete(cancelled: true)` to everything that never ran.
 
-`WorkerCount` defaults to `clamp(cores − 2, 1, 4)`. Unity already runs a render thread and its own job workers; on a big.LITTLE phone an extra managed worker may land on a little core. The default is a starting point until the benchmark scene (`UGFW/Examples/Source/Jobs/JobSchedulerBenchmark.cs`) has been run on the target device.
+`WorkerCount` defaults to `clamp(cores − 2, 1, 4)`. Unity already runs a render thread and its own job workers; on a big.LITTLE phone an extra managed worker may land on a little core. The default is a starting point until the benchmark scene (`UGFW/Examples/Source/Jobs/JobSchedulerBenchmark.cs`) has been run on the target device. `0` starts no threads: the barrier runs the frame on the main thread, and completions and batch results still arrive at the barrier after, as they do with workers. WebGL, which can't start threads, always runs that way.
 
 ---
 
@@ -181,7 +181,7 @@ public void InstallBindings(ContainerBuilder builder)
 The job object carries inputs, outputs and scratch. Main fills inputs, the worker writes outputs, main reads them in `OnComplete`.
 
 ```csharp
-public sealed class ScoreCandidatesJob : IJob, IJobCallback
+public sealed class ScoreCandidatesJob : IFrameJob, IFrameJobCallback
 {
     public List<Candidate> Candidates;           // in  — handed over; main does not touch it until OnComplete
     public Candidate       Best;                 // out — written by the worker, read on main in OnComplete
@@ -203,7 +203,7 @@ public sealed class ScoreCandidatesJob : IJob, IJobCallback
     }
 }
 
-JobHandle handle = _scheduler.Schedule(new ScoreCandidatesJob { Candidates = list, Published = ApplyChoice });
+FrameJobHandle handle = _scheduler.Schedule(new ScoreCandidatesJob { Candidates = list, Published = ApplyChoice });
 ```
 
 `OnComplete` is guaranteed exactly once per `Schedule`, on the main thread, inside a barrier. `cancelled == false` means the job ran; `cancelled == true` means it was withdrawn or the scheduler was disposed — and, if the cancel arrived after hand-off, it may still have run once. Treat `cancelled` as "do not use the outputs", not as "it never executed".
@@ -214,7 +214,7 @@ Per-frame work should not allocate a job per frame. Keep the object, refill inpu
 
 ```csharp
 private readonly ScoreCandidatesJob _job = new();
-private JobHandle _handle;
+private FrameJobHandle _handle;
 
 void Update()
 {
@@ -229,7 +229,7 @@ void Update()
 ### 5.3 Repeating jobs
 
 ```csharp
-JobHandle h = _scheduler.ScheduleRepeating(_influenceMapJob, phase: 0);
+FrameJobHandle h = _scheduler.ScheduleRepeating(_influenceMapJob, phase: 0);
 // ... later
 _scheduler.Cancel(h);   // OnComplete(cancelled: true) fires once at the next barrier
 ```
@@ -245,8 +245,8 @@ bool withdrawn = _scheduler.Cancel(handle);
 - Cancelled **before** hand-off: the job never runs.
 - Cancelled **after** hand-off: it may run once more this frame; you cannot stop a chunk mid-flight.
 - Either way `OnComplete(true)` fires at the next barrier, exactly once.
-- A stale handle (job already completed, slot reused by a later job) returns `false` and touches nothing. This is what the generation in `JobHandle` buys: you can keep handles around carelessly.
-- `Cancel(JobHandle.Invalid)` returns `false`.
+- A stale handle (job already completed, slot reused by a later job) returns `false` and touches nothing. This is what the generation in `FrameJobHandle` buys: you can keep handles around carelessly.
+- `Cancel(FrameJobHandle.Invalid)` returns `false`.
 
 There is no per-job "cancelled" flag a worker checks, deliberately: that would be one more cross-thread field. Cancellation is a main-thread bookkeeping change that takes effect at the barrier.
 
@@ -255,7 +255,7 @@ There is no per-job "cancelled" flag a worker checks, deliberately: that would b
 Homogeneous struct jobs stored contiguously. A worker streams through the array with a direct call per element; there is no object per job and nothing to chase.
 
 ```csharp
-public struct SteerJob : IJob
+public struct SteerJob : IFrameJob
 {
     public int     Index;                 // which agent this element belongs to
     public Vector3 Position, Target;      // in
@@ -319,7 +319,7 @@ Measured in the editor (Mono, 64-bit) with the profiler's `GC.Alloc` recorder ac
 | `new JobBatch<TJob>(capacity)` | exactly 3 arrays of `capacity × sizeof(TJob)` | 10 000 × 16-byte elements = 480 KB. Doubles only if `Add` exceeds capacity. |
 | Warm-up frames | slot map and lane arrays double until they fit the working set | a handful of allocations in the first frames, then none |
 | Delegate form `Schedule(ctx => ..., done => ...)` | 1 wrapper object per call (~40 B) plus the caller's delegates and closure (2–3 objects, once per closure scope) | event-rate only, by design |
-| A struct passed to `Schedule(IJob)` | one box per call | use `JobBatch<TJob>` for struct jobs |
+| A struct passed to `Schedule(IFrameJob)` | one box per call | use `JobBatch<TJob>` for struct jobs |
 | A job that throws | the exception, its stack trace and the log string — kilobytes | `LastFrameFaults` is the alarm; a job faulting every frame is a GC problem, not just a logging one |
 | `Dispose` | a few objects (thread exit) | one-time |
 
@@ -333,18 +333,18 @@ Hypothetical, but each one exists to show a rule from section 2 in practice. Non
 
 ### 6.1 Pathfinding requests for many agents — pooling, supersede, stale handles
 
-Requests are pooled objects (rule 3); a new request for the same agent cancels the old one; the callback checks it is still the current request before touching the dictionary, which is why `JobHandle` has equality.
+Requests are pooled objects (rule 3); a new request for the same agent cancels the old one; the callback checks it is still the current request before touching the dictionary, which is why `FrameJobHandle` has equality.
 
 ```csharp
-public sealed class PathRequest : IJob, IJobCallback
+public sealed class PathRequest : IFrameJob, IFrameJobCallback
 {
     private readonly PathfindingService _service;
     public PathRequest(PathfindingService service) => _service = service;
 
-    public GridSnapshot Grid;                            // in — immutable while any request holds it
-    public Vector2Int   From, To;                        // in
-    public Agent        Owner;                           // main-only; never touched in Execute
-    public JobHandle    Handle;
+    public GridSnapshot   Grid;                          // in — immutable while any request holds it
+    public Vector2Int     From, To;                      // in
+    public Agent          Owner;                         // main-only; never touched in Execute
+    public FrameJobHandle Handle;
 
     public readonly List<Vector2Int> Path = new(64);     // out
     private readonly NodeHeap _open   = new(256);        // scratch, owned, reused
@@ -363,13 +363,13 @@ public sealed class PathfindingService
 {
     private readonly IJobScheduler _scheduler;
     private readonly Stack<PathRequest> _pool = new();
-    private readonly Dictionary<Agent, JobHandle> _inFlight = new();
+    private readonly Dictionary<Agent, FrameJobHandle> _inFlight = new();
 
     public PathfindingService(IJobScheduler scheduler) => _scheduler = scheduler;
 
     public void RequestPath(Agent agent, Vector2Int to, GridSnapshot grid)
     {
-        if (_inFlight.TryGetValue(agent, out JobHandle previous)) _scheduler.Cancel(previous);
+        if (_inFlight.TryGetValue(agent, out FrameJobHandle previous)) _scheduler.Cancel(previous);
 
         PathRequest request = _pool.Count > 0 ? _pool.Pop() : new PathRequest(this);
         request.Grid = grid; request.From = agent.Cell; request.To = to; request.Owner = agent;
@@ -381,7 +381,7 @@ public sealed class PathfindingService
     {
         if (!cancelled) request.Owner.FollowPath(request.Path);
 
-        if (_inFlight.TryGetValue(request.Owner, out JobHandle current) && current == request.Handle)
+        if (_inFlight.TryGetValue(request.Owner, out FrameJobHandle current) && current == request.Handle)
             _inFlight.Remove(request.Owner);              // a superseded request must not remove its successor's handle
 
         request.Owner = null;
@@ -403,7 +403,7 @@ public sealed class NeighbourSnapshot
     public int       Count;
 }
 
-public struct FlockJob : IJob
+public struct FlockJob : IFrameJob
 {
     public int               Index;
     public Vector3           Position, Target;   // in
@@ -465,7 +465,7 @@ Why two snapshots are enough: when `PendingCount == 0` right after a barrier, th
 Phase 0 is a batch that integrates particles and writes each result into `Shared[Index]`. Phase 1 is one reference job that reads the whole `Shared` array and computes the bounds; its result reaches the main thread through `OnComplete`. Because it is scheduled every frame, it is gated on the batch's hand-off, not on its own completion.
 
 ```csharp
-public struct IntegrateJob : IJob
+public struct IntegrateJob : IFrameJob
 {
     public int       Index;
     public Vector3   Position, Velocity;       // in/out
@@ -481,7 +481,7 @@ public struct IntegrateJob : IJob
     }
 }
 
-public sealed class BoundsJob : IJob, IJobCallback
+public sealed class BoundsJob : IFrameJob, IFrameJobCallback
 {
     public Vector3[] Shared;
     public int       Count;
@@ -524,7 +524,7 @@ Why the same `BoundsJob` object every frame is safe here: its previous run finis
 ### 6.4 Procedural mesh bake — a heavy one-shot with owned buffers
 
 ```csharp
-public sealed class ChunkMeshJob : IJob, IJobCallback
+public sealed class ChunkMeshJob : IFrameJob, IFrameJobCallback
 {
     public byte[] Voxels;                                    // in — given to the job; main leaves it alone until OnComplete
     public Mesh   Target;                                    // main-only
@@ -554,7 +554,7 @@ One thing to know before scheduling a job that takes longer than a frame: the ex
 ### 6.5 Search-as-you-type — event-rate work with supersede
 
 ```csharp
-private JobHandle _search;
+private FrameJobHandle _search;
 
 void OnQueryChanged(string query)
 {
@@ -599,19 +599,19 @@ For when you want the bottom-up picture. Nothing here is needed to use the syste
 2. `Collect()` — for every executed one-shot, in schedule order, free its slot and call `OnComplete(false)`; cancelled slots get `OnComplete(true)`. Batches promote their executing buffer to `Results`.
 3. `HandOff()` — per phase lane: swap pending ⇄ executing arrays, compact out jobs cancelled before hand-off, merge repeating jobs staged during the frame into the main-owned repeating array (ordered compaction on cancel), rotate every registered batch's three buffers.
 4. `BuildChunks()` — cut every source (one-shot array, repeating array, each batch) into contiguous chunks, aiming for `ChunksPerWorker × WorkerCount` per source, never finer than `MinBatchChunkItems` for batches; sort by phase.
-5. Publish the frozen `FrameContext`, reset the chunk cursor and phase counters, `Reset` the done-event, `Set` every worker's kick-event.
+5. Publish the frozen `FrameContext`, reset the chunk cursor and phase counters, `Reset` the done-event, `Set` every worker's kick-event. Without workers, the barrier runs every chunk itself, in order, and sets the done-event.
 
-**Workers** (`WorkerMain`): wait on a private kick-event, reset it, then loop `Interlocked.Increment(ref _nextChunk) - 1` to claim chunks. A chunk whose phase is not yet open spins briefly, then yields, until the last chunk of the previous phase opens it. Each chunk runs its slice with a per-element `try/catch` that logs and counts. The last worker to finish sets the done-event. Ownership transfer, not locking: the kick-event `Set`/`Wait` and done-event `Set`/`IsSet` pairs are the release/acquire fences that make the main thread's writes visible to workers and vice versa.
+**Workers** (`WorkerMain`): wait on a private kick-event, reset it, then loop `Interlocked.Increment(ref _nextChunk) - 1` to claim chunks. A chunk whose phase is not yet open spins briefly, then yields, until the last chunk of the previous phase opens it. Each chunk runs its slice with a per-element `try/catch` that logs and counts. The last worker to finish sets the done-event. Ownership transfer, not locking: the kick-event `Set`/`Wait` and done-event `Set`/`IsSet` pairs are the release/acquire fences that make the main thread's writes visible to workers and vice versa. The events are `ManualResetSignal`s, a volatile flag with a lock behind it, because `ManualResetEventSlim` allocates its lock the first time a thread blocks on it: a GC allocation in whichever frame first parks a worker.
 
-**Job slots** live in a `SlotMap<JobSlot>` (main-thread-only, generational). `JobHandle` wraps the `Handle<JobSlot>`; `Cancel` flips a flag in the slot and bumps a lane counter — the worker never looks at it. A stale handle fails the generation check.
+**Job slots** live in a `SlotMap<JobSlot>` (main-thread-only, generational). `FrameJobHandle` wraps the `Handle<JobSlot>`; `Cancel` flips a flag in the slot and bumps a lane counter — the worker never looks at it. A stale handle fails the generation check.
 
 **Batches** hold three `TJob[]` arrays. `Add` writes into pending; `Rotate` at the barrier makes pending the executing array, the finished executing array the results, and the old results the new pending (cleared lazily by `Add`). If the executing array was empty, results are left in place — the sticky-results rule.
 
 **Hot loops** (`ReferenceJobRunner.ExecuteRange`, `JobBatch.ExecuteRange`) carry `[Il2CppSetOption(ArrayBoundsChecks/NullChecks, false)]`, which gives IL2CPP pointer-loop codegen without `unsafe` anywhere in the assembly. Boehm GC is non-moving, so pointer-free struct arrays are also never scanned.
 
-**Dispose**: detach from the player loop; if a frame is in flight wait up to 2 s and collect it (warn and abandon it otherwise); set `_stopping`, kick every worker so it observes the flag and exits, join each with a 2 s timeout, never `Thread.Abort`; then deliver `OnComplete(true)` to every job that never ran, unregister every batch, and dispose the events. Double `Dispose` is a no-op; every other call afterwards throws `ObjectDisposedException`.
+**Dispose**: detach from the player loop; if a frame is in flight wait up to 2 s and collect it (warn and abandon it otherwise); set `_stopping`, kick every worker so it observes the flag and exits, join each with a 2 s timeout, never `Thread.Abort`; then deliver `OnComplete(true)` to every job that never ran, and unregister every batch. Double `Dispose` is a no-op; every other call afterwards throws `ObjectDisposedException`.
 
-**Invariants the tests pin down** (`UGFW/Tests/EditMode/Jobs`, `UGFW/Tests/PlayMode/Jobs`): a job scheduled mid-frame is invisible to workers until the next barrier; completion order equals schedule order for 1, 2 and 4 workers; a throwing job kills nothing; a skipped barrier swaps nothing; a phase-1 job observes phase-0 output over 1000 frames with 4 workers; dispose mid-flight collects the frame, cancels the rest and joins the threads; steady state performs zero GC allocations on the main thread and on every worker (measured with the profiler's `GC.Alloc` recorder — Unity's Mono returns 0 from `GC.GetAllocatedBytesForCurrentThread` unconditionally, so byte deltas from it prove nothing); the player-loop system is present while attached and gone after dispose.
+**Invariants the tests pin down** (`UGFW/Tests/EditMode/Jobs`, `UGFW/Tests/PlayMode/Jobs`): a job scheduled mid-frame is invisible to workers until the next barrier; completion order equals schedule order for 1, 2 and 4 workers, and without any; a throwing job kills nothing; a skipped barrier swaps nothing; a phase-1 job observes phase-0 output over 1000 frames with 4 workers; dispose mid-flight collects the frame, cancels the rest and joins the threads; steady state performs zero GC allocations on the main thread and on every worker (measured with the profiler's `GC.Alloc` recorder — Unity's Mono returns 0 from `GC.GetAllocatedBytesForCurrentThread` unconditionally, so byte deltas from it prove nothing; a count over every thread is the fewest of three runs, as the editor's own threads allocate now and then); the player-loop system is present while attached and gone after dispose.
 
 ---
 

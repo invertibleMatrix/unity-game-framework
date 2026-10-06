@@ -12,18 +12,24 @@ namespace AK.Services.Analytics.Providers
 		protected bool _isInitialized;
 		protected AnalyticsMeta _metaDataRepository;
 		protected AnalyticsInitOptions _options;
+		protected AnalyticsTaxonomy _taxonomy = AnalyticsTaxonomy.Empty;
 		protected string _pendingUserId;
 
 		public abstract string ProviderName { get; }
 		public bool IsEnabled => _isEnabled && _isInitialized;
 
-		public virtual void Configure(AnalyticsInitOptions options)
+		public virtual void Configure(AnalyticsInitOptions options, AnalyticsTaxonomy taxonomy)
 		{
 			_options = options;
+			_taxonomy = taxonomy ?? AnalyticsTaxonomy.Empty;
 			if (options != null && !string.IsNullOrEmpty(options.UserId))
 			{
 				_pendingUserId = options.UserId;
 			}
+		}
+
+		public virtual void EarlyStart()
+		{
 		}
 
 		public virtual void Initialize(AnalyticsMeta analyticsMeta, Dictionary<string, string> config)
@@ -69,9 +75,10 @@ namespace AK.Services.Analytics.Providers
 
 		public abstract void SetUserID(string userID);
 
+		/// <summary>Sets the user property named for dimension slot <paramref name="index"/> by the taxonomy.</summary>
 		public virtual void SetCustomDimension(int index, string value)
 		{
-			SetUserProperty("custom_0" + index, value);
+			SetUserProperty(_taxonomy.DimensionName(index), value);
 		}
 
 		public abstract void Flush();

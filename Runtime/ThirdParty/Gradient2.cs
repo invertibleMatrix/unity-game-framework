@@ -1,17 +1,52 @@
-/// Credit Brad Nelson (playemgames - bitbucket)
-/// Modified Gradient effect script from http://answers.unity3d.com/questions/1086415/gradient-text-in-unity-522-basevertexeffect-is-obs.html
-/// <summary>
-/// -Uses Unity's Gradient class to define the color
-/// -Offset is now limited to -1,1
-/// -Multiple color blend modes
-///
-/// Remember that for radial and diamond gradients, colors are applied per-vertex so if you have multiple points on your gradient where the color changes and there aren't enough vertices, you won't see all of the colors.
-/// </summary>
+// Gradient2, from Unity UI Extensions: https://github.com/Unity-UI-Extensions/com.unity.uiextensions
+// Credit Brad Nelson (playemgames - bitbucket)
+// Modified Gradient effect script from http://answers.unity3d.com/questions/1086415/gradient-text-in-unity-522-basevertexeffect-is-obs.html
+// Changed for UGFW: it compiles into AK.Core, in the AK.UI namespace, and a rebuild allocates
+// nothing.
+//
+// Unity UI Extensions License (BSD-3-Clause)
+//
+// Copyright (c) 2019
+//
+// Redistribution and use in source and binary forms, with or without modification, are permitted
+// provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice, this list of conditions
+//    and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice, this list of
+//    conditions and the following disclaimer in the documentation and/or other materials provided
+//    with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its contributors may be used to
+//    endorse or promote products derived from this software without specific prior written
+//    permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+// IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+// FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+// IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+// OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 using System;
 using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Pool;
+using UnityEngine.UI;
 
-namespace UnityEngine.UI.Extensions
+namespace AK.UI
 {
+    /// <summary>
+    /// -Uses Unity's Gradient class to define the color
+    /// -Offset is now limited to -1,1
+    /// -Multiple color blend modes
+    ///
+    /// Remember that for radial and diamond gradients, colors are applied per-vertex so if you have multiple points on your gradient where the color changes and there aren't enough vertices, you won't see all of the colors.
+    ///
+    /// A rebuild allocates nothing: its lists come from Unity's <see cref="ListPool{T}"/>.
+    /// </summary>
     [AddComponentMenu("UI/Effects/Extensions/Gradient2")]
     public class Gradient2 : BaseMeshEffect
     {
@@ -103,7 +138,7 @@ namespace UnityEngine.UI.Extensions
             if (!IsActive() || helper.currentVertCount == 0)
                 return;
 
-            List<UIVertex> _vertexList = new List<UIVertex>();
+            using var vertexLease = ListPool<UIVertex>.Get(out List<UIVertex> _vertexList);
 
             helper.GetUIVertexStream(_vertexList);
 
@@ -116,13 +151,12 @@ namespace UnityEngine.UI.Extensions
                         Rect bounds = GetBounds(_vertexList);
                         float min = bounds.xMin;
                         float w = bounds.width;
-                        Func<UIVertex, float> GetPosition = v => v.position.x;
+                        bool vertical = GradientType == Type.Vertical;
 
-                        if (GradientType == Type.Vertical)
+                        if (vertical)
                         {
                             min = bounds.yMin;
                             w = bounds.height;
-                            GetPosition = v => v.position.y;
                         }
 
                         float width = w == 0f ? 0f : 1f / w / Zoom;
@@ -138,7 +172,8 @@ namespace UnityEngine.UI.Extensions
                         for (int i = 0; i < helper.currentVertCount; i++)
                         {
                             helper.PopulateUIVertex(ref vertex, i);
-                            vertex.color = BlendColor(vertex.color, EffectGradient.Evaluate((GetPosition(vertex) - min) * width - offset));
+                            float position = vertical ? vertex.position.y : vertex.position.x;
+                            vertex.color = BlendColor(vertex.color, EffectGradient.Evaluate((position - min) * width - offset));
                             helper.SetUIVertex(vertex, i);
                         }
                     }
@@ -264,18 +299,26 @@ namespace UnityEngine.UI.Extensions
 
         void SplitTrianglesAtGradientStops(List<UIVertex> _vertexList, Rect bounds, float zoomOffset, VertexHelper helper)
         {
-            List<float> stops = FindStops(zoomOffset, bounds);
+            using var stopsLease = ListPool<float>.Get(out List<float> stops);
+
+            FindStops(zoomOffset, bounds, stops);
             if (stops.Count > 0)
             {
+                // Per-triangle scratch, cleared for each triangle.
+                using var originLease = ListPool<int>.Get(out List<int> originIndices);
+                using var startsLease = ListPool<UIVertex>.Get(out List<UIVertex> starts);
+                using var endsLease = ListPool<UIVertex>.Get(out List<UIVertex> ends);
+                Span<float> positions = stackalloc float[3];
+
                 helper.Clear();
 
                 int nCount = _vertexList.Count;
                 for (int i = 0; i < nCount; i += 3)
                 {
-                    float[] positions = GetPositions(_vertexList, i);
-                    List<int> originIndices = new List<int>(3);
-                    List<UIVertex> starts = new List<UIVertex>(3);
-                    List<UIVertex> ends = new List<UIVertex>(2);
+                    GetPositions(_vertexList, i, positions);
+                    originIndices.Clear();
+                    starts.Clear();
+                    ends.Clear();
 
                     for (int s = 0; s < stops.Count; s++)
                     {
@@ -407,9 +450,8 @@ namespace UnityEngine.UI.Extensions
             }
         }
 
-        float[] GetPositions(List<UIVertex> _vertexList, int index)
+        void GetPositions(List<UIVertex> _vertexList, int index, Span<float> positions)
         {
-            float[] positions = new float[3];
             if (GradientType == Type.Horizontal)
             {
                 positions[0] = _vertexList[index].position.x;
@@ -422,24 +464,34 @@ namespace UnityEngine.UI.Extensions
                 positions[1] = _vertexList[index + 1].position.y;
                 positions[2] = _vertexList[index + 2].position.y;
             }
-            return positions;
         }
 
-        List<float> FindStops(float zoomOffset, Rect bounds)
+        void FindStops(float zoomOffset, Rect bounds, List<float> stops)
         {
-            List<float> stops = new List<float>();
             var offset = Offset * (1 - zoomOffset);
             var startBoundary = zoomOffset - offset;
             var endBoundary = (1 - zoomOffset) - offset;
 
-            foreach (var color in EffectGradient.colorKeys)
+            UnityEngine.Gradient gradient = EffectGradient;
+#if UNITY_6000_2_OR_NEWER
+            Span<GradientColorKey> colorKeys = stackalloc GradientColorKey[gradient.colorKeyCount];
+            gradient.GetColorKeys(colorKeys);
+            Span<GradientAlphaKey> alphaKeys = stackalloc GradientAlphaKey[gradient.alphaKeyCount];
+            gradient.GetAlphaKeys(alphaKeys);
+#else
+            // Before Unity 6.2 the keys come only as new arrays.
+            GradientColorKey[] colorKeys = gradient.colorKeys;
+            GradientAlphaKey[] alphaKeys = gradient.alphaKeys;
+#endif
+
+            foreach (var color in colorKeys)
             {
                 if (color.time >= endBoundary)
                     break;
                 if (color.time > startBoundary)
                     stops.Add((color.time - startBoundary) * Zoom);
             }
-            foreach (var alpha in EffectGradient.alphaKeys)
+            foreach (var alpha in alphaKeys)
             {
                 if (alpha.time >= endBoundary)
                     break;
@@ -455,7 +507,7 @@ namespace UnityEngine.UI.Extensions
                 size = bounds.height;
             }
 
-            stops.Sort();
+            SortStops(stops);
             for (int i = 0; i < stops.Count; i++)
             {
                 stops[i] = (stops[i] * size) + min;
@@ -466,8 +518,23 @@ namespace UnityEngine.UI.Extensions
                     --i;
                 }
             }
+        }
 
-            return stops;
+        // An insertion sort: a gradient has at most 8 color and 8 alpha keys, and List<T>.Sort
+        // allocates a comparison delegate on every call in Unity's class libraries.
+        static void SortStops(List<float> stops)
+        {
+            for (int i = 1; i < stops.Count; i++)
+            {
+                float stop = stops[i];
+                int j = i - 1;
+                while (j >= 0 && stops[j] > stop)
+                {
+                    stops[j + 1] = stops[j];
+                    j--;
+                }
+                stops[j + 1] = stop;
+            }
         }
 
         UIVertex CreateSplitVertex(UIVertex vertex1, UIVertex vertex2, float stop)

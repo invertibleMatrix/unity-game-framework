@@ -1,4 +1,5 @@
-﻿namespace AK.Core.ResourceManagement
+﻿#if UGFW_ADDRESSABLES
+namespace AK.Core.ResourceManagement
 {
 	public readonly ref struct OperationStatus
 	{
@@ -40,3 +41,4 @@
 		}
 	}
 }
+#endif

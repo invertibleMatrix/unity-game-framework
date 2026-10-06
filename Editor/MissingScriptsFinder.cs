@@ -1,72 +1,62 @@
-using UnityEngine;
-using UnityEditor;
 using System.Collections.Generic;
-using System.Linq;
+using UnityEditor;
+using UnityEngine;
 
-public class MissingScriptsFinder : EditorWindow
+namespace AK.Editor
 {
-	[MenuItem("Tools/Missing Scripts/Find Missing Scripts")]
-	public static void FindMissing()
+	/// <summary>
+	/// Finds GameObjects whose components lost their scripts, and removes those components.
+	/// Find selects every GameObject with one under the selection; Remove clears the selected
+	/// GameObjects, with undo.
+	/// </summary>
+	public static class MissingScriptsFinder
 	{
-		// Use a HashSet to avoid selecting the same object twice 
-		// (in case you selected both a parent and a child)
-		HashSet<GameObject> brokenObjects = new HashSet<GameObject>();
+		private const string MenuRoot = "Tools/UGFW/Missing Scripts/";
 
-		foreach (GameObject selectedGo in Selection.gameObjects)
+		[MenuItem(MenuRoot + "Find Missing Scripts")]
+		public static void FindMissing()
 		{
-			// Get components on the object and ALL its children
-			// The 'true' argument ensures it finds components on inactive objects too
-			Component[] allComponents = selectedGo.GetComponentsInChildren<Component>(true);
+			// A set, so a GameObject selected along with its parent is listed once.
+			var brokenObjects = new HashSet<GameObject>();
 
-			foreach (Component c in allComponents)
+			foreach (GameObject selectedGo in Selection.gameObjects)
 			{
-				if (c == null)
+				// Inactive GameObjects too.
+				foreach (Transform t in selectedGo.GetComponentsInChildren<Transform>(true))
 				{
-					// Find the GameObject that owns this null component
-					// We use the SerializedObject trick because 'c.gameObject' 
-					// fails if the component itself is null.
-                    
-					// Actually, for missing scripts, GetComponentsInChildren returns 
-					// the objects in a way we can track. Let's use the transform approach:
-					Transform[] allTransforms = selectedGo.GetComponentsInChildren<Transform>(true);
-					foreach (Transform t in allTransforms)
+					if (GameObjectUtility.GetMonoBehavioursWithMissingScriptCount(t.gameObject) > 0)
 					{
-						if (GameObjectUtility.GetMonoBehavioursWithMissingScriptCount(t.gameObject) > 0)
-						{
-							brokenObjects.Add(t.gameObject);
-						}
+						brokenObjects.Add(t.gameObject);
 					}
-					break; 
 				}
 			}
+
+			var finalSelection = new GameObject[brokenObjects.Count];
+			brokenObjects.CopyTo(finalSelection);
+			Selection.objects = finalSelection;
 		}
 
-		// Apply the new selection (deselects everything else)
-		GameObject[] finalSelection = new GameObject[brokenObjects.Count];
-		brokenObjects.CopyTo(finalSelection);
-		Selection.objects = finalSelection;
-	}
-	
-	[MenuItem("Tools/Missing Scripts/Remove Missing From Selection")]
-	public static void RemoveMissingFromSelection()
-	{
-		GameObject[] currentSelection = Selection.gameObjects;
-		int totalRemoved = 0;
-
-		foreach (GameObject go in currentSelection)
+		[MenuItem(MenuRoot + "Remove Missing From Selection")]
+		public static void RemoveMissingFromSelection()
 		{
-			// Record the state for Undo support (Ctrl+Z)
-			Undo.RegisterCompleteObjectUndo(go, "Remove Missing Scripts");
-            
-			int count = GameObjectUtility.RemoveMonoBehavioursWithMissingScript(go);
-			if (count > 0)
-			{
-				totalRemoved += count;
-				// Marks the scene/prefab as "dirty" so Unity knows you need to save
-				EditorUtility.SetDirty(go);
-			}
-		}
+			GameObject[] currentSelection = Selection.gameObjects;
+			int totalRemoved = 0;
 
-		Debug.Log($"Successfully removed {totalRemoved} missing script slots from {currentSelection.Length} objects.");
+			foreach (GameObject go in currentSelection)
+			{
+				// Undo (Ctrl+Z) brings the slots back.
+				Undo.RegisterCompleteObjectUndo(go, "Remove Missing Scripts");
+
+				int count = GameObjectUtility.RemoveMonoBehavioursWithMissingScript(go);
+				if (count > 0)
+				{
+					totalRemoved += count;
+					// Marks the scene or prefab dirty, so it gets saved.
+					EditorUtility.SetDirty(go);
+				}
+			}
+
+			Debug.Log($"Successfully removed {totalRemoved} missing script slots from {currentSelection.Length} objects.");
+		}
 	}
 }

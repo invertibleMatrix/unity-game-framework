@@ -338,7 +338,7 @@ The two pipelines share one pause path and one resume path each — `PauseBelowA
 
 `ViewRecord.IsClosing` replaces the old closing set: a view mid-close is skipped by every lookup and a second `Close` is a no-op. The resume after a close uses the stack behaviour the view was *shown* with (captured before settle clears the per-show override), so a fragment shown with `ShowOptions(stackBehaviour: HideBelow)` over a `DoNothing` default still brings the view below back.
 
-**Editor tooling.** *AK ▸ UI ▸ View Stack Visualizer* renders the live state — channel stacks, per-parent histories, the pool, and a consistency check across them. It reads the internal parts directly (`UISystem.Registry/Screens/Histories/Pool`, visible via `InternalsVisibleTo("AK.UISystem.Editor")`); there is no reflection on field names left to break.
+**Editor tooling.** *Tools ▸ UGFW ▸ UI ▸ View Stack Visualizer* renders the live state — channel stacks, per-parent histories, the pool, and a consistency check across them. It reads the internal parts directly (`UISystem.Registry/Screens/Histories/Pool`, visible via `InternalsVisibleTo("AK.UISystem.Editor")`); there is no reflection on field names left to break.
 
 ### Static vs Dynamic Fragments
 
@@ -522,7 +522,7 @@ Add a `ViewBackgroundOverlay` component next to a UIView and the view dims every
 | Add a dark overlay behind a screen | Add a `ViewBackgroundOverlay` component to the UIView |
 | Highlight one view for a tutorial | `ViewHighlight.Enter(view)` … `ViewHighlight.Exit(view)` |
 | Create a custom animation | Extend `AnimationStrategy`, override `PlayShowAnimation` and `PlayHideAnimation` |
-| See what is on the stacks right now | *AK ▸ UI ▸ View Stack Visualizer* (editor window, live in Play Mode) |
+| See what is on the stacks right now | *Tools ▸ UGFW ▸ UI ▸ View Stack Visualizer* (editor window, live in Play Mode) |
 
 ---
 
@@ -711,7 +711,7 @@ UniResources.DisposeAssetsGroup(group);
 
 **Key principles:**
 - Always prefer `AssetReference` / `AssetReferenceT<T>` over hardcoded address strings — the Inspector validates the reference at edit time
-- Always prefer `*_Async` methods over synchronous ones — sync blocks the frame with `WaitForCompletion()`
+- Always prefer `*_Async` methods over synchronous ones — sync blocks the frame with `WaitForCompletion()`. On WebGL nothing can block, so the synchronous methods return only what is already loaded: `TryLoad*` answers false, and `LoadAsset` / `Spawn` throw `NotSupportedException`
 - Always call `DisposeAsset` / `DisposeInstance` when done — Addressables doesn't auto-release
 - Use `GetRemoteResourcesSizeAsync` / `GetRemoteDependenciesAsync` for downloadable content
 
@@ -1055,7 +1055,7 @@ UID (ScriptableObject carrying one Uid)
 
 ### SlotMap & Handles
 
-`AK.Core.Collections.SlotMap<T>` is generational slot storage: `Add` returns a `Handle<T>` (`{Index, Generation}`, 8 bytes, value-equal), `Remove` frees the slot and bumps its generation, and any handle from the previous lifetime stops resolving. Add/Remove/TryGet are O(1) and allocate nothing at steady state; `foreach` uses a struct enumerator and tolerates removal mid-walk.
+`AK.Kernel.Collections.SlotMap<T>` is generational slot storage: `Add` returns a `Handle<T>` (`{Index, Generation}`, 8 bytes, value-equal), `Remove` frees the slot and bumps its generation, and any handle from the previous lifetime stops resolving. Add/Remove/TryGet are O(1) and allocate nothing at steady state; `foreach` uses a struct enumerator and tolerates removal mid-walk.
 
 Use it wherever code keeps a reference to something that can be recycled underneath it — pooled objects, active tweens, timers, VFX bookkeeping, AI targets. A stale `Handle<T>` answers `false`; a stale C# reference points at whoever got the slot next.
 
@@ -1093,7 +1093,7 @@ Get/Lease/Release are O(1) and allocate nothing once a pool has reached its work
 
 ### Result & ErrorCode
 
-Expected failures are values, not exceptions and not `null`. `Result` (no payload) and `Result<T>` are `readonly struct`s carrying an `ErrorCode` and an optional `Detail` string that is `null` on the happy path — so success allocates nothing. Bugs still throw; only outcomes the caller is expected to handle travel as `Result`.
+Expected failures are values, not exceptions and not `null`. `Result` (no payload) and `Result<T>`, in `AK.Kernel.Results`, are `readonly struct`s carrying an `ErrorCode` and an optional `Detail` string that is `null` on the happy path — so success allocates nothing. Bugs still throw; only outcomes the caller is expected to handle travel as `Result`.
 
 ```csharp
 Result<Transaction> recorded = _transactions.Record(type, amount);
@@ -1296,14 +1296,14 @@ scheduler.AttachToPlayerLoop();                                        // ticks 
 builder.RegisterValue(scheduler, new[] { typeof(IJobScheduler) });     // Reflex disposes it with the container
 ```
 
-`WorkerCount` defaults to `clamp(cores - 2, 1, 4)`. Unity already runs a render thread and its own job workers, so more managed workers oversubscribe a phone; measure on device before raising it.
+`WorkerCount` defaults to `clamp(cores - 2, 1, 4)`. Unity already runs a render thread and its own job workers, so more managed workers oversubscribe a phone; measure on device before raising it. `0` runs the jobs on the main thread inside the barrier, with the same timing; WebGL always runs that way.
 
 ### Batches — the fast path
 
 Homogeneous struct jobs stored contiguously. The element's fields are the inputs and the outputs, so a worker streams through the array with a direct call per element and no object to chase.
 
 ```csharp
-struct SteerJob : IJob
+struct SteerJob : IFrameJob
 {
     public Vector3 Position, Target;   // in
     public Vector3 Velocity;           // out
@@ -1325,19 +1325,19 @@ A per-frame producer should add only when `batch.PendingCount == 0`. If the work
 ### Reference jobs
 
 ```csharp
-sealed class BakeJob : IJob, IJobCallback
+sealed class BakeJob : IFrameJob, IFrameJobCallback
 {
     public void Execute(in FrameContext ctx) { /* worker: pure C# */ }
     public void OnComplete(bool cancelled)   { /* main thread, exactly once */ }
 }
 
-JobHandle h = scheduler.Schedule(new BakeJob());          // runs next frame
+FrameJobHandle h = scheduler.Schedule(new BakeJob());      // runs next frame
 scheduler.Cancel(h);                                       // before hand-off: never runs; after: may run once, OnComplete(true)
 scheduler.ScheduleRepeating(job);                          // every frame until cancelled
 scheduler.Schedule(ctx => Work(), done => Refresh());      // delegate form; allocates a wrapper, not for per-frame use
 ```
 
-`JobHandle` is an 8-byte generational value: a handle whose job completed is rejected by every call instead of aliasing a later job in the same slot. Completions are delivered in schedule order regardless of how many workers ran them.
+`FrameJobHandle` is an 8-byte generational value: a handle whose job completed is rejected by every call instead of aliasing a later job in the same slot. Completions are delivered in schedule order regardless of how many workers ran them.
 
 ### Phases
 
@@ -1757,11 +1757,12 @@ notificationService.ScheduleNotification("Title", "Message", fireTime, "id", dat
 | Tool | Menu Path | Description |
 |------|-----------|-------------|
 | **Define Symbols Window** | Tools > UGFW > Define Symbols | Toggle preprocessor symbols for optional SDKs |
-| **View Stack Visualizer** | AK > UI > V2 - View Stack Visualizer | Inspect live UI channel/fragment stacks, validate consistency |
+| **App State Machine** | Tools > UGFW > App State Machine | Live state, pause stack and, with Record History on (kept per project), a transition log |
+| **View Stack Visualizer** | Tools > UGFW > UI > View Stack Visualizer | Inspect live UI channel/fragment stacks, validate consistency |
 | **UID tooling** | `Tools -> UGFW -> UID` | Identity authority, audit + build gate, collision resolver, identity inspector, catalog export (see UID System) |
-| **Missing Scripts Finder** | Tools > Missing Scripts | Find and remove missing script references |
-| **Always Start From Scene 0** | Tools > AK > AlwaysStartsFromScene0 | Force Play mode to start from bootstrap scene |
-| **Inspector Ping Button** | Automatic on all inspectors | Ping button in every Inspector header |
+| **Missing Scripts** | Tools > UGFW > Missing Scripts | Select every GameObject under the selection that has a missing script; remove them from the selected GameObjects, with undo |
+| **Play From First Scene** | Tools > UGFW > Play From First Scene | Off by default, kept per project. Play mode starts in the build's first enabled scene; the open scenes, unsaved changes included, are back when it ends. Test Runner runs are left alone |
+| **Inspector Navigation Buttons** | Tools > UGFW > Inspector Navigation Buttons | Off by default, kept per project. Back, Forward and Ping buttons in every Inspector header |
 
 ---
 

@@ -1,3 +1,4 @@
+using AK.Core.Extensions;
 using DG.Tweening;
 using System;
 using TMPro;
@@ -367,7 +368,7 @@ namespace AK.Systems
 				{
 					Close();
 				}
-			}).Play();
+			}).SetTimeDomain(TimeDomain).Play();
 		}
 	}
 

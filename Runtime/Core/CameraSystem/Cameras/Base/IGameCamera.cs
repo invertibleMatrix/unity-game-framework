@@ -22,8 +22,17 @@ namespace AK.Systems
         /// </summary>
         Uid<CameraType> DefaultBaseCameraId { get; }
 
+        /// <summary>Enables this camera, through its camera system when it has one.</summary>
         void Enable(bool enableGameObject = true);
+
+        /// <summary>Disables this camera, through its camera system when it has one.</summary>
         void Disable(bool disableGameObject = true);
+
+        /// <summary>
+        /// Shakes the camera, up to <paramref name="intensity"/>, for <paramref name="duration"/>
+        /// seconds. How depends on the camera: a base camera moves its transform, a Cinemachine
+        /// camera with an impulse source sends an impulse.
+        /// </summary>
         void Shake(float intensity, float duration);
     }
 }

@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -83,7 +85,7 @@ namespace AK.Systems.Animations
             Spiral
         }
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             var sequence = DOTween.Sequence();
             
@@ -143,10 +145,10 @@ namespace AK.Systems.Animations
                 sequence.Join(target.DOScale(Vector3.one, EntryDuration * 0.8f).SetEase(EntryEase));
             }
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             var sequence = DOTween.Sequence();
             
@@ -177,7 +179,7 @@ namespace AK.Systems.Animations
             // Fade out
             sequence.Join(canvasGroup.DOFade(0, ExitDuration * 0.5f).SetEase(ExitEase));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
         private Vector3 GetRotationAxis()

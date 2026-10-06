@@ -1,20 +1,42 @@
-﻿using System;
+﻿#if UGFW_ADDRESSABLES
+using System;
+using System.Collections;
 using System.Collections.Generic;
 
 namespace AK.Core.ResourceManagement
 {
 	/// <summary>
-	/// <see cref="AssetsGroup{T}"/> Is Proxy To Track The List Of Assets Loaded By <see cref="UniResources"/>
+	/// The assets one group load by <see cref="UniResources"/> returned, read-only. Disposing the
+	/// group through the loading strategy releases them and empties it.
 	/// </summary>
-	/// <typeparam name="T"></typeparam>
-	[System.Serializable]
-	public sealed class AssetsGroup<T> : List<T>
+	public sealed class AssetsGroup<T> : IReadOnlyList<T>
 	{
-		public static readonly AssetsGroup<T> Default = new(ArraySegment<T>.Empty);
-		
-		public readonly Guid Guid;
-		internal AssetsGroup(IEnumerable<T> data) : base(data) => Guid = Guid.NewGuid();
+		/// <summary>An empty group that holds no load. Disposing it does nothing.</summary>
+		public static readonly AssetsGroup<T> Default = new(Array.Empty<T>());
 
-		public void DisposeAssets() => this.Clear();
+		private readonly List<T> _assets;
+
+		/// <summary>Identifies the load behind the group.</summary>
+		public readonly Guid Guid;
+
+		internal AssetsGroup(IEnumerable<T> assets)
+		{
+			_assets = new List<T>(assets);
+			Guid    = Guid.NewGuid();
+		}
+
+		public int Count => _assets.Count;
+
+		public T this[int index] => _assets[index];
+
+		public List<T>.Enumerator GetEnumerator() => _assets.GetEnumerator();
+
+		IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
+
+		IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+		/// <summary>Empties the group once its load is released.</summary>
+		internal void DisposeAssets() => _assets.Clear();
 	}
 }
+#endif

@@ -1,4 +1,5 @@
-﻿using System;
+﻿#if UGFW_ADDRESSABLES
+using System;
 using AK.Core.ResourceManagement;
 using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
@@ -33,3 +34,4 @@ namespace AK.Core.Extensions
 		}
 	}
 }
+#endif

@@ -19,8 +19,6 @@ namespace AK.CoreDomain.Notifications
 		public NotificationsRegistry Registry      => _registry;
 		public UidRegistryAssetBase  RegistryAsset => _registry;
 
-		public NotificationDefinition DailyRewardNotification;
-
 		public void InitializeMeta() { }
 
 		/// <summary>Resolves a notification definition by identity. Null when unknown.</summary>

@@ -1,25 +1,25 @@
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
+using AK.Core.Extensions;
 using AK.CoreDomain.Ads;
+using AK.Kernel.Timing;
 using UnityEngine;
 
 namespace AK.Services.Ads.Providers
 {
 	/// <summary>
-	/// A null/no-op implementation of IAdProvider.
-	/// Useful for testing, development builds, or as a fallback when no other providers are available.
-	/// Always returns success for rewarded ads (simulates successful ad completion).
+	/// A stand-in ad network for the editor, tests and builds without one. It acts like a real
+	/// network: a load fills its ad unit after a short delay, and a show plays the loaded ad to
+	/// the end and uses it up. A simulated rewarded ad always earns its reward. With simulation
+	/// off, every load comes back with no fill.
+	/// Lowest priority, so a real network gets the first try at every load and show.
+	/// Delays run on unscaled time.
 	/// </summary>
-	public class NullAdProvider : IAdProvider
+	public sealed class NullAdProvider : IAdProvider
 	{
 		private const string TAG = "[NullAdProvider]";
 
-		public string ProviderName => "NullProvider";
-		public int Priority => int.MinValue; // Lowest priority
-		public bool IsInitialized => _isInitialized;
-		public IReadOnlyList<AdType> SupportedAdTypes => _supportedAdTypes;
-
-		private static readonly List<AdType> _supportedAdTypes = new()
+		private static readonly AdType[] Supported =
 		{
 			AdType.Rewarded,
 			AdType.Interstitial,
@@ -28,40 +28,54 @@ namespace AK.Services.Ads.Providers
 			AdType.RewardedInterstitial
 		};
 
+		private readonly Dictionary<string, string> _unitByPlacement = new();
+		private readonly HashSet<string> _loadedUnits = new();
+		private readonly bool _simulateAds;
+		private readonly float _simulateLoadDelay;
+		private readonly float _simulateShowDelay;
 		private bool _isInitialized;
-		private bool _simulateAds = true;
-		private float _simulateLoadDelay = 0.1f;
-		private float _simulateShowDelay = 0.5f;
+		private bool _showing;
 
 		/// <summary>
 		/// Creates a new NullAdProvider.
 		/// </summary>
-		/// <param name="simulateAds">Whether to simulate successful ad operations.</param>
+		/// <param name="simulateAds">Whether loads fill and shows play. Off, every load fails with no fill.</param>
 		/// <param name="simulateLoadDelay">Simulated load delay in seconds.</param>
 		/// <param name="simulateShowDelay">Simulated show delay in seconds.</param>
 		public NullAdProvider(bool simulateAds = true, float simulateLoadDelay = 0.1f, float simulateShowDelay = 0.5f)
 		{
-			_simulateAds = simulateAds;
+			_simulateAds       = simulateAds;
 			_simulateLoadDelay = simulateLoadDelay;
 			_simulateShowDelay = simulateShowDelay;
 		}
 
+		public string ProviderName => "NullProvider";
+		public int Priority => int.MinValue; // Lowest priority
+		public bool IsInitialized => _isInitialized;
+		public IReadOnlyList<AdType> SupportedAdTypes => Supported;
+
 		public UniTask<bool> InitializeAsync(IEnumerable<AdPlacementRegistration> placements)
 		{
-			if (_isInitialized)
+			if (placements != null)
 			{
-				Debug.LogWarning($"{TAG} Already initialized");
-				return UniTask.FromResult(true);
+				foreach (AdPlacementRegistration placement in placements)
+				{
+					UnitFor(placement.PlacementId, placement.AdUnitId);
+				}
 			}
 
-			_isInitialized = true;
-			Debug.Log($"{TAG} Initialized (simulating ads: {_simulateAds})");
+			if (!_isInitialized)
+			{
+				_isInitialized = true;
+				Debug.Log($"{TAG} Initialized (simulating ads: {_simulateAds})");
+			}
+
 			return UniTask.FromResult(true);
 		}
 
 		public bool IsAdReady(string placementId, AdType adType)
 		{
-			return _isInitialized && _simulateAds;
+			return _isInitialized && !string.IsNullOrEmpty(placementId) && _loadedUnits.Contains(UnitOf(placementId));
 		}
 
 		public async UniTask<AdLoadResult> LoadAdAsync(string placementId, AdType adType, string adUnitId)
@@ -71,18 +85,27 @@ namespace AK.Services.Ads.Providers
 				return AdLoadResult.Failed(placementId, adType, AdErrorType.NotInitialized, "Provider not initialized");
 			}
 
-			if (_simulateLoadDelay > 0)
+			string unit = UnitFor(placementId, adUnitId);
+			if (unit == null)
 			{
-				await UniTask.Delay((int)(_simulateLoadDelay * 1000));
+				return AdLoadResult.Failed(placementId, adType, AdErrorType.InvalidPlacement, "Placement ID and ad unit ID are empty");
 			}
 
-			if (_simulateAds)
+			if (_loadedUnits.Contains(unit))
 			{
-				Debug.Log($"{TAG} Simulated load success for {placementId} ({adType})");
 				return AdLoadResult.Succeeded(placementId, adType);
 			}
 
-			return AdLoadResult.Failed(placementId, adType, AdErrorType.NoFill, "Null provider - ads disabled");
+			await DelayAsync(_simulateLoadDelay);
+
+			if (!_simulateAds)
+			{
+				return AdLoadResult.Failed(placementId, adType, AdErrorType.NoFill, "Null provider - ads disabled");
+			}
+
+			_loadedUnits.Add(unit);
+			Debug.Log($"{TAG} Simulated load success for {placementId} ({adType})");
+			return AdLoadResult.Succeeded(placementId, adType);
 		}
 
 		public async UniTask<AdResult> ShowAdAsync(string placementId, AdType adType, string adUnitId)
@@ -92,20 +115,36 @@ namespace AK.Services.Ads.Providers
 				return AdResult.Failed(placementId, adType, AdErrorType.NotInitialized, "Provider not initialized");
 			}
 
-			if (!_simulateAds)
+			if (adType == AdType.Banner)
 			{
-				return AdResult.Failed(placementId, adType, AdErrorType.NoFill, "Null provider - ads disabled");
+				return await ShowBannerAsync(placementId, adUnitId, BannerPosition.Bottom);
 			}
 
-			if (_simulateShowDelay > 0)
+			if (_showing)
 			{
-				await UniTask.Delay((int)(_simulateShowDelay * 1000));
+				return AdResult.Failed(placementId, adType, AdErrorType.AlreadyShowing, "Another simulated ad is showing");
+			}
+
+			string unit = UnitFor(placementId, adUnitId);
+			if (unit == null || !_loadedUnits.Remove(unit))
+			{
+				return AdResult.Failed(placementId, adType, AdErrorType.NotReady, "No simulated ad is loaded");
+			}
+
+			_showing = true;
+			try
+			{
+				await DelayAsync(_simulateShowDelay);
+			}
+			finally
+			{
+				_showing = false;
 			}
 
 			Debug.Log($"{TAG} Simulated show success for {placementId} ({adType})");
 
 			// A simulated rewarded ad always plays to completion, so the reward is earned.
-			var isRewarded = adType == AdType.Rewarded || adType == AdType.RewardedInterstitial;
+			bool isRewarded = adType is AdType.Rewarded or AdType.RewardedInterstitial;
 			return AdResult.Succeeded(placementId, adType, ProviderName, rewardGranted: isRewarded);
 		}
 
@@ -121,7 +160,7 @@ namespace AK.Services.Ads.Providers
 				return AdResult.Failed(placementId, AdType.Banner, AdErrorType.NoFill, "Null provider - ads disabled");
 			}
 
-			await UniTask.Delay((int)(_simulateLoadDelay * 1000));
+			await DelayAsync(_simulateLoadDelay);
 			Debug.Log($"{TAG} Simulated banner shown for {placementId}");
 			return AdResult.Succeeded(placementId, AdType.Banner, ProviderName);
 		}
@@ -150,5 +189,27 @@ namespace AK.Services.Ads.Providers
 		{
 			// No-op
 		}
+
+		/// <summary>Remembers which unit a placement uses; a placement without one is its own unit.</summary>
+		private string UnitFor(string placementId, string adUnitId)
+		{
+			string unit = string.IsNullOrEmpty(adUnitId) ? placementId : adUnitId;
+			if (string.IsNullOrEmpty(unit))
+			{
+				return null;
+			}
+
+			if (!string.IsNullOrEmpty(placementId))
+			{
+				_unitByPlacement[placementId] = unit;
+			}
+
+			return unit;
+		}
+
+		private string UnitOf(string placementId) =>
+			_unitByPlacement.TryGetValue(placementId, out string unit) ? unit : placementId;
+
+		private static UniTask DelayAsync(float seconds) => TimeDomain.Unscaled.Delay(seconds);
 	}
 }

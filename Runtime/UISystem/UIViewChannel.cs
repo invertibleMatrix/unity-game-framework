@@ -39,11 +39,22 @@ namespace AK.Systems
 		/// </summary>
 		public Canvas Canvas { get; private set; }
 
+		private UIChannel _stackChannel;
+		private int       _stackDepth;
+		private int?      _raisedSortingOrder;
+
 		/// <summary>
-		/// Initializes the channel's Canvas with the correct settings.
-		/// Called by UIViewSystem when the view is being set up.
+		/// The sorting order the screen's stack gives it: the channel it was pushed on plus its
+		/// depth there (the bottom screen is depth 1).
 		/// </summary>
-		internal void Initialize(Camera uiCamera, int stackDepth)
+		internal int StackSortingOrder => (int)_stackChannel + _stackDepth;
+
+		/// <summary>
+		/// Sets the Canvas up when the screen is pushed: its render mode, the UI camera, and the
+		/// sorting order for <paramref name="stackDepth"/> on <paramref name="channel"/> — the
+		/// stack the screen was pushed on, which is <see cref="SortOrder"/> unless the show chose another.
+		/// </summary>
+		internal void Initialize(Camera uiCamera, UIChannel channel, int stackDepth)
 		{
 			Canvas = GetComponent<Canvas>();
 			Canvas.renderMode = _renderMode;
@@ -53,17 +64,39 @@ namespace AK.Systems
 				Canvas.worldCamera = uiCamera;
 			}
 
-			Canvas.sortingOrder = (int)(_sortOrder + stackDepth);
+			_stackChannel = channel;
+			UpdateSortingOrder(stackDepth);
+		}
+
+		/// <summary>Moves the screen to <paramref name="stackDepth"/> on its stack. A raised screen stays raised.</summary>
+		internal void UpdateSortingOrder(int stackDepth)
+		{
+			_stackDepth = stackDepth;
+			ApplySortingOrder();
 		}
 
 		/// <summary>
-		/// Updates the sorting order based on current stack depth.
+		/// Sorts the screen at <paramref name="sortingOrder"/> until <see cref="Lower"/>, wherever
+		/// its stack moves it meanwhile. For a highlight that lifts one screen above the rest.
 		/// </summary>
-		internal void UpdateSortingOrder(int stackDepth)
+		internal void Raise(int sortingOrder)
+		{
+			_raisedSortingOrder = sortingOrder;
+			ApplySortingOrder();
+		}
+
+		/// <summary>Returns a raised screen to the sorting order its stack gives it now.</summary>
+		internal void Lower()
+		{
+			_raisedSortingOrder = null;
+			ApplySortingOrder();
+		}
+
+		private void ApplySortingOrder()
 		{
 			if (Canvas != null)
 			{
-				Canvas.sortingOrder = (int)(_sortOrder + stackDepth);
+				Canvas.sortingOrder = _raisedSortingOrder ?? StackSortingOrder;
 			}
 		}
 	}

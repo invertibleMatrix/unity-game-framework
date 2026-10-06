@@ -1,18 +1,32 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Events;
+using UnityEngine.Serialization;
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using AK.Utilities;
 using TMPro;
 
 namespace AK.UI
 {
+    /// <summary>
+    /// Passes a button's clicks on through a cooldown: a click starts the cooldown and reaches
+    /// <see cref="OnClick"/>, and clicks during it reach <see cref="OnCooldownReject"/> instead.
+    /// The button stays pressable throughout. An optional overlay empties and an optional text
+    /// counts down as the cooldown runs, on its time domain: unscaled by default, so a cooldown
+    /// runs on while the game is paused.
+    /// </summary>
     [RequireComponent(typeof(Button))]
     public class CooldownButton : MonoBehaviour
     {
         [Header("Logic")]
         [Tooltip("How long (seconds) to wait before allowing another click.")]
         [SerializeField] private float _cooldownDuration = 1.0f;
-        [SerializeField] private bool _useUnscaledTime = false;
+
+        [Tooltip("The time the cooldown counts. Unscaled runs it on while the game is paused at timeScale 0.")]
+        [FormerlySerializedAs("_useUnscaledTime")]
+        [SerializeField] private TimeDomain _timeDomain = TimeDomain.Unscaled;
 
         [Header("Events")]
         [Tooltip("Add your listeners HERE. They will only fire if cooldown is ready.")]
@@ -29,8 +43,13 @@ namespace AK.UI
 
         // Internal State
         private Button _sourceButton;
-        private float _timer;
+        private float _duration;
+        private float _remaining;
         private bool _isCoolingDown;
+
+        // The countdown text on show, kept to set the label only when its text changes.
+        private readonly char[] _shownText = new char[TimeFormatter.MaxDurationLength];
+        private int _shownLength = -1;
 
         // ----------------------------------------------------------------------
         // 1. INITIALIZATION
@@ -69,21 +88,27 @@ namespace AK.UI
 
             // ACCEPT: Start logic
             StartCooldown();
-            
+
             // Forward the event to the user's listeners
             OnClick?.Invoke();
         }
 
+        /// <summary>
+        /// Starts a cooldown of <paramref name="customDuration"/> seconds, or of the button's own
+        /// duration when it isn't above zero. The overlay empties over the cooldown started.
+        /// </summary>
         public void StartCooldown(float customDuration = -1f)
         {
-            _timer = customDuration > 0 ? customDuration : _cooldownDuration;
+            _duration = customDuration > 0 ? customDuration : _cooldownDuration;
+            _remaining = _duration;
             _isCoolingDown = true;
-            
+
             // Note: We do NOT set _sourceButton.interactable = false;
             // The button remains fully interactive/pressable, just logically silent.
-            
+
             if (_overlayImage) _overlayImage.gameObject.SetActive(true);
             if (_timerText) _timerText.gameObject.SetActive(true);
+            ShowRemaining();
         }
 
         // ----------------------------------------------------------------------
@@ -91,39 +116,52 @@ namespace AK.UI
         // ----------------------------------------------------------------------
         private void Update()
         {
-            if (!_isCoolingDown) return;
-
-            float dt = _useUnscaledTime ? Time.unscaledDeltaTime : Time.deltaTime;
-            _timer -= dt;
-
-            UpdateVisuals();
-
-            if (_timer <= 0)
-            {
-                FinishCooldown();
-            }
+            if (_isCoolingDown) Tick(_timeDomain.DeltaTime());
         }
 
-        private void UpdateVisuals()
+        /// <summary>Counts <paramref name="seconds"/> off the cooldown running.</summary>
+        internal void Tick(float seconds)
+        {
+            if (!_isCoolingDown) return;
+
+            _remaining -= seconds;
+
+            if (_remaining <= 0)
+            {
+                FinishCooldown();
+                return;
+            }
+
+            ShowRemaining();
+        }
+
+        private void ShowRemaining()
         {
             // Fill Effect (1.0 -> 0.0)
             if (_overlayImage != null)
             {
-                float ratio = Mathf.Clamp01(_timer / _cooldownDuration);
-                _overlayImage.fillAmount = ratio;
+                _overlayImage.fillAmount = _duration > 0 ? Mathf.Clamp01(_remaining / _duration) : 0;
             }
 
-            // Text Effect (TimeFormatter)
+            // Text Effect: formatted without allocating, and set only when it changes.
             if (_timerText != null)
             {
-                _timerText.text = _timer.FormatDuration(_textFormat, max: 1, r: _rounding);
+                Span<char> text = stackalloc char[TimeFormatter.MaxDurationLength];
+                _remaining.TryFormatDuration(text, out int length, _textFormat, max: 1, r: _rounding);
+
+                ReadOnlySpan<char> shown = text.Slice(0, length);
+                if (length == _shownLength && shown.SequenceEqual(_shownText.AsSpan(0, length))) return;
+
+                shown.CopyTo(_shownText);
+                _shownLength = length;
+                _timerText.SetText(_shownText, 0, length);
             }
         }
 
         private void FinishCooldown()
         {
             _isCoolingDown = false;
-            _timer = 0;
+            _remaining = 0;
             ResetVisuals();
         }
 
@@ -139,6 +177,8 @@ namespace AK.UI
                 _timerText.text = "";
                 _timerText.gameObject.SetActive(false);
             }
+
+            _shownLength = -1;
         }
 
         // ----------------------------------------------------------------------
@@ -160,7 +200,7 @@ namespace AK.UI
         {
             OnClick.RemoveListener(call);
         }
-        
+
         /// <summary>
         /// Removes all listeners.
         /// </summary>

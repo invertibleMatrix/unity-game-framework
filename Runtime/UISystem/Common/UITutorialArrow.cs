@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 using UnityEngine.UI;
@@ -49,6 +51,9 @@ namespace AK.Systems
 
 		[SerializeField, Tooltip("Size of the arrow in pixels")]
 		private Vector2 _arrowSize = new Vector2(128f, 128f);
+
+		[SerializeField, Tooltip("The time the arrow animates on. Unscaled keeps it moving in a game paused at timeScale 0.")]
+		private TimeDomain _timeDomain = TimeDomain.Unscaled;
 
 		private const float _defaultPivot = 0.5f;
 		
@@ -110,8 +115,8 @@ namespace AK.Systems
 			_arrowRect.localScale = Vector3.zero;
 			_arrowImage.color = new Color(1f, 1f, 1f, 1f);
 
-			_arrowRect.DOScale(Vector3.one, _moveToTargetDuration).SetEase(Ease.OutBack).Play();
-			_arrowImage.DOFade(1f, _moveToTargetDuration).Play();
+			_arrowRect.DOScale(Vector3.one, _moveToTargetDuration).SetEase(Ease.OutBack).SetTimeDomain(_timeDomain).Play();
+			_arrowImage.DOFade(1f, _moveToTargetDuration).SetTimeDomain(_timeDomain).Play();
 
 			if (_target != null)
 			{
@@ -158,11 +163,12 @@ namespace AK.Systems
 						_canvasRect = null;
 					}
 				})
+				.SetTimeDomain(_timeDomain)
 				.Play();
 
 			if (_arrowImage != null)
 			{
-				_arrowImage.DOFade(1f, _dismissDuration).Play();
+				_arrowImage.DOFade(1f, _dismissDuration).SetTimeDomain(_timeDomain).Play();
 			}
 		}
 
@@ -195,7 +201,7 @@ namespace AK.Systems
 				current = current.parent;
 			}
 
-			return Object.FindObjectOfType<Canvas>();
+			return Object.FindFirstObjectByType<Canvas>();
 		}
 
 		private void SetSpawnPosition()
@@ -247,6 +253,7 @@ namespace AK.Systems
 
 			_rotationTween = _arrowRect.DORotate(new Vector3(0, 0, finalAngle), _moveToTargetDuration)
 				.SetEase(Ease.OutQuad)
+				.SetTimeDomain(_timeDomain)
 				.Play();
 		}
 
@@ -260,6 +267,7 @@ namespace AK.Systems
 				{
 					StartOscillation();
 				})
+				.SetTimeDomain(_timeDomain)
 				.Play();
 		}
 
@@ -292,6 +300,7 @@ namespace AK.Systems
 				_oscillationDuration)
 				.SetLoops(-1, LoopType.Restart)
 				.SetEase(Ease.Linear)
+				.SetTimeDomain(_timeDomain)
 				.Play();
 		}
 

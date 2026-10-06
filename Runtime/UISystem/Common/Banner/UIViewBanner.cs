@@ -1,4 +1,4 @@
-﻿using AK.Systems;
+﻿using AK.Core.Extensions;
 using DG.Tweening;
 using TMPro;
 using UnityEngine;
@@ -14,15 +14,19 @@ namespace AK.Systems
 		[SerializeField] private TextMeshProUGUI _text;
 		[SerializeField] private Animator        _animator;
 
-		private float _duration;
+		private float _duration = DEFAULT_BANNER_DURATION;
 		private Tween _hideTween;
 
 		public const string DEFAULT_ID     = "banner1";
 		public const string DEFAULT_TOP_ID = "banner2";
-		public const string AFFIRMATION_ID = "affirmation";
 
 		public const float DEFAULT_BANNER_DURATION = 2f;
 
+		/// <summary>
+		/// Sets the text and how long the banner stays up once shown. A duration of zero or less
+		/// keeps it up until it is closed. A banner shown without Init stays up for
+		/// <see cref="DEFAULT_BANNER_DURATION"/>.
+		/// </summary>
 		public void Init(string text, float duration = DEFAULT_BANNER_DURATION)
 		{
 			_text.text = text;
@@ -43,6 +47,7 @@ namespace AK.Systems
 		{
 			if (_animator != null)
 			{
+				_animator.updateMode = TimeDomain.ToAnimatorUpdateMode();
 				_animator.enabled = true;
 			}
 
@@ -50,7 +55,7 @@ namespace AK.Systems
 			
 			if (_duration > 0)
 			{
-				_hideTween = DOVirtual.DelayedCall(_duration, () => { Close(); }).Play();
+				_hideTween = DOVirtual.DelayedCall(_duration, () => { Close(); }).SetTimeDomain(TimeDomain).Play();
 			}
 		}
 

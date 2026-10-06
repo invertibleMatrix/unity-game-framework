@@ -41,34 +41,35 @@ namespace AK.CoreDomain.Ads
 		[Tooltip("Optional identity of a reward bundle for multiple rewards.")]
 		public Uid RewardBundle;
 
-		[Header("Frequency Control")] [Tooltip("Maximum times this ad can be shown per session (0 = unlimited).")] [Range(0, 100)]
+		[Header("Frequency Control")] [Tooltip("Most impressions per session (0 = no limit). Counted on this device.")] [Range(0, 100)]
 		public int MaxPerSession = 0;
 
-		[Tooltip("Maximum times this ad can be shown per day (0 = unlimited).")] [Range(0, 100)]
+		[Tooltip("Most impressions per UTC day (0 = no limit). Counted on this device, across launches.")] [Range(0, 100)]
 		public int MaxPerDay = 0;
 
-		[Tooltip("Cooldown between showing this ad again (in seconds, 0 = no cooldown).")] [Range(0, 86400)]
+		[Tooltip("Least time between two impressions, in seconds (0 = none). Counted on this device, across launches.")] [Range(0, 86400)]
 		public int CooldownSeconds = 0;
 
-		[Header("Level Requirements")] [Tooltip("Minimum player level required to see this ad (0 = no requirement).")] [Range(0, 1000)]
+		[Header("Level Requirements")] [Tooltip("Lowest player level that sees this ad (0 = no requirement).")] [Range(0, 1000)]
 		public int MinPlayerLevel = 0;
 
-		[Tooltip("Maximum player level after which this ad won't show (0 = no limit).")] [Range(0, 1000)]
+		[Tooltip("Highest player level that sees this ad (0 = no limit).")] [Range(0, 1000)]
 		public int MaxPlayerLevel = 0;
 
-		[Header("Remote Config Overrides")] [Tooltip("Remote bool to enable/disable this placement remotely.")]
+		[Header("Remote Config Overrides")]
+		[Tooltip("Switches the placement on or off remotely. Once it has a remote value, that wins over IsEnabled either way; until then IsEnabled decides.")]
 		public RemoteBool EnabledRemote;
 
-		[Tooltip("Remote int to override max shows per session.")]
+		[Tooltip("Overrides MaxPerSession once it has a remote value.")]
 		public RemoteInt MaxPerSessionRemote;
 
-		[Tooltip("Remote int to override max shows per day.")]
+		[Tooltip("Overrides MaxPerDay once it has a remote value.")]
 		public RemoteInt MaxPerDayRemote;
 
-		[Tooltip("Remote int to override cooldown seconds.")]
+		[Tooltip("Overrides CooldownSeconds once it has a remote value.")]
 		public RemoteInt CooldownSecondsRemote;
 
-		[Tooltip("Remote int to override minimum player level.")]
+		[Tooltip("Overrides MinPlayerLevel once it has a remote value.")]
 		public RemoteInt MinPlayerLevelRemote;
 
 		[Header("Loading Strategy")] [Tooltip("Loading strategy for this placement. Controls auto-reload, retry behavior, etc.")]
@@ -77,7 +78,7 @@ namespace AK.CoreDomain.Ads
 		[Tooltip("Strategy preset to use. Changes will override the LoadingStrategy above.")]
 		public AdLoadingStrategyPreset StrategyPreset = AdLoadingStrategyPreset.Standard;
 
-		[Header("Advanced Settings")] [Tooltip("Whether this placement is enabled.")]
+		[Header("Advanced Settings")] [Tooltip("Whether this placement is switched on. EnabledRemote wins once it has a remote value.")]
 		public bool IsEnabled = true;
 
 		[Tooltip("Tags for categorization and filtering.")]
@@ -114,70 +115,32 @@ namespace AK.CoreDomain.Ads
 		}
 
 		/// <summary>
-		/// Checks if this placement is currently available.
-		/// Takes into account remote config overrides.
+		/// Whether the placement is switched on: <see cref="IsEnabled"/>, unless
+		/// <see cref="EnabledRemote"/> has a remote value, which then wins either way.
 		/// </summary>
-		/// <param name="currentLevel">Current player level.</param>
-		/// <returns>True if the placement is available.</returns>
-		public bool IsAvailable(int currentLevel = 1)
-		{
-			// Check if disabled
-			if (!IsEnabled)
-				return false;
+		public bool IsSwitchedOn => RemoteOverride.Resolve(EnabledRemote, IsEnabled);
 
-			// Check remote enabled override
-			if (EnabledRemote != null && !EnabledRemote.Value)
-				return false;
-
-			// Check level requirements
-			int minLevel = GetMinPlayerLevel();
-			int maxLevel = MaxPlayerLevel > 0 ? MaxPlayerLevel : int.MaxValue;
-
-			if (currentLevel < minLevel || currentLevel > maxLevel)
-				return false;
-
-			return true;
-		}
+		/// <summary>Whether <paramref name="level"/> is within the placement's level range.</summary>
+		public bool AllowsLevel(int level) =>
+			level >= GetMinPlayerLevel() && (MaxPlayerLevel <= 0 || level <= MaxPlayerLevel);
 
 		/// <summary>
-		/// Gets the effective max per session value (remote override or local).
+		/// Whether the placement is switched on and <paramref name="currentLevel"/> is in its
+		/// range. Its ad type's switches and level live on <see cref="AdsMeta"/>.
 		/// </summary>
-		public int GetMaxPerSession()
-		{
-			if (MaxPerSessionRemote != null && MaxPerSessionRemote.HasRemoteValue)
-				return MaxPerSessionRemote.Value;
-			return MaxPerSession;
-		}
+		public bool IsAvailable(int currentLevel = 1) => IsSwitchedOn && AllowsLevel(currentLevel);
 
-		/// <summary>
-		/// Gets the effective max per day value (remote override or local).
-		/// </summary>
-		public int GetMaxPerDay()
-		{
-			if (MaxPerDayRemote != null && MaxPerDayRemote.HasRemoteValue)
-				return MaxPerDayRemote.Value;
-			return MaxPerDay;
-		}
+		/// <summary>The most impressions per session: the remote value once known, otherwise <see cref="MaxPerSession"/>. 0 is no limit.</summary>
+		public int GetMaxPerSession() => RemoteOverride.Resolve(MaxPerSessionRemote, MaxPerSession);
 
-		/// <summary>
-		/// Gets the effective cooldown seconds (remote override or local).
-		/// </summary>
-		public int GetCooldownSeconds()
-		{
-			if (CooldownSecondsRemote != null && CooldownSecondsRemote.HasRemoteValue)
-				return CooldownSecondsRemote.Value;
-			return CooldownSeconds;
-		}
+		/// <summary>The most impressions per UTC day: the remote value once known, otherwise <see cref="MaxPerDay"/>. 0 is no limit.</summary>
+		public int GetMaxPerDay() => RemoteOverride.Resolve(MaxPerDayRemote, MaxPerDay);
 
-		/// <summary>
-		/// Gets the effective minimum player level (remote override or local).
-		/// </summary>
-		public int GetMinPlayerLevel()
-		{
-			if (MinPlayerLevelRemote != null && MinPlayerLevelRemote.HasRemoteValue)
-				return MinPlayerLevelRemote.Value;
-			return MinPlayerLevel;
-		}
+		/// <summary>The least seconds between impressions: the remote value once known, otherwise <see cref="CooldownSeconds"/>.</summary>
+		public int GetCooldownSeconds() => RemoteOverride.Resolve(CooldownSecondsRemote, CooldownSeconds);
+
+		/// <summary>The lowest player level that sees the ad: the remote value once known, otherwise <see cref="MinPlayerLevel"/>.</summary>
+		public int GetMinPlayerLevel() => RemoteOverride.Resolve(MinPlayerLevelRemote, MinPlayerLevel);
 
 		/// <summary>
 		/// Gets the ad unit ID to use (primary or alternate).
@@ -214,8 +177,6 @@ namespace AK.CoreDomain.Ads
 			return Tags != null && Tags.Contains(tag);
 		}
 
-		/// <summary>
-		/// Gets a debug-friendly name for this placement.
 		/// <summary>
 		/// Gets the effective loading strategy based on the preset or custom settings.
 		/// </summary>

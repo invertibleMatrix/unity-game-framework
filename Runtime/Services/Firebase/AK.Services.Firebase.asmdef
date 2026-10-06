@@ -1,0 +1,38 @@
+{
+    "name": "AK.Services.Firebase",
+    "rootNamespace": "AK.Services",
+    "references": [
+        "AK.Kernel",
+        "AK.Core",
+        "AK.CoreDomain",
+        "AK.Services",
+        "UniTask"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UGFW_FIREBASE"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.google.firebase.app",
+            "expression": "",
+            "define": "UGFW_FIREBASE"
+        },
+        {
+            "name": "com.google.firebase.remote-config",
+            "expression": "",
+            "define": "UGFW_FIREBASE_REMOTE_CONFIG"
+        },
+        {
+            "name": "com.google.firebase.analytics",
+            "expression": "",
+            "define": "UGFW_FIREBASE_ANALYTICS"
+        }
+    ],
+    "noEngineReferences": false
+}

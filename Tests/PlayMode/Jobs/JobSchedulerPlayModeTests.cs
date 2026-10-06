@@ -9,10 +9,14 @@ using UnityEngine.TestTools;
 
 namespace AK.Tests.Jobs
 {
-	/// <summary>The player-loop driver against the real engine loop: timing in frames, thread affinity, attach/detach.</summary>
+	/// <summary>
+	/// The player-loop driver against the real engine loop: timing in frames, thread affinity, attach/detach.
+	/// A barrier that finds the workers busy skips its frame by design (the core tests cover that), and a frame
+	/// can be shorter than the workers' run, as in batch mode, so the tests that count frames wait out each run.
+	/// </summary>
 	public sealed class JobSchedulerPlayModeTests
 	{
-		private sealed class FrameStampJob : IJob, IJobCallback
+		private sealed class FrameStampJob : IFrameJob, IFrameJobCallback
 		{
 			public int ExecuteCount;
 			public int ExecuteThreadId;
@@ -80,6 +84,7 @@ namespace AK.Tests.Jobs
 			scheduler.Schedule(job);
 
 			yield return null;
+			scheduler.WaitForIdle();
 			yield return null;
 
 			Assert.AreEqual(1, job.ExecuteCount);
@@ -92,6 +97,27 @@ namespace AK.Tests.Jobs
 		}
 
 		[UnityTest]
+		public IEnumerator WithoutWorkers_RunsOnMainAtTheNextFrame_AndCompletesTwoFramesLater()
+		{
+			JobScheduler scheduler = CreateAttached(workers: 0);
+			int          mainId    = Thread.CurrentThread.ManagedThreadId;
+			var          job       = new FrameStampJob();
+
+			int scheduledFrame = Time.frameCount;
+			scheduler.Schedule(job);
+
+			yield return null;
+			yield return null;
+
+			Assert.AreEqual(1, job.ExecuteCount);
+			Assert.AreEqual(mainId, job.ExecuteThreadId, "no workers: the barrier runs it on the main thread");
+			Assert.AreEqual(scheduledFrame + 1, job.ExecuteCtxFrame, "run by the barrier at the top of the following frame");
+
+			Assert.AreEqual(1, job.CompleteCount);
+			Assert.AreEqual(scheduledFrame + 2, job.CompleteFrame, "collected a frame later, as with workers");
+		}
+
+		[UnityTest]
 		public IEnumerator Repeating_TickCadence_MatchesFrameCount_Over60Frames()
 		{
 			JobScheduler scheduler = CreateAttached();
@@ -100,9 +126,12 @@ namespace AK.Tests.Jobs
 			scheduler.ScheduleRepeating(job);
 			int firstRunFrame = Time.frameCount + 1;
 
-			for (int i = 0; i < 60; i++) yield return null;
+			for (int i = 0; i < 60; i++)
+			{
+				yield return null;
+				scheduler.WaitForIdle();
+			}
 
-			scheduler.WaitForIdle();
 			int framesKicked = Time.frameCount - firstRunFrame + 1;
 
 			Assert.AreEqual(framesKicked, job.ExecuteCount, "one execution per frame, none skipped, none doubled");
@@ -144,12 +173,13 @@ namespace AK.Tests.Jobs
 			yield return null;
 			Assert.AreEqual(0, batch.Results.Length, "still executing during this frame");
 
+			scheduler.WaitForIdle();
 			yield return null;
 			Assert.AreEqual(256, batch.Results.Length);
 			for (int i = 0; i < 256; i++) Assert.AreEqual(i * i, batch.Results[i].Output);
 		}
 
-		private struct SquareElement : IJob
+		private struct SquareElement : IFrameJob
 		{
 			public int Input;
 			public int Output;

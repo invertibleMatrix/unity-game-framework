@@ -1,11 +1,16 @@
-namespace Utilities.ModelPreview
+using AK.Kernel.Timing;
+
+namespace AK.Utilities.Previews
 {
 	public enum ModelPreviewRenderMode
 	{
 		/// <summary>Camera renders every frame — for animated or moving models.</summary>
 		Live,
 
-		/// <summary>Camera renders a few warmup frames, then disables itself. The RT persists as a still.</summary>
+		/// <summary>
+		/// Camera renders only while the view changes (intro, rotation, zoom, auto-rotate) plus a
+		/// few warmup frames, then disables itself. The RT keeps the last frame as a still.
+		/// </summary>
 		Static
 	}
 
@@ -14,7 +19,7 @@ namespace Utilities.ModelPreview
 		/// <summary>Size used when the session creates a RenderTexture (ignored for caller-owned RTs).</summary>
 		public int TextureSize = 256;
 
-		/// <summary>Soft cap on concurrent live booths in this session.</summary>
+		/// <summary>Cap on booths open at once in this session, counting ones still loading.</summary>
 		public int MaxConcurrent = 8;
 
 		/// <summary>Live for animated/hovering models; Static for grids of stills (perf).</summary>
@@ -26,7 +31,13 @@ namespace Utilities.ModelPreview
 		/// <summary>Default for per-call interaction (drag to rotate, pinch/scroll to zoom).</summary>
 		public bool EnableInteraction;
 
-		/// <summary>Frames a Static booth renders before its camera disables.</summary>
+		/// <summary>Frames a Static booth renders after the view settles, before its camera disables.</summary>
 		public int StaticWarmupFrames = 3;
+
+		/// <summary>
+		/// Clock for auto-rotate, view damping and the intro. Unscaled keeps previews moving while
+		/// the game is paused; Scaled pauses them with it.
+		/// </summary>
+		public TimeDomain TimeDomain = TimeDomain.Unscaled;
 	}
 }

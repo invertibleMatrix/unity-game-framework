@@ -1,16 +1,18 @@
-using System;
-using System.Threading;
 using AK.Core;
-using Cysharp.Threading.Tasks;
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using UnityEngine;
 using UnityEngine.Audio;
 
-namespace Utilities.AudioSpawner
+namespace AK.Utilities.Audio
 {
 	/// <summary>
 	/// Owns the mixer: per-channel volumes (persisted via prefs, applied at boot),
 	/// snapshot transitions as joint assets, and music ducking. Channel parameter names
 	/// are serialized fields — no magic strings at call sites.
+	/// A duck lasts its duration in the controller's time domain, counted down each frame, and a
+	/// music volume set meanwhile keeps it. Snapshot transitions run on the mixer's own clock,
+	/// its Update Mode: Normal stops at a time scale of zero, Unscaled Time doesn't.
 	/// </summary>
 	public class AudioMixerController : GameEntity, IAudioMixerController
 	{
@@ -26,11 +28,19 @@ namespace Utilities.AudioSpawner
 		[Header("Snapshots")]
 		[SerializeField] private AudioSnapshot _bootSnapshot;
 
+		[Header("Time")]
+		[SerializeField, Tooltip("The time a music duck lasts on. Snapshot transitions follow the mixer's own Update Mode instead.")]
+		private TimeDomain _timeDomain = TimeDomain.Unscaled;
+
 		private readonly PrefsProperty<float> _masterVolume = new("UGFW_AUDIO_VOL_MASTER", 1f);
 		private readonly PrefsProperty<float> _musicVolume  = new("UGFW_AUDIO_VOL_MUSIC", 1f);
 		private readonly PrefsProperty<float> _sfxVolume    = new("UGFW_AUDIO_VOL_SFX", 1f);
 
-		private CancellationTokenSource _duckCts;
+		private float  _duckDb;
+		private double _duckSecondsLeft;
+
+		/// <summary>How far the music is ducked now, in dB; 0 when it isn't.</summary>
+		internal float DuckDb => _duckDb;
 
 		private void Start()
 		{
@@ -45,8 +55,16 @@ namespace Utilities.AudioSpawner
 		private void ApplyPersistedVolumes()
 		{
 			ApplyVolume(_masterVolumeParam, _masterVolume.Read());
-			ApplyVolume(_musicVolumeParam, _musicVolume.Read());
+			ApplyMusicVolume();
 			ApplySfxVolumes(_sfxVolume.Read());
+		}
+
+		private void Update()
+		{
+			if (_duckDb > 0f)
+			{
+				StepDuck(_timeDomain.DeltaTime());
+			}
 		}
 
 		public void SetVolume(AudioChannel channel, float linearValue)
@@ -56,7 +74,7 @@ namespace Utilities.AudioSpawner
 			switch (channel)
 			{
 				case AudioChannel.Master: _masterVolume.Save(linearValue); ApplyVolume(_masterVolumeParam, linearValue); break;
-				case AudioChannel.Music:  _musicVolume.Save(linearValue);  ApplyVolume(_musicVolumeParam, linearValue);  break;
+				case AudioChannel.Music:  _musicVolume.Save(linearValue);  ApplyMusicVolume();                           break;
 				case AudioChannel.Sfx:    _sfxVolume.Save(linearValue);    ApplySfxVolumes(linearValue);                 break;
 			}
 		}
@@ -86,23 +104,27 @@ namespace Utilities.AudioSpawner
 
 		public void DuckMusic(float duckDb, float durationSeconds)
 		{
-			// Latest duck wins: cancel any pending restore, duck now, schedule restore.
-			_duckCts?.Cancel();
-			_duckCts?.Dispose();
-			_duckCts = new CancellationTokenSource();
-
-			ApplyVolumeDb(_musicVolumeParam, ToDecibels(_musicVolume.Read()) - Mathf.Abs(duckDb));
-			RestoreMusicAfterAsync(durationSeconds, _duckCts.Token).Forget();
+			// The latest duck wins: its depth, for its duration from now.
+			_duckDb          = Mathf.Abs(duckDb);
+			_duckSecondsLeft = durationSeconds;
+			ApplyMusicVolume();
 		}
 
-		private async UniTaskVoid RestoreMusicAfterAsync(float delaySeconds, CancellationToken ct)
+		/// <summary>Counts <paramref name="seconds"/> of the controller's time off the duck, and restores the music when it runs out.</summary>
+		internal void StepDuck(double seconds)
 		{
-			bool cancelled = await UniTask.Delay(TimeSpan.FromSeconds(delaySeconds), DelayType.DeltaTime, PlayerLoopTiming.Update, ct)
-			                              .SuppressCancellationThrow();
+			if (_duckDb <= 0f) return;
 
-			if (cancelled) return;
+			if (seconds > 0d) _duckSecondsLeft -= seconds;
+			if (_duckSecondsLeft > 0d) return;
 
-			ApplyVolumeDb(_musicVolumeParam, ToDecibels(_musicVolume.Read()));
+			_duckDb = 0f;
+			ApplyMusicVolume();
+		}
+
+		private void ApplyMusicVolume()
+		{
+			ApplyVolumeDb(_musicVolumeParam, ToDecibels(_musicVolume.Read()) - _duckDb);
 		}
 
 		private void ApplySfxVolumes(float linearValue)
@@ -128,15 +150,6 @@ namespace Utilities.AudioSpawner
 		private static float ToDecibels(float linearValue)
 		{
 			return Mathf.Log10(Mathf.Max(linearValue, 0.0001f)) * 20f;
-		}
-
-		private void OnDestroy()
-		{
-			_duckCts?.Cancel();
-			_duckCts?.Dispose();
-			_masterVolume.Dispose();
-			_musicVolume.Dispose();
-			_sfxVolume.Dispose();
 		}
 	}
 }

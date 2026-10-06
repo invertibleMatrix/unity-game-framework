@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using AK.Editor;
 using UnityEditor;
 using UnityEngine;
 
@@ -13,7 +14,8 @@ namespace AK.Core.Editor
 	/// </summary>
 	public class AppStateMachineWindow : EditorWindow
 	{
-		private const string DebugModePrefsKey = "UGFW.AppStateMachine.RecordHistory";
+		private const string RecordHistoryPref = "AppStateMachine.RecordHistory";
+		private const string LegacyRecordHistoryKey = "UGFW.AppStateMachine.RecordHistory";
 		private const int    MaxHistoryEntries = 200;
 
 		private class HistoryEntry
@@ -41,7 +43,8 @@ namespace AK.Core.Editor
 
 		private void OnEnable()
 		{
-			_debugMode = EditorPrefs.GetBool(DebugModePrefsKey, false);
+			ProjectEditorPrefs.AdoptLegacyBool(LegacyRecordHistoryKey, RecordHistoryPref);
+			_debugMode = ProjectEditorPrefs.GetBool(RecordHistoryPref);
 			EditorApplication.playModeStateChanged += OnPlayModeChanged;
 			TryHookMachine();
 		}
@@ -218,7 +221,7 @@ namespace AK.Core.Editor
 			if (record != _debugMode)
 			{
 				_debugMode = record;
-				EditorPrefs.SetBool(DebugModePrefsKey, _debugMode);
+				ProjectEditorPrefs.SetBool(RecordHistoryPref, _debugMode);
 
 				if (_debugMode)
 				{

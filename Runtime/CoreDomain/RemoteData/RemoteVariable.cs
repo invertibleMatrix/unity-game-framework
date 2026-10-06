@@ -1,206 +1,75 @@
 using System;
-using System.Globalization;
-using AK.Core;
 using UnityEngine;
 
 namespace AK.CoreDomain.RemoteConfig
 {
 	/// <summary>
-	/// Generic remote config variable with type-safe access, default values,
-	/// remote value fallback, and optional PlayerPrefs caching via PrefsProperty.
+	/// A remote config value of type <typeparamref name="T"/>: the remote value when one is
+	/// known, otherwise the default set on the asset.
+	///
+	/// A subclass says how its type reads from text and is written as text; the two must
+	/// round-trip, since a value set by code is cached as text too.
 	/// </summary>
-	/// <typeparam name="T">The type of the variable value. Must be serializable.</typeparam>
+	/// <typeparam name="T">The value's type.</typeparam>
 	public abstract class RemoteVariable<T> : RemoteVariableBase
 	{
-		[Tooltip("The default value used when no remote value is available.")]
+		[Tooltip("The value when no remote value is known.")]
 		[SerializeField] protected T _defaultValue;
 
-		[NonSerialized] protected T    _remoteValue;
-		[NonSerialized] protected bool _hasRemoteValue;
+		[NonSerialized] private T _remoteValue;
 
-		// Lazy-initialized PrefsProperty for caching
-		private PrefsProperty<T> _cachedValueProperty;
+		/// <summary>The value when no remote value is known.</summary>
+		public T DefaultValue => GetDefault();
 
-		/// <summary>
-		/// The default value for this variable.
-		/// </summary>
-		public T DefaultValue => _defaultValue;
+		/// <summary>The remote value when one is known, otherwise <see cref="DefaultValue"/>.</summary>
+		public T Value => HasRemoteValue ? _remoteValue : GetDefault();
 
+		public override Type ValueType => typeof(T);
 
-		/// <summary>
-		/// The current value. Returns remote value if fetched, otherwise cached value, otherwise default.
-		/// </summary>
-		public T Value
-		{
-			get
-			{
-				// Priority: Remote > Cached > Default.
-				// Cache is keyed by VariableKey — skip it when the key is empty
-				// (CachedProperty stays null; SaveCachedValue already no-ops).
-				if (_hasRemoteValue)
-					return _remoteValue;
-
-				if (_cacheValue)
-				{
-					PrefsProperty<T> cached = CachedProperty;
-					if (cached != null)
-						return cached.Read();
-				}
-
-				return _defaultValue;
-			}
-		}
+		public override string GetDefaultValueText() => FormatValue(_defaultValue);
 
 		/// <summary>
-		/// Whether a remote value has been fetched from the server.
+		/// Sets the remote value as if it had been fetched: for tests, debug tools and providers
+		/// that deliver typed values. It stays until the next fetch, and isn't cached until then.
+		/// A value written as empty text, such as an empty string, is no value, as when fetched:
+		/// the variable then reads as its default.
 		/// </summary>
-		public override bool HasRemoteValue => _hasRemoteValue;
-
-		/// <summary>
-		/// Gets the PrefsProperty for caching, lazily initialized.
-		/// </summary>
-		private PrefsProperty<T> CachedProperty
-		{
-			get
-			{
-				if (_cachedValueProperty == null && !string.IsNullOrEmpty(_variableKey))
-				{
-					_cachedValueProperty = new PrefsProperty<T>(GetCacheKey(), _defaultValue);
-				}
-				return _cachedValueProperty;
-			}
-		}
-
-		#region Abstract Methods Implementation
-
-		public override object GetDefaultValueObject() => _defaultValue;
-		public override object GetValueObject() => Value;
-
-		public override void ClearRemoteValue()
-		{
-			_hasRemoteValue = false;
-			_remoteValue = default;
-		}
-
-		public override void SetRemoteValueFromString(string value)
-		{
-			if (string.IsNullOrEmpty(value))
-			{
-				Debug.LogWarning($"RemoteVariable '{name}': Attempted to set null or empty string value.");
-				return;
-			}
-
-			try
-			{
-				// Handle primitive types directly.
-				// CultureInfo.InvariantCulture ensures that decimal separators (e.g. "1.5")
-				// are parsed correctly regardless of the device's locale (e.g. German "1,5").
-				if (typeof(T) == typeof(int))
-				{
-					_remoteValue = (T)(object)int.Parse(value, CultureInfo.InvariantCulture);
-				}
-				else if (typeof(T) == typeof(float))
-				{
-					_remoteValue = (T)(object)float.Parse(value, CultureInfo.InvariantCulture);
-				}
-				else if (typeof(T) == typeof(bool))
-				{
-					_remoteValue = (T)(object)bool.Parse(value);
-				}
-				else if (typeof(T) == typeof(string))
-				{
-					_remoteValue = (T)(object)value;
-				}
-				else if (typeof(T) == typeof(long))
-				{
-					_remoteValue = (T)(object)long.Parse(value, CultureInfo.InvariantCulture);
-				}
-				else if (typeof(T) == typeof(double))
-				{
-					_remoteValue = (T)(object)double.Parse(value, CultureInfo.InvariantCulture);
-				}
-				else
-				{
-					// Complex type - deserialize from JSON
-					_remoteValue = JsonUtility.FromJson<T>(value);
-				}
-
-				_hasRemoteValue = true;
-
-				// Cache the value if caching is enabled
-				if (_cacheValue)
-				{
-					SaveCachedValue();
-				}
-			}
-			catch (Exception e)
-			{
-				Debug.LogError($"RemoteVariable '{name}': Failed to parse value '{value}' as type {typeof(T).Name}. Error: {e.Message}");
-			}
-		}
-
-		#endregion
-
-		#region Remote Value Setter
-
-		/// <summary>
-		/// Sets the remote value directly. Called by the remote config service after fetching.
-		/// </summary>
-		/// <param name="value">The value fetched from the remote config server.</param>
 		public void SetRemoteValue(T value)
 		{
-			_remoteValue = value;
-			_hasRemoteValue = true;
-
-			if (_cacheValue)
+			string text = FormatValue(value);
+			if (string.IsNullOrEmpty(text))
 			{
-				SaveCachedValue();
+				ClearRemoteValue();
+				return;
 			}
+
+			_remoteValue = value;
+			MarkRemote(text, RemoteValueOrigin.Fetched);
 		}
 
-		#endregion
+		/// <summary>Reads <paramref name="text"/> as a <typeparamref name="T"/>. False when it isn't one.</summary>
+		protected abstract bool TryParseValue(string text, out T value);
 
-		#region Caching
+		/// <summary>Writes <paramref name="value"/> as text that <see cref="TryParseValue"/> reads back as the same value.</summary>
+		protected abstract string FormatValue(T value);
 
-		public override void SaveCachedValue()
+		/// <summary>The value when no remote value is known: the asset's default, unless a subclass protects it.</summary>
+		protected virtual T GetDefault() => _defaultValue;
+
+		protected sealed override bool TryAcceptText(string text)
 		{
-			if (!_cacheValue || string.IsNullOrEmpty(_variableKey))
-				return;
+			if (!TryParseValue(text, out T value))
+			{
+				return false;
+			}
 
-			T valueToSave = _hasRemoteValue ? _remoteValue : _defaultValue;
-			CachedProperty.Save(valueToSave);
+			_remoteValue = value;
+			return true;
 		}
 
-		public override void LoadCachedValue()
-		{
-			if (!_cacheValue || string.IsNullOrEmpty(_variableKey))
-				return;
+		protected sealed override void OnRemoteValueCleared() => _remoteValue = default;
 
-			// Reading from PrefsProperty will load from PlayerPrefs
-			_remoteValue = CachedProperty.Read();
-			_hasRemoteValue = true;
-		}
-
-		public override void ClearCachedValue()
-		{
-			if (string.IsNullOrEmpty(_variableKey))
-				return;
-
-			CachedProperty?.Reset();
-		}
-
-		#endregion
-
-		#region Implicit Operator
-
-		/// <summary>
-		/// Implicit conversion to the value type for convenient access.
-		/// </summary>
-		public static implicit operator T(RemoteVariable<T> variable)
-		{
-			return variable != null ? variable.Value : default;
-		}
-
-		#endregion
+		/// <summary>The variable's value; a missing variable reads as <c>default</c>.</summary>
+		public static implicit operator T(RemoteVariable<T> variable) => variable != null ? variable.Value : default;
 	}
 }

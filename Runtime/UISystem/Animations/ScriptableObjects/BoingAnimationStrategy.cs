@@ -1,4 +1,6 @@
-﻿using DG.Tweening;
+﻿using AK.Core.Extensions;
+using AK.Kernel.Timing;
+using DG.Tweening;
 using UnityEngine;
 
 namespace AK.Systems.Animations
@@ -9,7 +11,7 @@ namespace AK.Systems.Animations
 		[SerializeField] [Tooltip("Add this offset to axial direction to compensate in and out tween")]
 		private Vector2 _edgesOffset = new Vector2(250, 250);
 		
-		public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+		public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
 		{
 			var sequence = DOTween.Sequence();
 
@@ -21,10 +23,10 @@ namespace AK.Systems.Animations
 			// Use OutElastic for the cheesy boing effect
 			sequence.Append(target.DOAnchorPos(entryPos, EntryDuration).SetEase(Ease.OutElastic));
 
-			return sequence.Play();
+			return sequence.SetTimeDomain(time).Play();
 		}
 
-		public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+		public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
 		{
 			var sequence = DOTween.Sequence();
 
@@ -34,7 +36,7 @@ namespace AK.Systems.Animations
 			// Use a simple ease for the exit
 			sequence.Append(target.DOAnchorPos(endPosition, ExitDuration).SetEase(Ease.InBack));
 
-			return sequence.Play();
+			return sequence.SetTimeDomain(time).Play();
 		}
 	}
 }

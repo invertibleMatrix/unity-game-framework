@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using AK.Core;
 using UnityEngine;
 
-namespace Utilities.AudioSpawner
+namespace AK.Utilities.Audio
 {
 	/// <summary>
 	/// Catalog of all AudioConfig assets. The base registry answers identity → config; this

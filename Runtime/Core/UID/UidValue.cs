@@ -27,6 +27,9 @@ namespace AK.Core
 		public const int ByteLength   = 16;
 		public const int StringLength = 32;
 
+		// The dashed form: 8-4-4-4-12 hex digits and four dashes.
+		private const int DashedLength = 36;
+
 		[SerializeField] private string _value;
 
 		[NonSerialized] private ulong _hi;
@@ -128,8 +131,9 @@ namespace AK.Core
 		// ---------------------------------------------------------------- parsing
 
 		/// <summary>
-		/// Accepts 32 hex chars, the dashed 36-char form (any case), or either wrapped in
-		/// braces/parentheses. Returns false for anything else, including null and empty.
+		/// Accepts 32 hex chars, or the dashed 36-char form with its dashes in place (8-4-4-4-12),
+		/// in any case: bare, or wrapped in matching braces or parentheses. White space around it
+		/// is ignored. Returns false for anything else, including null and empty.
 		/// </summary>
 		public static bool TryParse(string s, out Uid uid)
 		{
@@ -139,8 +143,14 @@ namespace AK.Core
 			ReadOnlySpan<char> span = s.AsSpan().Trim();
 			if (span.Length >= 2 && (span[0] == '{' || span[0] == '('))
 			{
+				char close = span[0] == '{' ? '}' : ')';
+				if (span[span.Length - 1] != close) return false;
+
 				span = span.Slice(1, span.Length - 2);
 			}
+
+			bool dashed = span.Length == DashedLength;
+			if (!dashed && span.Length != StringLength) return false;
 
 			Span<byte> bytes = stackalloc byte[ByteLength];
 			int written = 0;
@@ -149,10 +159,14 @@ namespace AK.Core
 			for (int i = 0; i < span.Length; i++)
 			{
 				char c = span[i];
-				if (c == '-') continue;
+				if (dashed && (i == 8 || i == 13 || i == 18 || i == 23))
+				{
+					if (c != '-') return false;
+					continue;
+				}
 
 				int v = HexValue(c);
-				if (v < 0 || written >= ByteLength) return false;
+				if (v < 0) return false;
 
 				if (nibble < 0)
 				{
@@ -164,8 +178,6 @@ namespace AK.Core
 					nibble = -1;
 				}
 			}
-
-			if (written != ByteLength || nibble >= 0) return false;
 
 			uid = FromBytes(bytes);
 			return true;

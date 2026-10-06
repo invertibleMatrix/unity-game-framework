@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -42,13 +44,7 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Glow intensity")]
         private float _glowIntensity = 1.2f;
         
-        [SerializeField] [Tooltip("Add screen shake effect")]
-        private bool _addScreenShake = false;
-        
-        [SerializeField] [Tooltip("Screen shake strength")]
-        private float _screenShakeStrength = 5f;
-
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             var sequence = DOTween.Sequence();
             
@@ -66,32 +62,25 @@ namespace AK.Systems.Animations
                 // Position shake
                 if (_positionStrength != Vector3.zero)
                 {
-                    target.DOShakePosition(EntryDuration, _positionStrength, _vibrato, _randomness, _fadeOut);
+                    target.DOShakePosition(EntryDuration, _positionStrength, _vibrato, _randomness, _fadeOut).SetTimeDomain(time);
                 }
                 
                 // Rotation shake
                 if (_rotationStrength != Vector3.zero)
                 {
-                    target.DOShakeRotation(EntryDuration, _rotationStrength, _vibrato, _randomness, _fadeOut);
+                    target.DOShakeRotation(EntryDuration, _rotationStrength, _vibrato, _randomness, _fadeOut).SetTimeDomain(time);
                 }
                 
                 // Scale shake
                 if (_scaleStrength != Vector3.zero)
                 {
-                    target.DOShakeScale(EntryDuration, _scaleStrength, _vibrato, _randomness, _fadeOut);
+                    target.DOShakeScale(EntryDuration, _scaleStrength, _vibrato, _randomness, _fadeOut).SetTimeDomain(time);
                 }
                 
                 // Glow effect
                 if (_addGlowEffect)
                 {
-                    target.DOScale(Vector3.one * _glowIntensity, 0.1f).SetLoops(10, LoopType.Yoyo).SetEase(Ease.InOutSine);
-                }
-                
-                // Screen shake (if applicable)
-                if (_addScreenShake)
-                {
-                    // This would need to be implemented in your camera system
-                    // Camera.main.DOShakePosition(EntryDuration, _screenShakeStrength);
+                    target.DOScale(Vector3.one * _glowIntensity, 0.1f).SetLoops(10, LoopType.Yoyo).SetEase(Ease.InOutSine).SetTimeDomain(time);
                 }
             });
             
@@ -100,10 +89,10 @@ namespace AK.Systems.Animations
             sequence.Append(target.DOScale(Vector3.one, 0.2f).SetEase(Ease.OutBack));
             sequence.Append(target.DOLocalRotate(Vector3.zero, 0.2f).SetEase(Ease.OutBack));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             var sequence = DOTween.Sequence();
             
@@ -117,19 +106,19 @@ namespace AK.Systems.Animations
                 // Position shake
                 if (exitPositionStrength != Vector3.zero)
                 {
-                    target.DOShakePosition(_finalShakeDuration, exitPositionStrength, _vibrato * 2, _randomness, false);
+                    target.DOShakePosition(_finalShakeDuration, exitPositionStrength, _vibrato * 2, _randomness, false).SetTimeDomain(time);
                 }
                 
                 // Rotation shake
                 if (exitRotationStrength != Vector3.zero)
                 {
-                    target.DOShakeRotation(_finalShakeDuration, exitRotationStrength, _vibrato * 2, _randomness, false);
+                    target.DOShakeRotation(_finalShakeDuration, exitRotationStrength, _vibrato * 2, _randomness, false).SetTimeDomain(time);
                 }
                 
                 // Scale shake
                 if (exitScaleStrength != Vector3.zero)
                 {
-                    target.DOShakeScale(_finalShakeDuration, exitScaleStrength, _vibrato * 2, _randomness, false);
+                    target.DOShakeScale(_finalShakeDuration, exitScaleStrength, _vibrato * 2, _randomness, false).SetTimeDomain(time);
                 }
             });
             
@@ -139,7 +128,7 @@ namespace AK.Systems.Animations
             // Final collapse
             sequence.Append(target.DOScale(Vector3.zero, ExitDuration * 0.3f).SetEase(Ease.InBack));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
     }
 }

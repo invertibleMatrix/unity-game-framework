@@ -1,6 +1,6 @@
-﻿using Utilities.AudioSpawner;
+﻿using AK.Utilities.Audio;
 
-namespace UI
+namespace AK.UI
 {
 	public class UIPanelCloseAudioComponent : AudioComponent
 	{

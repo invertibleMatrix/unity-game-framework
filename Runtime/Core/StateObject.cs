@@ -1,15 +1,22 @@
-﻿using System;
-using System.Collections;
-using AK.StateMachine;
+﻿using AK.StateMachines;
 
 namespace AK.Core
 {
+    /// <summary>
+    /// A plain object run by a state machine, created and ticked by the
+    /// <see cref="StateObjectFactory"/>.
+    /// </summary>
     public abstract class StateObject
     {
         internal abstract void InitInternal();
-        protected abstract void OnCreate();
         internal abstract void OnUpdate();
-        internal abstract void OnDestroy();
+        internal abstract void DestroyInternal();
+
+        /// <summary>Called once the object is created and its state machine is in its first state.</summary>
+        protected abstract void OnCreate();
+
+        /// <summary>Called when the factory destroys the object, after its state machine is disposed.</summary>
+        protected virtual void OnDestroy() { }
     }
 
     public abstract class StateObject<TStateObject, TStateBase> : StateObject
@@ -27,6 +34,18 @@ namespace AK.Core
         internal override void OnUpdate()
         {
             _stateMachine.Tick();
+        }
+
+        internal override void DestroyInternal()
+        {
+            try
+            {
+                _stateMachine?.Dispose();
+            }
+            finally
+            {
+                OnDestroy();
+            }
         }
     }
 }

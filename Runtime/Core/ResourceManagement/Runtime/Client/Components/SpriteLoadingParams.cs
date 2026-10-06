@@ -1,3 +1,4 @@
+#if UGFW_ADDRESSABLES
 using UnityEngine;
 
 namespace AK.Core.ResourceManagement
@@ -79,3 +80,4 @@ namespace AK.Core.ResourceManagement
 		private Color GetTint() => Color.yellow;
 	}
 }
+#endif

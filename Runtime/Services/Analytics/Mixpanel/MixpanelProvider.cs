@@ -10,9 +10,10 @@ namespace AK.Services.Analytics.Providers
 	/// <summary>
 	/// Mixpanel Unity SDK adapter. Lives in AK.Services.Mixpanel so AK.Services
 	/// does not reference the vendor assembly. Compiled only when com.mixpanel.unity
-	/// is installed (versionDefine MIXPANEL_SDK).
+	/// is installed (versionDefine UGFW_MIXPANEL_SDK).
 	/// Tokens: Edit → Project Settings → Mixpanel (Runtime vs Debug). Editor uses Debug Token.
-	/// Unity SDK requires Original ID Merge. Identify with Playroom PlayerId, not meeple id.
+	/// Unity SDK requires Original ID Merge. Identify with the account's stable user id, not a
+	/// per-character or per-device one.
 	/// </summary>
 	public class MixpanelProvider : BaseAnalyticsProvider
 	{
@@ -57,7 +58,7 @@ namespace AK.Services.Analytics.Providers
 
 			try
 			{
-				MixpanelMappedEvent mapped = MixpanelEventMapper.Map(evt);
+				MixpanelMappedEvent mapped = MixpanelEventMapper.Map(evt, _taxonomy.FlatNamer);
 				Value properties = ToMixpanelValue(mapped.Properties);
 				if (properties == null)
 				{
@@ -117,25 +118,6 @@ namespace AK.Services.Analytics.Providers
 
 		public override void SetUserProperty(string propertyName, string value)
 		{
-			if (string.IsNullOrEmpty(propertyName))
-			{
-				return;
-			}
-
-			int dimension = propertyName switch
-			{
-				"age" or "current_age" => 1,
-				"content_state" => 2,
-				"life_index" or "meeple_lives" => 3,
-				_ => 0
-			};
-
-			if (dimension > 0)
-			{
-				SetCustomDimension(dimension, value);
-				return;
-			}
-
 			RegisterProperty(propertyName, value);
 		}
 
@@ -152,15 +134,7 @@ namespace AK.Services.Analytics.Providers
 
 		public override void SetCustomDimension(int index, string value)
 		{
-			string key = index switch
-			{
-				1 => "age",
-				2 => "content_state",
-				3 => "life",
-				_ => "custom_0" + index
-			};
-
-			RegisterProperty(key, value);
+			RegisterProperty(_taxonomy.DimensionName(index), value);
 		}
 
 		public override void Flush()

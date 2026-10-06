@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -14,9 +16,6 @@ namespace AK.Systems.Animations
         
         [SerializeField] [Tooltip("Zoom overshoot amount")]
         private Vector3 _zoomOvershoot = new Vector3(1.3f, 1.3f, 1.3f);
-        
-        [SerializeField] [Tooltip("Add zoom bounce")]
-        private bool _addZoomBounce = true;
         
         [SerializeField] [Tooltip("Rotation axis")]
         private RotationAxis _rotationAxis = RotationAxis.Z;
@@ -35,18 +34,6 @@ namespace AK.Systems.Animations
         
         [SerializeField] [Tooltip("Wobble intensity")]
         private float _wobbleIntensity = 10f;
-        
-        [SerializeField] [Tooltip("Add camera shake effect")]
-        private bool _addCameraShake = false;
-        
-        [SerializeField] [Tooltip("Camera shake intensity")]
-        private float _cameraShakeIntensity = 0.5f;
-        
-        [SerializeField] [Tooltip("Add motion blur effect")]
-        private bool _addMotionBlur = false;
-        
-        [SerializeField] [Tooltip("Add lens flare effect")]
-        private bool _addLensFlare = false;
         
         [SerializeField] [Tooltip("Zoom in duration")]
         private float _zoomInDuration = 0.8f;
@@ -89,7 +76,7 @@ namespace AK.Systems.Animations
             Alternating
         }
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             var sequence = DOTween.Sequence();
             
@@ -122,7 +109,7 @@ namespace AK.Systems.Animations
             {
                 sequence.AppendCallback(() =>
                 {
-                    target.DOShakeRotation(_zoomInDuration * 0.3f, new Vector3(0, 0, _wobbleIntensity), 10, 0, true);
+                    target.DOShakeRotation(_zoomInDuration * 0.3f, new Vector3(0, 0, _wobbleIntensity), 10, 0, true).SetTimeDomain(time);
                 });
             }
             
@@ -142,41 +129,10 @@ namespace AK.Systems.Animations
                 sequence.Append(target.DOScale(pulseScale, 0.2f).SetLoops(2, LoopType.Yoyo).SetEase(Ease.InOutSine));
             }
             
-            // Camera shake effect
-            if (_addCameraShake)
-            {
-                sequence.AppendCallback(() =>
-                {
-                    // This would need to be implemented in your camera system
-                    // Camera.main.DOShakePosition(_zoomInDuration * 0.5f, _cameraShakeIntensity);
-                    Debug.Log("Camera shake would be implemented here");
-                });
-            }
-            
-            // Motion blur effect
-            if (_addMotionBlur)
-            {
-                sequence.AppendCallback(() =>
-                {
-                    // This would need to be implemented with post-processing
-                    Debug.Log("Motion blur would be implemented here");
-                });
-            }
-            
-            // Lens flare effect
-            if (_addLensFlare)
-            {
-                sequence.AppendCallback(() =>
-                {
-                    // This would need to be implemented with particle effects
-                    Debug.Log("Lens flare would be implemented here");
-                });
-            }
-            
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             var sequence = DOTween.Sequence();
             
@@ -207,18 +163,8 @@ namespace AK.Systems.Animations
             
             // Fade out
             sequence.Join(canvasGroup.DOFade(0, _zoomOutDuration * 0.5f).SetEase(Ease.InQuad));
-            
-            // Camera shake on exit
-            if (_addCameraShake)
-            {
-                sequence.AppendCallback(() =>
-                {
-                    // Camera.main.DOShakePosition(_zoomOutDuration * 0.3f, _cameraShakeIntensity * 2f);
-                    Debug.Log("Exit camera shake would be implemented here");
-                });
-            }
-            
-            return sequence.Play();
+
+            return sequence.SetTimeDomain(time).Play();
         }
 
         private Vector3 GetRotationAxis()

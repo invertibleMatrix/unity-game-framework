@@ -2,12 +2,14 @@
     "name": "AK.UISystem",
     "rootNamespace": "AK.Systems",
     "references": [
+        "AK.Kernel",
         "AK.Core",
         "DOTween",
         "DOTween.Modules",
         "UniTask",
         "UniTask.DOTween",
         "Unity.TextMeshPro",
+        "Unity.InputSystem",
         "Reflex"
     ],
     "includePlatforms": [],
@@ -17,6 +19,12 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.inputsystem",
+            "expression": "",
+            "define": "UGFW_INPUT_SYSTEM"
+        }
+    ],
     "noEngineReferences": false
 }

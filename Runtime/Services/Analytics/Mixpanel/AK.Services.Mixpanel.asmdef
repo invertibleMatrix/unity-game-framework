@@ -14,13 +14,13 @@
     "precompiledReferences": [],
     "autoReferenced": false,
     "defineConstraints": [
-        "MIXPANEL_SDK"
+        "UGFW_MIXPANEL_SDK"
     ],
     "versionDefines": [
         {
             "name": "com.mixpanel.unity",
             "expression": "",
-            "define": "MIXPANEL_SDK"
+            "define": "UGFW_MIXPANEL_SDK"
         }
     ],
     "noEngineReferences": false

@@ -1,4 +1,5 @@
-﻿namespace AK.Core.ResourceManagement
+﻿#if UGFW_ADDRESSABLES
+namespace AK.Core.ResourceManagement
 {
 	/// <summary>
 	/// <see cref="IOperationStatusProvider"/> Is Contract To Get <see cref="DownloadStatus"/> From System...
@@ -21,3 +22,4 @@
 		}
 	}
 }
+#endif

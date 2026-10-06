@@ -1,8 +1,15 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using UnityEngine;
 using DG.Tweening;
 
 namespace AK.Utilities
 {
+	/// <summary>
+	/// Cycles a sprite through the colors for a while, then fades it out and disables it, or
+	/// eases it back to the color it had before. Every tween here targets the sprite: playing
+	/// again restarts the effect, and destroying the component ends it.
+	/// </summary>
 	public class DiscoEffect : MonoBehaviour
 	{
 		public enum EndBehavior
@@ -11,116 +18,94 @@ namespace AK.Utilities
 			DisableSprite // Fades out and disables the component
 		}
 
+		// Keeps a cycle setting of zero from dividing by zero.
+		private const float MinCycleSeconds = 0.01f;
+
 		[SerializeField] private SpriteRenderer _spriteRenderer;
 
 		[Header("Settings")] [Tooltip("How long the disco effect lasts.")] [SerializeField]
 		private float _effectDuration = 5f;
 
-		[Tooltip("The speed of the color cycle. Lower is slower.")] [SerializeField]
+		[Tooltip("Seconds per cycle through the colors. Lower is faster.")] [SerializeField]
 		private float _colorCycleSpeed = 2f;
 
 		[Tooltip("Transparency during the effect (0 = invisible, 1 = solid).")] [Range(0f, 1f)] [SerializeField]
 		private float _targetAlpha = 0.8f;
+
+		[Tooltip("The time the effect runs on.")] [SerializeField]
+		private TimeDomain _timeDomain = TimeDomain.Scaled;
 
 		[Header("Cleanup")] [SerializeField]
 		private EndBehavior onComplete = EndBehavior.DisableSprite;
 
 		[SerializeField] private float _endTransitionTime = 0.5f;
 
-		// Internal state
-		private Tween _discoTween;
+		// The sprite's color before the effect. An effect played over another keeps it.
 		private Color _originalColor;
+		private bool  _running;
 
 		public void PlayDiscoEffect()
 		{
 			if (_spriteRenderer == null) return;
 
-			// 1. Kill any existing tween on this sprite to prevent conflicts
+			// Ends the effect already playing, its end phase included, and any other tween on the sprite.
 			_spriteRenderer.DOKill();
 
+			if (!_running) _originalColor = _spriteRenderer.color;
+			_running = true;
 			_spriteRenderer.enabled = true;
-			// 2. Store original state
-			_originalColor = _spriteRenderer.color;
 
-			// 3. Create the Sequence
-			// We use a Sequence so we can chain the Loop and the End Phase
-			Sequence sequence = DOTween.Sequence();
+			float cycleSeconds = Mathf.Max(_colorCycleSpeed, MinCycleSeconds);
+			float duration = Mathf.Max(0f, _effectDuration);
 
-			// Pause initially so we can satisfy the requirement to call Play() explicitly
-			sequence.Pause();
-
-			// --- PHASE 1: The Disco Loop ---
-			// We use DOVirtual.Float to animate a value from 0 to 1 repeatedly.
-			// inside the update callback, we convert that value to a Color (HSV).
-			Tween colorLoop = DOVirtual.Float(0f, 1f, _colorCycleSpeed, (float value) =>
-			                           {
-				                           // Create a rainbow color based on the current 'value' (Hue)
-				                           Color discoColor = Color.HSVToRGB(value, 1f, 1f);
-
-				                           // Apply the user-configured transparency
-				                           discoColor.a = _targetAlpha;
-
-				                           _spriteRenderer.color = discoColor;
-			                           })
-			                           .SetLoops(-1, LoopType.Restart) // Infinite loop (we will kill it manually or via sequence duration)
-			                           .SetEase(Ease.Linear); // Linear ensures the color transition is constant
-
-			// Add the loop to the sequence. 
-			// Note: Since the loop is infinite, we just append it. We will handle the "Duration" by limiting the sequence insert.
-			// However, a cleaner way for a fixed duration is to Append the loop for the specific duration.
-			// BUT, DOVirtual.Float with infinite loops blocks the sequence.
-
-			// BETTER APPROACH FOR SEQUENCE: 
-			// We run the infinite color changer on the side, and use the Sequence to manage the TIME.
-
-			// Let's refactor the sequence logic for robustness:
-			// We will tween a dummy value for 'effectDuration', and OnUpdate run the color logic.
-
-			float hue = 0f;
-			sequence.Append(DOVirtual.Float(0f, 1f, _effectDuration, (v) =>
-			{
-				// Increment hue based on time and speed
-				hue += Time.deltaTime * (1f / _colorCycleSpeed);
-				if (hue > 1f) hue -= 1f;
-
-				Color c = Color.HSVToRGB(hue, 1f, 1f);
-				c.a = _targetAlpha;
-				_spriteRenderer.color = c;
-			}).SetEase(Ease.Linear));
-
-			// --- PHASE 2: The End Behavior ---
-			sequence.OnComplete(() => { HandleEndBehavior(_spriteRenderer); });
-
-			// 4. Explicitly Play the Tween
-			_discoTween = sequence;
-			_discoTween.Play();
+			// The tweened value is the time the effect has run.
+			DOVirtual.Float(0f, duration, duration, elapsed =>
+			         {
+				         Color color = Color.HSVToRGB(Mathf.Repeat(elapsed / cycleSeconds, 1f), 1f, 1f);
+				         color.a = _targetAlpha;
+				         _spriteRenderer.color = color;
+			         })
+			         .SetEase(Ease.Linear)
+			         .SetTarget(_spriteRenderer)
+			         .SetId(this)
+			         .SetTimeDomain(_timeDomain)
+			         .OnComplete(EndEffect)
+			         .Play();
 		}
 
-		private void HandleEndBehavior(SpriteRenderer targetSprite)
+		private void EndEffect()
 		{
+			float duration = Mathf.Max(0f, _endTransitionTime);
+
 			if (onComplete == EndBehavior.DisableSprite)
 			{
-				// Fade out alpha to 0, then disable
-				targetSprite.DOFade(0f, _endTransitionTime)
-				            .SetEase(Ease.InQuad)
-				            .OnComplete(() => targetSprite.enabled = false)
-				            .Play();
+				// Fades out, then disables the sprite with its color back as it was.
+				_spriteRenderer.DOFade(0f, duration)
+				               .SetEase(Ease.InQuad)
+				               .SetId(this)
+				               .SetTimeDomain(_timeDomain)
+				               .OnComplete(() =>
+				               {
+					               _spriteRenderer.enabled = false;
+					               _spriteRenderer.color = _originalColor;
+					               _running = false;
+				               })
+				               .Play();
 			}
 			else
 			{
-				// Smoothly return to original color
-				targetSprite.DOColor(_originalColor, _endTransitionTime)
-				            .Play();
+				_spriteRenderer.DOColor(_originalColor, duration)
+				               .SetId(this)
+				               .SetTimeDomain(_timeDomain)
+				               .OnComplete(() => _running = false)
+				               .Play();
 			}
 		}
 
 		private void OnDestroy()
 		{
-			// Safety: clean up tweens if the object is destroyed
-			if (_discoTween != null && _discoTween.IsActive())
-			{
-				_discoTween.Kill();
-			}
+			// This effect's tweens only: the sprite may outlive the component.
+			DOTween.Kill(this);
 		}
 	}
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
@@ -12,6 +13,8 @@ namespace AK.Systems
 	/// view's stack behaviour.
 	/// Cancellation never skips settlement: a view already popped from its stack is settled
 	/// regardless, or it would linger registered, active and off-stack.
+	/// A close of a view that is already closing joins that close: it completes when the view
+	/// has settled.
 	/// </summary>
 	internal sealed class ClosePipeline
 	{
@@ -38,7 +41,12 @@ namespace AK.Systems
 				return;
 			}
 
-			if (record.IsClosing) return;
+			if (record.IsClosing)
+			{
+				// The caller's token ends only its own wait, never the close in flight.
+				await record.WhenCloseSettled().AttachExternalCancellation(ct);
+				return;
+			}
 
 			record.IsClosing = true;
 			try
@@ -58,16 +66,47 @@ namespace AK.Systems
 		}
 
 		/// <summary>
-		/// The view settles its own resources in OnDestroy; children do the same via their own
-		/// OnDestroy, so no cascade is needed here. Idempotent: system-driven closes have
-		/// already removed everything.
+		/// A registered view was destroyed outside the system: a direct Destroy, a scene unload.
+		/// The view settles its own resources in OnDestroy, and its children do the same through
+		/// theirs, so no cascade is needed here — only the bookkeeping goes. What the view
+		/// covered comes back as if it had closed, a frame later, once the destroy is complete:
+		/// a view below that goes in the same destroy is unregistered by then and left alone.
+		/// Idempotent: system-driven closes have already removed everything.
 		/// </summary>
 		public void NotifyDestroyedExternally(UIView view)
 		{
+			ViewStack covered = null;
+			UIView    below   = null;
+			bool      screen  = false;
+
+			ViewStackBehaviour behaviour = view.StackBehaviour;
+
+			if (_registry.TryGet(view, out var record) && !record.IsClosing && !_factory.IsShuttingDown && StackPolicy.Pauses(behaviour))
+			{
+				covered = _screens.FindStackOf(view);
+				screen = covered != null;
+				if (!screen && record.Parent != null) _histories.TryGet(record.Parent, out covered);
+				below = covered?.BelowOrNull(view);
+			}
+
 			_registry.Remove(view);
 			_screens.RemoveEverywhere(view);
 			_histories.RemoveEverywhere(view);
 			_histories.Remove(view);
+
+			if (below != null) ResumeAfterDestroyAsync(covered, below, behaviour, screen).Forget();
+		}
+
+		private async UniTaskVoid ResumeAfterDestroyAsync(ViewStack stack, UIView below, ViewStackBehaviour behaviour, bool screen)
+		{
+			await UniTask.NextFrame();
+
+			if (below == null || !_registry.TryGet(below, out var record) || record.IsClosing) return;
+			if (!stack.Contains(below) || stack.IsCoveredAbove(below)) return;
+
+			// See CloseFragmentAsync: a resurfacing fragment keeps its data.
+			if (!screen) below.SetContext(null);
+			await ResumeBelowAsync(behaviour, below, immediate: false, cascade: screen, CancellationToken.None);
 		}
 
 		private async UniTask CloseScreenAsync(ViewRecord record, CloseContext context, bool immediate, CancellationToken ct)
@@ -80,11 +119,22 @@ namespace AK.Systems
 				return;
 			}
 
-			// Not the top of its channel: nothing above it is affected, so no animation and no resume.
+			// Not the top of its channel: nothing above it is affected, so it settles without
+			// animation. The screen directly beneath may have been paused or hidden by this one;
+			// it comes back only if nothing still above it covers it (see CloseFragmentAsync).
 			if (stack.Count == 0 || stack.Peek() != view)
 			{
+				UIView             below     = stack.BelowOrNull(view);
+				ViewStackBehaviour behaviour = view.StackBehaviour;
 				_screens.Remove(stack, view);
+
 				await SettleAsync(record, context, immediate: true, ct);
+
+				if (below != null && _registry.Contains(below) && StackPolicy.Pauses(behaviour) && !stack.IsCoveredAbove(below))
+				{
+					await ResumeBelowAsync(behaviour, below, immediate, cascade: true, ct);
+				}
+
 				return;
 			}
 
@@ -247,7 +297,7 @@ namespace AK.Systems
 			if (!_registry.Contains(view)) return;
 
 			bool staysRegistered = record.IsStatic && context == CloseContext.Normal;
-			bool pooled          = !staysRegistered && record.ShouldPool && !_factory.IsShuttingDown;
+			bool pooled          = !staysRegistered && record.ShouldPool && _factory.CanPool(view);
 
 			// Before the cascade, so the closes a view issues here still find its children registered.
 			if (pooled) view.OnBeforePool();
@@ -272,22 +322,43 @@ namespace AK.Systems
 		/// <summary>Prepares a settled view for reuse and hands it to the pool.</summary>
 		private void Shelve(UIView view)
 		{
+			ResetForReuse(view);
+			_factory.Release(view);
+		}
+
+		/// <summary>
+		/// Resets a view on its way to the pool, and the static children that go with it: they
+		/// stay in its hierarchy, and show again with it. Only views inside it, which also rules
+		/// out a cycle; a static entry that points elsewhere is not reused with it.
+		/// </summary>
+		private static void ResetForReuse(UIView view)
+		{
 			if (view.TryGetComponent(out ViewHighlight highlight))
 			{
 				highlight.Restore();
 			}
 
 			view.OnReset();
-			_factory.Release(view);
+
+			IReadOnlyList<StaticViewEntry> statics = view.StaticViews;
+			for (int i = 0; i < statics.Count; i++)
+			{
+				UIView child = statics[i].View;
+				if (child != null && child != view && child.transform.IsChildOf(view.transform))
+				{
+					ResetForReuse(child);
+				}
+			}
 		}
 
 		/// <summary>
 		/// Settles the children of a view that is closing, deepest first. Dynamic children
-		/// never outlive the close: pooled when they ask for it, destroyed otherwise. Static
-		/// children are torn down; under a parent that stays registered they stay registered
-		/// too, merely hidden; otherwise they are unregistered and left in the hierarchy for
-		/// the parent's fate (re-attached on reuse from the pool, or destroyed with it).
-		/// The parent's own history and show gate go with the children.
+		/// never outlive the close: pooled when they ask for it and their kind has room,
+		/// destroyed otherwise. Static children are torn down; under a parent that stays
+		/// registered they stay registered too, merely hidden; otherwise they are unregistered
+		/// and left in the hierarchy for the parent's fate (reset and re-attached on reuse from
+		/// the pool, or destroyed with it). The parent's own history and show gate go with the
+		/// children.
 		/// </summary>
 		private void CascadeChildren(ViewRecord parent, bool parentStaysRegistered)
 		{
@@ -297,7 +368,7 @@ namespace AK.Systems
 				if (child == null || !_registry.TryGet(child, out var childRecord)) continue;
 
 				bool staticSurvives = childRecord.IsStatic && parentStaysRegistered;
-				bool pooled         = !staticSurvives && childRecord.ShouldPool && !_factory.IsShuttingDown;
+				bool pooled         = !staticSurvives && childRecord.ShouldPool && _factory.CanPool(child);
 
 				if (pooled) child.OnBeforePool();
 

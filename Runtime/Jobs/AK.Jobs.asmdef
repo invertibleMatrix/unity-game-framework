@@ -2,6 +2,7 @@
     "name": "AK.Jobs",
     "rootNamespace": "AK.Jobs",
     "references": [
+        "AK.Kernel",
         "AK.Core"
     ],
     "includePlatforms": [],

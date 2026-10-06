@@ -1,4 +1,4 @@
-using AK.Core.Collections;
+using AK.Kernel.Collections;
 using UnityEngine;
 
 namespace AK.Utilities

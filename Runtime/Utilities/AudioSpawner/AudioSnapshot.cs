@@ -2,7 +2,7 @@ using AK.Core;
 using UnityEngine;
 using UnityEngine.Audio;
 
-namespace Utilities.AudioSpawner
+namespace AK.Utilities.Audio
 {
 	/// <summary>
 	/// A mixer snapshot as a joint asset: identity plus the AudioMixerSnapshot reference,

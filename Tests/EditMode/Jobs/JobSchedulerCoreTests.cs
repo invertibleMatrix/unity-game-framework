@@ -66,9 +66,9 @@ namespace AK.Tests.Jobs
 		[Test]
 		public void Schedule_OnComplete_RunsOnMainThread_ExactlyOnce_AtTheFollowingTick()
 		{
-			JobScheduler scheduler = Create(workers: 2);
-			var          job       = new RecordingJob();
-			JobHandle    handle    = scheduler.Schedule(job);
+			JobScheduler   scheduler = Create(workers: 2);
+			var            job       = new RecordingJob();
+			FrameJobHandle handle    = scheduler.Schedule(job);
 
 			RunFrame(scheduler, 1);
 			Assert.AreEqual(0, job.CompleteCount, "completion waits for the barrier, it is never delivered from a worker");
@@ -113,9 +113,9 @@ namespace AK.Tests.Jobs
 		[Test]
 		public void Cancel_BeforeHandOff_NeverExecutes_CallbackGetsCancelledTrue()
 		{
-			JobScheduler scheduler = Create(workers: 1);
-			var          job       = new RecordingJob();
-			JobHandle    handle    = scheduler.Schedule(job);
+			JobScheduler   scheduler = Create(workers: 1);
+			var            job       = new RecordingJob();
+			FrameJobHandle handle    = scheduler.Schedule(job);
 
 			Assert.IsTrue(scheduler.Cancel(handle));
 			Assert.IsFalse(scheduler.IsPending(handle));
@@ -133,9 +133,9 @@ namespace AK.Tests.Jobs
 		[Test]
 		public void Cancel_AfterHandOff_MayExecuteOnce_CallbackGetsCancelledTrue()
 		{
-			JobScheduler scheduler = Create(workers: 1);
-			var          job       = new RecordingJob { Gate = new ManualResetEventSlim(false) };
-			JobHandle    handle    = scheduler.Schedule(job);
+			JobScheduler   scheduler = Create(workers: 1);
+			var            job       = new RecordingJob { Gate = new ManualResetEventSlim(false) };
+			FrameJobHandle handle    = scheduler.Schedule(job);
 
 			scheduler.Tick(Frame(1));
 			Assert.IsTrue(scheduler.Cancel(handle), "cancel after hand-off is accepted");
@@ -154,22 +154,22 @@ namespace AK.Tests.Jobs
 		[Test]
 		public void Cancel_WithStaleHandle_ReturnsFalse()
 		{
-			JobScheduler scheduler = Create(workers: 1);
-			var          first     = new RecordingJob();
-			JobHandle    stale     = scheduler.Schedule(first);
+			JobScheduler   scheduler = Create(workers: 1);
+			var            first     = new RecordingJob();
+			FrameJobHandle stale     = scheduler.Schedule(first);
 
 			RunFrame(scheduler, 1);
 			RunFrame(scheduler, 2);
 			Assert.AreEqual(1, first.CompleteCount);
 
-			var       second = new RecordingJob();
-			JobHandle reused = scheduler.Schedule(second);
+			var            second = new RecordingJob();
+			FrameJobHandle reused = scheduler.Schedule(second);
 			Assert.AreEqual(stale.Slot.Index, reused.Slot.Index, "the freed slot is reused, so only the generation tells the handles apart");
 			Assert.AreNotEqual(stale, reused);
 
 			Assert.IsFalse(scheduler.Cancel(stale));
 			Assert.IsFalse(scheduler.IsPending(stale));
-			Assert.IsFalse(scheduler.Cancel(JobHandle.Invalid));
+			Assert.IsFalse(scheduler.Cancel(FrameJobHandle.Invalid));
 			Assert.IsTrue(scheduler.IsPending(reused), "the stale cancel did not touch the live job in the same slot");
 
 			RunFrame(scheduler, 3);
@@ -329,7 +329,7 @@ namespace AK.Tests.Jobs
 			Assert.AreEqual(55, jobs[0].ExecuteCount);
 		}
 
-		private struct IntegrateJob : IJob
+		private struct IntegrateJob : IFrameJob
 		{
 			public float X, V;
 
@@ -370,22 +370,20 @@ namespace AK.Tests.Jobs
 				RunFrame(scheduler, frame);
 			}
 
-			for (int frame = 1; frame <= warmup; frame++) Produce(frame);
-
-			int mainThread = GcAllocations.Count(() =>
+			int lastFrame = 0;
+			void Frames(int count)
 			{
-				for (int frame = warmup + 1; frame <= warmup + measured; frame++) Produce(frame);
-			});
+				for (int f = 0; f < count; f++) Produce(++lastFrame);
+			}
 
-			int anyThread = GcAllocations.Count(() =>
-			{
-				for (int frame = warmup + measured + 1; frame <= warmup + 2 * measured; frame++) Produce(frame);
-			}, allThreads: true);
+			Frames(warmup);
+			int mainThread = GcAllocations.Count(() => Frames(measured));
+			int anyThread  = GcAllocations.CountOnAllThreads(() => Frames(measured));
 
 			Assert.AreEqual(0, mainThread, "main thread: batch fill + results read + schedule + cancel + barrier must not allocate once warm");
 			Assert.AreEqual(0, anyThread, "workers: chunk claims, phase waits and job execution must not allocate once warm");
 			Assert.AreEqual(workers, scheduler.Stats.WorkerCount);
-			Assert.AreEqual(warmup + 2 * measured, repeating.Count);
+			Assert.AreEqual(lastFrame, repeating.Count, "the repeating job ran at every frame");
 			Assert.AreEqual(elements, batch.Results.Length);
 		}
 	}

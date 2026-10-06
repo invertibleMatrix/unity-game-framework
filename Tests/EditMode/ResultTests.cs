@@ -1,5 +1,5 @@
 using System;
-using AK.Core;
+using AK.Kernel.Results;
 using AK.Tests.Support;
 using NUnit.Framework;
 
@@ -79,13 +79,13 @@ namespace AK.Tests
 		}
 
 		[Test]
-		public void Typed_ImplicitFromValue_AndFromUntypedFailure()
+		public void Typed_ImplicitFromValue_ExplicitFromUntypedFailure()
 		{
 			Result<int> ok = 7;
 			Assert.IsTrue(ok.IsOk);
 			Assert.AreEqual(7, ok.Value);
 
-			Result<int> failed = Result.Fail(ErrorCode.Timeout, "slow");
+			var failed = (Result<int>)Result.Fail(ErrorCode.Timeout, "slow");
 			Assert.AreEqual(ErrorCode.Timeout, failed.Code);
 			Assert.AreEqual("slow", failed.Detail);
 		}
@@ -94,6 +94,7 @@ namespace AK.Tests
 		public void Untyped_As_OnOk_Throws()
 		{
 			Assert.Throws<InvalidOperationException>(() => Result.Ok.As<int>());
+			Assert.Throws<InvalidOperationException>(() => _ = (Result<int>)Result.Ok);
 		}
 
 		[Test]

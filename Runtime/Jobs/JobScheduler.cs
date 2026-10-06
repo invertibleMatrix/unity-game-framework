@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
-using AK.Core.Collections;
+using AK.Kernel.Collections;
 using Unity.Profiling;
 using UnityEngine.Profiling;
 using Debug = UnityEngine.Debug;
@@ -17,11 +17,14 @@ namespace AK.Jobs
 	/// every worker finished the previous frame. From the kick until that observation, workers read
 	/// the frozen executing buffers, the chunk list and the frame context, and write only their own
 	/// job data; the main thread appends to the pending buffers and touches nothing the workers read.
-	/// The two events are release/acquire pairs, so no other fences are needed. The only atomics are
+	/// The two signals are release/acquire pairs, so no other fences are needed. The only atomics are
 	/// the chunk cursor, the per-phase chunk counters and the remaining-workers counter.
 	///
 	/// A frame whose workers are still busy at the next barrier is skipped — no swap, no kick — and
 	/// pending work simply waits one more frame. Nothing is ever reset while a worker may be running.
+	///
+	/// Without workers the barrier runs the frame itself, chunk by chunk in phase order, and marks it
+	/// done; the next barrier collects it as it would a worker's frame.
 	/// </summary>
 	public sealed partial class JobScheduler : IJobScheduler
 	{
@@ -29,6 +32,7 @@ namespace AK.Jobs
 
 		private static readonly ProfilerMarker TickMarker   = new("AK.Jobs.Tick");
 		private static readonly ProfilerMarker WorkerMarker = new("AK.Jobs.Worker");
+		private static readonly ProfilerMarker InlineMarker = new("AK.Jobs.Inline");
 
 		private readonly JobSchedulerOptions _options;
 		private readonly int                 _mainThreadId;
@@ -48,10 +52,12 @@ namespace AK.Jobs
 		private volatile int  _openPhase;
 		private volatile bool _stopping;
 
-		private readonly Thread[]               _workers;
-		private readonly ManualResetEventSlim[] _kicks;
-		private readonly ManualResetEventSlim   _done = new(false, 0);
-		private readonly long[]                 _workerTicks;
+		private readonly Thread[]            _workers;
+		private readonly ManualResetSignal[] _kicks;
+		private readonly ManualResetSignal   _done = new(spinCount: 0);
+
+		// One slot per worker; without workers, slot 0 times the inline run.
+		private readonly long[] _workerTicks;
 
 		// Main-thread state.
 		private bool _busy;
@@ -72,14 +78,18 @@ namespace AK.Jobs
 			for (int i = 0; i < _lanes.Length; i++) _lanes[i] = new PhaseLane();
 			_phaseRemaining = new int[_options.PhaseCount];
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+			int n = 0; // WebGL can't start threads, so every frame runs inline.
+#else
 			int n = _options.WorkerCount;
+#endif
 			_workers     = new Thread[n];
-			_kicks       = new ManualResetEventSlim[n];
-			_workerTicks = new long[n];
+			_kicks       = new ManualResetSignal[n];
+			_workerTicks = new long[Math.Max(n, 1)];
 
 			for (int i = 0; i < n; i++)
 			{
-				_kicks[i]   = new ManualResetEventSlim(false, _options.SpinCount);
+				_kicks[i]   = new ManualResetSignal(_options.SpinCount);
 				_workers[i] = new Thread(WorkerMain)
 				{
 					IsBackground = true,
@@ -115,7 +125,7 @@ namespace AK.Jobs
 
 		// ---------------------------------------------------------------- scheduling (main thread)
 
-		public JobHandle Schedule(IJob job, int phase = 0)
+		public FrameJobHandle Schedule(IFrameJob job, int phase = 0)
 		{
 			ThrowIfNotMainThread();
 			ThrowIfDisposed();
@@ -125,7 +135,7 @@ namespace AK.Jobs
 			Handle<JobSlot> handle = _slots.Add(new JobSlot
 			{
 				Job          = job,
-				Callback     = job as IJobCallback,
+				Callback     = job as IFrameJobCallback,
 				Kind         = JobKind.OneShot,
 				Phase        = (byte)phase,
 				ScheduledGen = _handOffGen,
@@ -135,10 +145,10 @@ namespace AK.Jobs
 			lane.PendingJobs.Add(job);
 			lane.PendingHandles.Add(handle);
 
-			return new JobHandle(handle);
+			return new FrameJobHandle(handle);
 		}
 
-		public JobHandle ScheduleRepeating(IJob job, int phase = 0)
+		public FrameJobHandle ScheduleRepeating(IFrameJob job, int phase = 0)
 		{
 			ThrowIfNotMainThread();
 			ThrowIfDisposed();
@@ -148,7 +158,7 @@ namespace AK.Jobs
 			Handle<JobSlot> handle = _slots.Add(new JobSlot
 			{
 				Job          = job,
-				Callback     = job as IJobCallback,
+				Callback     = job as IFrameJobCallback,
 				Kind         = JobKind.Repeating,
 				Phase        = (byte)phase,
 				ScheduledGen = _handOffGen,
@@ -158,10 +168,10 @@ namespace AK.Jobs
 			lane.StagedRepeatingJobs.Add(job);
 			lane.StagedRepeatingHandles.Add(handle);
 
-			return new JobHandle(handle);
+			return new FrameJobHandle(handle);
 		}
 
-		public bool Cancel(JobHandle handle)
+		public bool Cancel(FrameJobHandle handle)
 		{
 			ThrowIfNotMainThread();
 
@@ -185,13 +195,13 @@ namespace AK.Jobs
 			return true;
 		}
 
-		public bool IsPending(JobHandle handle)
+		public bool IsPending(FrameJobHandle handle)
 		{
 			ThrowIfNotMainThread();
 			return _slots.Contains(handle.Slot) && !_slots.GetRefUnchecked(handle.Slot.Index).Cancelled;
 		}
 
-		public void Register<TJob>(JobBatch<TJob> batch) where TJob : struct, IJob
+		public void Register<TJob>(JobBatch<TJob> batch) where TJob : struct, IFrameJob
 		{
 			ThrowIfNotMainThread();
 			ThrowIfDisposed();
@@ -210,7 +220,7 @@ namespace AK.Jobs
 		/// Stops rotating the batch. A frame already in flight still finishes executing it, so wait for
 		/// idle before discarding a batch that was unregistered mid-frame.
 		/// </summary>
-		public void Unregister<TJob>(JobBatch<TJob> batch) where TJob : struct, IJob
+		public void Unregister<TJob>(JobBatch<TJob> batch) where TJob : struct, IFrameJob
 		{
 			ThrowIfNotMainThread();
 			if (batch == null) throw new ArgumentNullException(nameof(batch));
@@ -232,7 +242,8 @@ namespace AK.Jobs
 
 		/// <summary>
 		/// The barrier. Collects the previous frame if the workers are done with it, hands the pending
-		/// work over, and kicks the workers. Called once per frame by the driver; tests call it directly.
+		/// work over, and kicks the workers, or runs the work itself when there are none. Called once
+		/// per frame by the driver; tests call it directly.
 		/// </summary>
 		internal void Tick(in FrameContext ctx)
 		{
@@ -262,12 +273,19 @@ namespace AK.Jobs
 			_ctx              = ctx;
 			_nextChunk        = 0;
 			_faultedThisFrame = 0;
-			_remainingWorkers = _workers.Length;
 			_openPhase        = FirstNonEmptyPhase();
 
 			_done.Reset();
-			for (int i = 0; i < _kicks.Length; i++) _kicks[i].Set();
 			_busy = true;
+
+			if (_workers.Length == 0)
+			{
+				RunInline(in ctx);
+				return;
+			}
+
+			_remainingWorkers = _workers.Length;
+			for (int i = 0; i < _kicks.Length; i++) _kicks[i].Set();
 		}
 
 		/// <summary>Delivers completions for the frame the workers just finished and frees their slots.</summary>
@@ -294,10 +312,10 @@ namespace AK.Jobs
 
 				for (int i = 0; i < handles.Count; i++)
 				{
-					Handle<JobSlot> handle    = handles.Items[i];
-					ref JobSlot     slot      = ref _slots.GetRefUnchecked(handle.Index);
-					IJobCallback    callback  = slot.Callback;
-					bool            cancelled = slot.Cancelled;
+					Handle<JobSlot>   handle    = handles.Items[i];
+					ref JobSlot       slot      = ref _slots.GetRefUnchecked(handle.Index);
+					IFrameJobCallback callback  = slot.Callback;
+					bool              cancelled = slot.Cancelled;
 
 					_slots.Remove(handle);
 					SafeComplete(callback, cancelled);
@@ -341,7 +359,7 @@ namespace AK.Jobs
 
 		private void CompactCancelled(PhaseLane lane)
 		{
-			JobArray<IJob>            jobs    = lane.ExecutingJobs;
+			JobArray<IFrameJob>       jobs    = lane.ExecutingJobs;
 			JobArray<Handle<JobSlot>> handles = lane.ExecutingHandles;
 			int                       write   = 0;
 
@@ -352,7 +370,7 @@ namespace AK.Jobs
 
 				if (slot.Cancelled)
 				{
-					IJobCallback callback = slot.Callback;
+					IFrameJobCallback callback = slot.Callback;
 					_slots.Remove(handle);
 					SafeComplete(callback, cancelled: true);
 					continue;
@@ -374,7 +392,7 @@ namespace AK.Jobs
 
 		private static void MergeStagedRepeating(PhaseLane lane)
 		{
-			JobArray<IJob>            stagedJobs    = lane.StagedRepeatingJobs;
+			JobArray<IFrameJob>       stagedJobs    = lane.StagedRepeatingJobs;
 			JobArray<Handle<JobSlot>> stagedHandles = lane.StagedRepeatingHandles;
 			if (stagedJobs.Count == 0) return;
 
@@ -390,7 +408,7 @@ namespace AK.Jobs
 
 		private void PurgeCancelledRepeating(PhaseLane lane)
 		{
-			JobArray<IJob>            jobs    = lane.RepeatingJobs;
+			JobArray<IFrameJob>       jobs    = lane.RepeatingJobs;
 			JobArray<Handle<JobSlot>> handles = lane.RepeatingHandles;
 			int                       write   = 0;
 
@@ -401,7 +419,7 @@ namespace AK.Jobs
 
 				if (slot.Cancelled)
 				{
-					IJobCallback callback = slot.Callback;
+					IFrameJobCallback callback = slot.Callback;
 					_slots.Remove(handle);
 					SafeComplete(callback, cancelled: true);
 					continue;
@@ -426,7 +444,8 @@ namespace AK.Jobs
 			_chunkCount = 0;
 			Array.Clear(_phaseRemaining, 0, _phaseRemaining.Length);
 
-			int targetChunks = _workers.Length * _options.ChunksPerWorker;
+			// Without workers, the frame is chunked as for one.
+			int targetChunks = Math.Max(_workers.Length, 1) * _options.ChunksPerWorker;
 
 			for (int p = 0; p < _lanes.Length; p++)
 			{
@@ -478,12 +497,49 @@ namespace AK.Jobs
 			return p;
 		}
 
+		// ---------------------------------------------------------------- inline (main thread)
+
+		/// <summary>
+		/// Runs the frame on the calling thread. Chunks are built in phase order, so running them in
+		/// order keeps every phase ahead of the next without the gates.
+		/// </summary>
+		private void RunInline(in FrameContext ctx)
+		{
+			long start   = Stopwatch.GetTimestamp();
+			int  faulted = 0;
+
+			InlineMarker.Begin();
+
+			try
+			{
+				for (int c = 0; c < _chunkCount; c++)
+				{
+					ref readonly Chunk chunk = ref _chunks[c];
+					faulted += chunk.Runner.ExecuteRange(chunk.Start, chunk.Count, in ctx);
+				}
+			}
+			catch (Exception e)
+			{
+				// Runners contain their jobs' exceptions, so this is a scheduler bug. The frame still
+				// ends, so the next barrier isn't stuck waiting for it.
+				Debug.LogException(e);
+			}
+			finally
+			{
+				_faultedThisFrame = faulted;
+				_workerTicks[0]   = Stopwatch.GetTimestamp() - start;
+				InlineMarker.End();
+
+				_done.Set();
+			}
+		}
+
 		// ---------------------------------------------------------------- workers
 
 		private void WorkerMain(object boxedIndex)
 		{
-			int                  index = (int)boxedIndex;
-			ManualResetEventSlim kick  = _kicks[index];
+			int               index = (int)boxedIndex;
+			ManualResetSignal kick  = _kicks[index];
 
 			Profiler.BeginThreadProfiling("AK.Jobs", Thread.CurrentThread.Name);
 
@@ -578,8 +634,6 @@ namespace AK.Jobs
 
 			DetachFromPlayerLoop();
 
-			bool workersQuiet = true;
-
 			if (_busy)
 			{
 				if (_done.Wait(JoinTimeoutMs))
@@ -589,7 +643,6 @@ namespace AK.Jobs
 				}
 				else
 				{
-					workersQuiet = false;
 					Debug.LogWarning("JobScheduler: workers still busy after " + JoinTimeoutMs + " ms; disposing without collecting the frame in flight.");
 				}
 			}
@@ -602,18 +655,11 @@ namespace AK.Jobs
 			{
 				if (!_workers[i].Join(JoinTimeoutMs))
 				{
-					workersQuiet = false;
 					Debug.LogWarning($"JobScheduler: '{_workers[i].Name}' did not exit within {JoinTimeoutMs} ms.");
 				}
 			}
 
 			CancelEverything();
-
-			if (workersQuiet)
-			{
-				_done.Dispose();
-				for (int i = 0; i < _kicks.Length; i++) _kicks[i].Dispose();
-			}
 		}
 
 		private void CancelEverything()
@@ -621,7 +667,7 @@ namespace AK.Jobs
 			SlotMap<JobSlot>.Enumerator e = _slots.GetEnumerator();
 			while (e.MoveNext())
 			{
-				IJobCallback callback = e.Current.Callback;
+				IFrameJobCallback callback = e.Current.Callback;
 				_slots.Remove(e.CurrentHandle);
 				SafeComplete(callback, cancelled: true);
 			}
@@ -647,7 +693,7 @@ namespace AK.Jobs
 
 		// ---------------------------------------------------------------- helpers
 
-		private static void SafeComplete(IJobCallback callback, bool cancelled)
+		private static void SafeComplete(IFrameJobCallback callback, bool cancelled)
 		{
 			if (callback == null) return;
 

@@ -15,13 +15,13 @@
     "precompiledReferences": [],
     "autoReferenced": false,
     "defineConstraints": [
-        "MAX_SDK"
+        "UGFW_MAX_SDK"
     ],
     "versionDefines": [
         {
             "name": "com.applovin.mediation.ads",
             "expression": "",
-            "define": "MAX_SDK"
+            "define": "UGFW_MAX_SDK"
         }
     ],
     "noEngineReferences": false

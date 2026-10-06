@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using AK.Core;
 using AK.CoreDomain;
 using AK.CoreDomain.Analytics;
+using AK.Kernel.Analytics;
 using AK.Services.Analytics;
 using AK.Services.Analytics.Providers;
 using UnityEngine;
@@ -12,6 +13,8 @@ namespace AK.Services
 	/// <summary>
 	/// Facade over analytics providers. Fail-open: a missing or drifted definition
 	/// logs once and still dispatches. Queue events until <see cref="Initialize()"/>.
+	/// A definition's sampling rate picks whole users by their user id; before a user id is
+	/// set, the run counts as one user.
 	/// </summary>
 	public class AnalyticsService : IAnalyticsService
 	{
@@ -20,9 +23,16 @@ namespace AK.Services
 
 		private bool _isEnabled = true;
 		private bool _isInitialized;
+		private bool _earlyStarted;
 		private AnalyticsMeta _analyticsMeta;
 		private AnalyticsInitOptions _initOptions;
+		private AnalyticsTaxonomy _taxonomy = AnalyticsTaxonomy.Empty;
 		private string _pendingUserId;
+
+		// Sampling buckets: the cached one for _bucketUserId, and this run's for no user id.
+		private readonly double _runBucket = new System.Random().NextDouble();
+		private string _bucketUserId;
+		private double _userBucket;
 
 		private readonly List<IAnalyticsProvider> _providers = new();
 		private readonly Queue<AnalyticsEvent> _queuedEvents = new();
@@ -37,12 +47,56 @@ namespace AK.Services
 			_analyticsMeta = analyticsMeta;
 		}
 
+		/// <summary>
+		/// Sets the options <see cref="Initialize()"/> uses. Providers read them once, when they
+		/// start, so this must come first.
+		/// </summary>
+		/// <exception cref="InvalidOperationException">The service is initialized.</exception>
+		public void SetOptions(AnalyticsInitOptions options)
+		{
+			ThrowIfInitialized(nameof(SetOptions));
+			_initOptions = options;
+		}
+
+		/// <summary>
+		/// Sets the game's analytics vocabulary: dimension names and values, flat event names and
+		/// the AppsFlyer selection. Null means <see cref="AnalyticsTaxonomy.Empty"/>. Providers read
+		/// it once, when they start, so this must come before <see cref="Initialize()"/>.
+		/// </summary>
+		/// <exception cref="InvalidOperationException">The service is initialized.</exception>
+		public void SetTaxonomy(AnalyticsTaxonomy taxonomy)
+		{
+			ThrowIfInitialized(nameof(SetTaxonomy));
+			_taxonomy = taxonomy ?? AnalyticsTaxonomy.Empty;
+		}
+
 		public void RegisterProvider(IAnalyticsProvider provider)
 		{
 			if (provider != null && !_providers.Contains(provider))
 			{
 				_providers.Add(provider);
 				Debug.Log($"{Tag} Registered provider: {provider.ProviderName}");
+			}
+		}
+
+		public void EarlyStart()
+		{
+			if (_earlyStarted || !_isEnabled)
+			{
+				return;
+			}
+
+			_earlyStarted = true;
+			foreach (IAnalyticsProvider provider in _providers)
+			{
+				try
+				{
+					provider.EarlyStart();
+				}
+				catch (Exception ex)
+				{
+					Debug.LogError($"{Tag} Provider {provider.ProviderName} failed to early-start: {ex.Message}");
+				}
 			}
 		}
 
@@ -68,10 +122,10 @@ namespace AK.Services
 			}
 
 			Debug.Log($"{Tag} Initializing {_providers.Count} providers...");
-		if (_analyticsMeta == null)
-		{
-			Debug.Log($"{Tag} No AnalyticsMeta assigned — definition overlay disabled, all events send fail-open.");
-		}
+			if (_analyticsMeta == null)
+			{
+				Debug.Log($"{Tag} No AnalyticsMeta assigned — definition overlay disabled, all events send fail-open.");
+			}
 
 			Dictionary<string, string> config = _initOptions.ProviderConfig ?? new Dictionary<string, string>();
 			if (!string.IsNullOrEmpty(_initOptions.UserId) && !config.ContainsKey("userId"))
@@ -88,14 +142,16 @@ namespace AK.Services
 			{
 				try
 				{
-					provider.Configure(_initOptions);
+					provider.Configure(_initOptions, _taxonomy);
 					if (!string.IsNullOrEmpty(_initOptions.UserId))
 					{
 						provider.SetUserID(_initOptions.UserId);
 					}
 
 					provider.Initialize(_analyticsMeta, config);
-					Debug.Log($"{Tag} Initialized provider: {provider.ProviderName}");
+					Debug.Log(provider.IsEnabled
+						? $"{Tag} Provider ready: {provider.ProviderName}"
+						: $"{Tag} Provider initializing async: {provider.ProviderName} (will log again when its SDK is ready)");
 				}
 				catch (Exception ex)
 				{
@@ -126,7 +182,7 @@ namespace AK.Services
 				return;
 			}
 
-			AnalyticsEventResolver.Result resolved = AnalyticsEventResolver.Resolve(evt, _analyticsMeta);
+			AnalyticsEventResolver.Result resolved = AnalyticsEventResolver.Resolve(evt, _analyticsMeta, UserBucket());
 			if (resolved.Dropped)
 			{
 				if (Debug.isDebugBuild)
@@ -462,6 +518,31 @@ namespace AK.Services
 				{
 					Debug.LogError($"{Tag} Provider {provider.ProviderName} failed: {ex.Message}");
 				}
+			}
+		}
+
+		private double UserBucket()
+		{
+			string userId = _initOptions?.UserId;
+			if (string.IsNullOrEmpty(userId))
+			{
+				return _runBucket;
+			}
+
+			if (!string.Equals(userId, _bucketUserId, StringComparison.Ordinal))
+			{
+				_userBucket = UserSampling.Bucket(userId);
+				_bucketUserId = userId;
+			}
+
+			return _userBucket;
+		}
+
+		private void ThrowIfInitialized(string method)
+		{
+			if (_isInitialized)
+			{
+				throw new InvalidOperationException($"{Tag} {method} must be called before Initialize.");
 			}
 		}
 

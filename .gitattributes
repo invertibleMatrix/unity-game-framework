@@ -1,0 +1,5 @@
+# UGFW keeps its binaries as ordinary git files, never as Git LFS pointers,
+# so it installs the same way in every project. git reads the nearest
+# .gitattributes first, so this overrides the host project's LFS rules
+# for the files in this folder.
+* !filter !diff !merge

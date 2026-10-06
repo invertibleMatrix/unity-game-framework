@@ -1,7 +1,7 @@
 ﻿// Assets/_Source/Utilities/AudioSpawner/AudioComponentExtensions.cs
 using UnityEngine;
 
-namespace Utilities.AudioSpawner
+namespace AK.Utilities.Audio
 {
 	public static class AudioComponentExtensions
 	{
@@ -22,11 +22,15 @@ namespace Utilities.AudioSpawner
 		}
 
 		/// <summary>
-		/// Stops audio safely if not null.
+		/// Stops audio safely if not null or destroyed.
 		/// </summary>
 		public static AudioComponent StopSafe(this AudioComponent audioComponent)
 		{
-			audioComponent?.Stop();
+			if (audioComponent != null)
+			{
+				audioComponent.Stop();
+			}
+
 			return audioComponent;
 		}
 	}

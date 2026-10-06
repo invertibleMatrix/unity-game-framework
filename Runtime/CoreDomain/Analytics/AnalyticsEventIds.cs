@@ -4,8 +4,9 @@ using UnityEngine;
 namespace AK.CoreDomain.Analytics
 {
 	/// <summary>
-	/// Well-known analytics events the framework itself raises. Typed as the definition so
-	/// the picker filters to analytics events and the reference cannot dangle.
+	/// Typed references to common analytics events, so shared code can raise them without string
+	/// ids. The framework raises none of them itself; a game assigns the ones it uses. Typed as the
+	/// definition so the picker filters to analytics events and the reference cannot dangle.
 	/// </summary>
 	[CreateAssetMenu(fileName = "AnalyticsEventIds", menuName = "AK/MetaData/Analytics/AnalyticsEventIds")]
 	public class AnalyticsEventIds : MetaDataAsset
@@ -15,11 +16,6 @@ namespace AK.CoreDomain.Analytics
 		public AnalyticsEventDefinition LevelStarted;
 		public AnalyticsEventDefinition LevelFailed;
 		public AnalyticsEventDefinition LevelCompleted;
-		public AnalyticsEventDefinition BoosterUsed;
-		public AnalyticsEventDefinition PowerupUsed;
-		public AnalyticsEventDefinition GachaBoxOpened;
-		public AnalyticsEventDefinition DailyRewardClaimed;
-		public AnalyticsEventDefinition WheelSpun;
 		public AnalyticsEventDefinition NotificationPermissionYes;
 		public AnalyticsEventDefinition NotificationPermissionNo;
 		public AnalyticsEventDefinition RatingRequestYes;

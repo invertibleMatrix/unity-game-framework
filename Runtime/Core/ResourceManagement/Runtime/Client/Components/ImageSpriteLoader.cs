@@ -1,3 +1,4 @@
+#if UGFW_ADDRESSABLES
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
@@ -38,3 +39,4 @@ namespace AK.Core.ResourceManagement
 		private void Reset() => _image = this.GetComponent<Image>();
 	}
 }
+#endif

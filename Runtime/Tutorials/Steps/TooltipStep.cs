@@ -23,6 +23,7 @@ namespace AK.Tutorials
 		[Tooltip("Extra offset in canvas units applied to the tooltip position.")]
 		public Vector2 Offset;
 
+		[Tooltip("Seconds before the tooltip closes by itself. Zero or less keeps it open until the player taps anywhere.")]
 		public float CloseTime = 3f;
 
 		public string TooltipId;
@@ -30,31 +31,37 @@ namespace AK.Tutorials
 		public override async UniTask PresentAsync(TutorialStepContext context, CancellationToken ct)
 		{
 			await base.PresentAsync(context, ct);
-			if (TargetId == null || !context.Targets.TryGet(TargetId, out var target) || target == null)
+
+			var target = await WaitForTargetAsync(context, TargetId, ct);
+			if (target == null)
 			{
-				Debug.LogWarning(
-					$"[SpotlightTooltipStep] Target '{(TargetId != null ? TargetId.name : "null")}' is not registered — skipping presentation of '{name}'.");
-				return;
+				Debug.LogError($"[TooltipStep] Target '{(TargetId != null ? TargetId.name : "null")}' not registered within {TargetWaitTimeout:0.#}s — declining presentation of '{name}'.", this);
+				throw new TutorialStepDeclinedException($"Step '{name}': target '{(TargetId != null ? TargetId.name : "null")}' not registered.");
 			}
 
+			bool autoClose = CloseTime > 0f;
 			var tooltip = context.UiSystem.Show<UIViewTooltip>(ShowOptions.Variant(TooltipId, new UIViewTooltipContext(Title, Description, target, Position)
 			{
 				Icon = Icon,
 				Offset = Offset,
-				TapAnywhereToClose = false,
-				CloseTime = CloseTime
+				TapAnywhereToClose = !autoClose,
+				CloseTime = autoClose ? CloseTime : 0f
 			}));
 
-			// The tooltip doesn't govern input - open the gate so the player
-			// can act on what it points at.
-			context.InputGate.Release();
+			if (tooltip == null)
+			{
+				Debug.LogWarning($"[TooltipStep] '{name}' could not show its tooltip — declining; the next checkpoint retries.", this);
+				throw new TutorialStepDeclinedException($"Step '{name}': the tooltip could not be shown.");
+			}
+
+			// The tooltip doesn't hold input - open the gate so the player can act on
+			// what it points at, or tap it away when it doesn't close by itself.
+			context.InputHold.Release();
 
 			try
 			{
-				if (CloseTime > 0)
-				{
-					await UniTask.WaitForSeconds(CloseTime, cancellationToken: ct);
-				}
+				if (autoClose) await WaitAsync(CloseTime, ct);
+				else await WaitUntilClosedAsync(tooltip, ct);
 			}
 			finally
 			{

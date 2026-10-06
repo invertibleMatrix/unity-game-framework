@@ -9,8 +9,17 @@ using UnityEngine;
 namespace AK.CoreDomain
 {
 	/// <summary>
-	/// Container for all ad placement definitions with powerful query methods.
-	/// Supports remote config integration for dynamic ad behavior control.
+	/// All ad placement definitions, and the rules shared by an ad type: its switches, the
+	/// level it starts at, and its limits across all of its placements.
+	///
+	/// <para><b>Remote overrides.</b> Each remote variable here overrides its local setting
+	/// once it has a remote value (<see cref="RemoteOverride"/>); until then the local setting
+	/// holds. The switches are on locally. The variables, here and on the placements, are read as
+	/// held, so they must be the instances remote config writes into: the registry's. A copy in
+	/// another bundle never gets a value.</para>
+	///
+	/// <para><b>Ad types.</b> The rewarded settings cover rewarded and rewarded interstitial
+	/// ads. Banners and app open ads follow only the switch for all ads.</para>
 	/// </summary>
 	[CreateAssetMenu(fileName = "AdsMeta", menuName = "AK/MetaData/Ads/AdsMeta")]
 	public class AdsMeta : MetaDataAsset, IMetaWithRegistry
@@ -30,36 +39,36 @@ namespace AK.CoreDomain
 		[Tooltip("Enable test mode for ads.")]
 		public bool TestMode;
 
-		[Header("Global Frequency Limits")]
-		[Tooltip("Maximum interstitial ads per session (applies if placement doesn't have its own).")]
+		[Header("Limits Across Placements")]
+		[Tooltip("Most interstitial impressions per session, across all interstitial placements (0 = no limit). Each placement's own limits apply as well.")]
 		[Range(0, 100)]
 		public int DefaultMaxInterstitialPerSession = 10;
 
-		[Tooltip("Maximum rewarded ads per session.")]
+		[Tooltip("Most rewarded and rewarded interstitial impressions per session, across all their placements (0 = no limit). Each placement's own limits apply as well.")]
 		[Range(0, 100)]
 		public int DefaultMaxRewardedPerSession = 20;
 
-		[Tooltip("Global cooldown between interstitials in seconds.")]
+		[Tooltip("Least time between two interstitials, from any placements, in seconds (0 = none). Counted across launches. InterstitialCooldownOverride wins once it has a remote value.")]
 		[Range(0, 300)]
 		public int DefaultInterstitialCooldown = 60;
 
-		[Header("Remote Config Global Overrides")]
-		[Tooltip("Remote bool to globally enable/disable all ads.")]
+		[Header("Remote Config Overrides")]
+		[Tooltip("Switches all ads off, or back on. Ads are on until it has a remote value.")]
 		public RemoteBool AdsEnabledGlobal;
 
-		[Tooltip("Remote bool to enable/disable interstitial ads.")]
+		[Tooltip("Switches interstitial ads off, or back on. They are on until it has a remote value.")]
 		public RemoteBool InterstitialsEnabled;
 
-		[Tooltip("Remote bool to enable/disable rewarded ads.")]
+		[Tooltip("Switches rewarded and rewarded interstitial ads off, or back on. They are on until it has a remote value.")]
 		public RemoteBool RewardedAdsEnabled;
 
-		[Tooltip("Remote int for minimum level to show interstitials.")]
+		[Tooltip("The lowest player level that sees interstitials. No level limit until it has a remote value.")]
 		public RemoteInt InterstitialMinLevel;
 
-		[Tooltip("Remote int for minimum level to show rewarded ads.")]
+		[Tooltip("The lowest player level that sees rewarded and rewarded interstitial ads. No level limit until it has a remote value.")]
 		public RemoteInt RewardedMinLevel;
 
-		[Tooltip("Remote int to override global interstitial cooldown.")]
+		[Tooltip("Overrides DefaultInterstitialCooldown once it has a remote value.")]
 		public RemoteInt InterstitialCooldownOverride;
 
 		[Tooltip("Remote float for ad fill rate (for testing/simulation).")]
@@ -78,80 +87,52 @@ namespace AK.CoreDomain
 
 		#region Properties
 
-		/// <summary>
-		/// Checks if ads are globally enabled via remote config.
-		/// </summary>
-		public bool AreAdsEnabled
-		{
-			get
-			{
-				if (AdsEnabledGlobal != null && AdsEnabledGlobal.HasRemoteValue)
-					return AdsEnabledGlobal.Value;
-				return true; // Default to enabled
-			}
-		}
+		/// <summary>Whether ads are switched on at all. On until <see cref="AdsEnabledGlobal"/> has a remote value.</summary>
+		public bool AreAdsEnabled => RemoteOverride.Resolve(AdsEnabledGlobal, true);
 
-		/// <summary>
-		/// Checks if interstitial ads are enabled.
-		/// </summary>
-		public bool AreInterstitialsEnabled
-		{
-			get
-			{
-				if (!AreAdsEnabled)
-					return false;
-				if (InterstitialsEnabled != null && InterstitialsEnabled.HasRemoteValue)
-					return InterstitialsEnabled.Value;
-				return true;
-			}
-		}
+		/// <summary>Whether interstitials are switched on: ads are, and <see cref="InterstitialsEnabled"/> doesn't say otherwise.</summary>
+		public bool AreInterstitialsEnabled => AreAdsEnabled && RemoteOverride.Resolve(InterstitialsEnabled, true);
 
-		/// <summary>
-		/// Checks if rewarded ads are enabled.
-		/// </summary>
-		public bool AreRewardedAdsEnabled
-		{
-			get
-			{
-				if (!AreAdsEnabled)
-					return false;
-				if (RewardedAdsEnabled != null && RewardedAdsEnabled.HasRemoteValue)
-					return RewardedAdsEnabled.Value;
-				return true;
-			}
-		}
+		/// <summary>Whether rewarded and rewarded interstitial ads are switched on: ads are, and <see cref="RewardedAdsEnabled"/> doesn't say otherwise.</summary>
+		public bool AreRewardedAdsEnabled => AreAdsEnabled && RemoteOverride.Resolve(RewardedAdsEnabled, true);
 
-		public override void InitializeMeta() { }
+		public void InitializeMeta() { }
 
-		/// <summary>
-		/// Gets the minimum level for interstitials (remote override or default).
-		/// </summary>
-		public int GetInterstitialMinLevel()
-		{
-			if (InterstitialMinLevel != null && InterstitialMinLevel.HasRemoteValue)
-				return InterstitialMinLevel.Value;
-			return 0;
-		}
+		/// <summary>The lowest level that sees interstitials: the remote value once known, otherwise 0.</summary>
+		public int GetInterstitialMinLevel() => RemoteOverride.Resolve(InterstitialMinLevel, 0);
 
-		/// <summary>
-		/// Gets the minimum level for rewarded ads (remote override or default).
-		/// </summary>
-		public int GetRewardedMinLevel()
-		{
-			if (RewardedMinLevel != null && RewardedMinLevel.HasRemoteValue)
-				return RewardedMinLevel.Value;
-			return 0;
-		}
+		/// <summary>The lowest level that sees rewarded ads: the remote value once known, otherwise 0.</summary>
+		public int GetRewardedMinLevel() => RemoteOverride.Resolve(RewardedMinLevel, 0);
 
-		/// <summary>
-		/// Gets the interstitial cooldown (remote override or default).
-		/// </summary>
-		public int GetInterstitialCooldown()
+		/// <summary>The least seconds between two interstitials: the remote value once known, otherwise <see cref="DefaultInterstitialCooldown"/>.</summary>
+		public int GetInterstitialCooldown() => RemoteOverride.Resolve(InterstitialCooldownOverride, DefaultInterstitialCooldown);
+
+		/// <summary>Whether ads of <paramref name="adType"/> are switched on.</summary>
+		public bool IsTypeEnabled(AdType adType) => adType switch
 		{
-			if (InterstitialCooldownOverride != null && InterstitialCooldownOverride.HasRemoteValue)
-				return InterstitialCooldownOverride.Value;
-			return DefaultInterstitialCooldown;
-		}
+			AdType.Interstitial                            => AreInterstitialsEnabled,
+			AdType.Rewarded or AdType.RewardedInterstitial => AreRewardedAdsEnabled,
+			_                                              => AreAdsEnabled,
+		};
+
+		/// <summary>The lowest player level that sees ads of <paramref name="adType"/>.</summary>
+		public int GetMinLevel(AdType adType) => adType switch
+		{
+			AdType.Interstitial                            => GetInterstitialMinLevel(),
+			AdType.Rewarded or AdType.RewardedInterstitial => GetRewardedMinLevel(),
+			_                                              => 0,
+		};
+
+		/// <summary>The most impressions of <paramref name="adType"/> per session, across its placements. 0 is no limit.</summary>
+		public int GetMaxPerSession(AdType adType) => adType switch
+		{
+			AdType.Interstitial                            => DefaultMaxInterstitialPerSession,
+			AdType.Rewarded or AdType.RewardedInterstitial => DefaultMaxRewardedPerSession,
+			_                                              => 0,
+		};
+
+		/// <summary>The least seconds between two impressions of <paramref name="adType"/>, from any placements. 0 is none.</summary>
+		public int GetCooldownSeconds(AdType adType) => adType == AdType.Interstitial ? GetInterstitialCooldown() : 0;
 
 		#endregion
 
@@ -317,103 +298,6 @@ namespace AK.CoreDomain
 		{
 			return Placements?.Where(p => p.HasRewards() && p.IsAvailable(currentLevel)).ToList() 
 				?? new List<AdPlacementDefinition>();
-		}
-
-		/// <summary>
-		/// Gets placements that can be shown based on frequency limits.
-		/// </summary>
-		public List<AdPlacementDefinition> GetPlacementsWithinFrequencyLimits(
-			Dictionary<string, int> sessionCounts,
-			Dictionary<string, int> dailyCounts,
-			Dictionary<string, DateTime> lastShownTimes,
-			int currentLevel = 1)
-		{
-			return Placements?.Where(p =>
-			{
-				// Check availability
-				if (!p.IsAvailable(currentLevel)) return false;
-
-				// Check session limit
-				int maxSession = p.GetMaxPerSession();
-				if (maxSession > 0)
-				{
-					int sessionCount = 0;
-					sessionCounts?.TryGetValue(p.PlacementID, out sessionCount);
-					if (sessionCount >= maxSession) return false;
-				}
-
-				// Check daily limit
-				int maxDay = p.GetMaxPerDay();
-				if (maxDay > 0)
-				{
-					int dailyCount = 0;
-					dailyCounts?.TryGetValue(p.PlacementID, out dailyCount);
-					if (dailyCount >= maxDay) return false;
-				}
-
-				// Check cooldown
-				int cooldown = p.GetCooldownSeconds();
-				if (cooldown > 0 && lastShownTimes != null)
-				{
-					if (lastShownTimes.TryGetValue(p.PlacementID, out DateTime lastShown))
-					{
-						TimeSpan timeSinceLast = DateTime.UtcNow - lastShown;
-						if (timeSinceLast.TotalSeconds < cooldown) return false;
-					}
-				}
-
-				return true;
-			}).ToList() ?? new List<AdPlacementDefinition>();
-		}
-
-		/// <summary>
-		/// Gets the next available interstitial placement based on priority and frequency.
-		/// </summary>
-		public AdPlacementDefinition GetNextInterstitial(
-			Dictionary<string, int> sessionCounts,
-			Dictionary<string, int> dailyCounts,
-			Dictionary<string, DateTime> lastShownTimes,
-			int currentLevel = 1)
-		{
-			var available = GetAvailableInterstitialPlacements(currentLevel);
-			if (available.Count == 0)
-				return null;
-
-			var withinLimits = available.Where(p =>
-			{
-				// Check session limit
-				int maxSession = p.GetMaxPerSession();
-				if (maxSession > 0)
-				{
-					int sessionCount = 0;
-					sessionCounts?.TryGetValue(p.PlacementID, out sessionCount);
-					if (sessionCount >= maxSession) return false;
-				}
-
-				// Check daily limit
-				int maxDay = p.GetMaxPerDay();
-				if (maxDay > 0)
-				{
-					int dailyCount = 0;
-					dailyCounts?.TryGetValue(p.PlacementID, out dailyCount);
-					if (dailyCount >= maxDay) return false;
-				}
-
-				// Check cooldown
-				int cooldown = p.GetCooldownSeconds();
-				if (cooldown > 0 && lastShownTimes != null)
-				{
-					if (lastShownTimes.TryGetValue(p.PlacementID, out DateTime lastShown))
-					{
-						TimeSpan timeSinceLast = DateTime.UtcNow - lastShown;
-						if (timeSinceLast.TotalSeconds < cooldown) return false;
-					}
-				}
-
-				return true;
-			}).OrderByDescending(p => p.Priority);
-
-			return withinLimits.FirstOrDefault();
 		}
 
 		/// <summary>

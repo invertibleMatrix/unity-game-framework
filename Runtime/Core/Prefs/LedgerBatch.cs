@@ -46,7 +46,8 @@ namespace AK.Core
 	/// <summary>
 	/// Reusable suspend/resume bookkeeping for anything that commits to disk. Wrap the
 	/// commit in <see cref="Commit"/>; hand <see cref="Suspend"/>/<see cref="Resume"/> to the
-	/// <see cref="IBatchable"/> surface.
+	/// <see cref="IBatchable"/> surface. A deferred commit that throws stays pending, so the
+	/// next commit retries it.
 	/// </summary>
 	public sealed class DeferredCommit
 	{
@@ -71,6 +72,7 @@ namespace AK.Core
 			}
 
 			_commit();
+			_dirty = false;
 		}
 
 		public void Suspend()
@@ -82,11 +84,11 @@ namespace AK.Core
 		{
 			if (_depth == 0) throw new InvalidOperationException("Resume without a matching Suspend.");
 
-			if (--_depth == 0 && _dirty)
-			{
-				_dirty = false;
-				_commit();
-			}
+			if (--_depth > 0 || !_dirty) return;
+
+			// Cleared only once the commit succeeds: one that throws leaves the writes pending.
+			_commit();
+			_dirty = false;
 		}
 	}
 }

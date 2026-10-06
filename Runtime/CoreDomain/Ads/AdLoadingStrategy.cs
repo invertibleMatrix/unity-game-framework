@@ -35,8 +35,8 @@ namespace AK.Services
 	}
 
 	/// <summary>
-	/// Defines the loading strategy for ad placements.
-	/// Controls how ads are loaded, reloaded, and managed.
+	/// How a placement's ad unit is kept loaded. Placements that share an ad unit share its
+	/// loading; the first of them in the ads meta sets it.
 	/// </summary>
 	[Serializable]
 	public class AdLoadingStrategy
@@ -58,7 +58,7 @@ namespace AK.Services
 				ReloadDelaySeconds = 0,
 				MaxRetryAttempts = 5,
 				RetryDelaySeconds = 5,
-				KeepLoadedInBackground = true
+				LoadOnAppResume = true
 			};
 
 			/// <summary>
@@ -73,7 +73,7 @@ namespace AK.Services
 				ReloadDelaySeconds = 1,
 				MaxRetryAttempts = 3,
 				RetryDelaySeconds = 10,
-				KeepLoadedInBackground = true
+				LoadOnAppResume = true
 			};
 
 			/// <summary>
@@ -88,7 +88,7 @@ namespace AK.Services
 				ReloadDelaySeconds = 0,
 				MaxRetryAttempts = 1,
 				RetryDelaySeconds = 30,
-				KeepLoadedInBackground = false
+				LoadOnAppResume = false
 			};
 
 			/// <summary>
@@ -103,61 +103,65 @@ namespace AK.Services
 				ReloadDelaySeconds = 0,
 				MaxRetryAttempts = 0,
 				RetryDelaySeconds = 0,
-				KeepLoadedInBackground = false
+				LoadOnAppResume = false
 			};
 		}
 
 		/// <summary>
-		/// Whether to preload this ad during service initialization.
+		/// Whether the ad is kept loaded ahead of time: loaded when the service initializes, when
+		/// a level refresh makes the placement available, and when an ad provider comes up late.
+		/// Off, the ad loads when it's asked for: a show, LoadAdAsync or PreloadAdsAsync.
 		/// </summary>
 		public bool PreloadOnInitialize = true;
 
 		/// <summary>
-		/// Whether to automatically reload the ad after it has been shown.
-		/// Ensures the next ad is ready as soon as possible.
+		/// Whether the next ad loads once a show ends, however it ended: completed, closed early
+		/// or failed to display.
 		/// </summary>
 		public bool AutoReloadAfterShow = true;
 
 		/// <summary>
-		/// Whether to automatically retry loading if the ad fails to load.
+		/// Whether a failed load retries on its own, up to <see cref="MaxRetryAttempts"/> times.
+		/// Off, the ad unit waits until the ad is asked for again. Failures that waiting can't
+		/// fix, such as an invalid ad unit, never retry.
 		/// </summary>
 		public bool AutoReloadOnFail = true;
 
 		/// <summary>
-		/// Delay in seconds before reloading after a successful show.
+		/// Delay in seconds between a show ending and the reload.
 		/// Use 0 for immediate reload, or add a small delay to avoid rapid requests.
 		/// </summary>
 		[Range(0, 60)]
 		public float ReloadDelaySeconds = 1f;
 
 		/// <summary>
-		/// Maximum number of retry attempts when auto-reload on fail is enabled.
-		/// Set to 0 for unlimited retries, or a specific number to limit attempts.
+		/// How many times a failed load retries before the ad unit gives up, until the ad is next
+		/// wanted. Each of these starts the count afresh: asking for the ad, a level refresh that
+		/// preloads it, coming back to the foreground (with <see cref="LoadOnAppResume"/>), and a
+		/// load that succeeds. Set to 0 for unlimited retries.
 		/// </summary>
 		[Range(0, 10)]
 		public int MaxRetryAttempts = 3;
 
 		/// <summary>
-		/// Delay in seconds between retry attempts.
+		/// Delay in seconds before each retry; with <see cref="UseExponentialBackoff"/>, before
+		/// the first. Each delay is spread by a little random jitter, so that devices which
+		/// failed together don't all retry together.
 		/// </summary>
 		[Range(1, 120)]
 		public float RetryDelaySeconds = 10f;
 
 		/// <summary>
-		/// Whether to keep the ad loaded when the app goes to background.
-		/// If false, the ad will be destroyed when the app is paused.
-		/// </summary>
-		public bool KeepLoadedInBackground = true;
-
-		/// <summary>
-		/// Whether to load the next ad immediately on app resume if not loaded.
-		/// Only applies when KeepLoadedInBackground is false.
+		/// Whether coming back to the foreground loads an ad that was asked for, or preloads,
+		/// and isn't loaded: one that ran out of retries, or is waiting to retry. It loads at
+		/// once, with <see cref="MaxRetryAttempts"/> retries afresh.
 		/// </summary>
 		public bool LoadOnAppResume = true;
 
 		/// <summary>
 		/// Whether to use exponential backoff for retry delays.
-		/// Each retry will wait longer than the previous one.
+		/// Each retry will wait twice as long as the previous one, up to
+		/// <see cref="MaxBackoffDelaySeconds"/>.
 		/// </summary>
 		public bool UseExponentialBackoff = false;
 
@@ -180,25 +184,10 @@ namespace AK.Services
 				ReloadDelaySeconds = ReloadDelaySeconds,
 				MaxRetryAttempts = MaxRetryAttempts,
 				RetryDelaySeconds = RetryDelaySeconds,
-				KeepLoadedInBackground = KeepLoadedInBackground,
 				LoadOnAppResume = LoadOnAppResume,
 				UseExponentialBackoff = UseExponentialBackoff,
 				MaxBackoffDelaySeconds = MaxBackoffDelaySeconds
 			};
-		}
-
-		/// <summary>
-		/// Gets the delay for a specific retry attempt.
-		/// Handles exponential backoff if enabled.
-		/// </summary>
-		public float GetRetryDelay(int attemptNumber)
-		{
-			if (!UseExponentialBackoff)
-				return RetryDelaySeconds;
-
-			// Exponential backoff: delay * 2^attempt, capped at max
-			float delay = RetryDelaySeconds * (float)Math.Pow(2, attemptNumber);
-			return Math.Min(delay, MaxBackoffDelaySeconds);
 		}
 	}
 }

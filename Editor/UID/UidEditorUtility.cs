@@ -14,6 +14,9 @@ namespace AK.Core.Editor
 	{
 		public const string MenuRoot = "Tools/UGFW/UID/";
 
+		private const string AssetsFolder = "Assets";
+		private const string PackagesPrefix = "Packages/";
+
 		/// <summary>Every UID-derived asset in the project (main assets only), via one type query.</summary>
 		public static List<UID> LoadAllUidAssets()
 		{
@@ -89,19 +92,47 @@ namespace AK.Core.Editor
 			return int.MaxValue;
 		}
 
+		/// <summary>
+		/// Whether <paramref name="assetPath"/> may hold a UID asset: a .asset file. Holds for
+		/// deleted files too, whose type can no longer be read.
+		/// </summary>
+		public static bool IsAssetFile(string assetPath) => assetPath.EndsWith(".asset", StringComparison.OrdinalIgnoreCase);
+
+		/// <summary>
+		/// Whether the main asset at <paramref name="assetPath"/> is a UID asset, read from the
+		/// AssetDatabase without loading the asset. UID assets are main assets, as
+		/// <see cref="LoadAllUidAssets"/> finds them, so a .asset file of another type is skipped
+		/// unloaded.
+		/// </summary>
+		public static bool IsUidAsset(string assetPath)
+		{
+			return IsAssetFile(assetPath) && typeof(UID).IsAssignableFrom(AssetDatabase.GetMainAssetTypeAtPath(assetPath));
+		}
+
 		public static string PathOf(UnityEngine.Object asset) => asset != null ? AssetDatabase.GetAssetPath(asset) : "<null>";
 
 		/// <summary>Stable canonical name for deterministic minting: the asset's file name without extension.</summary>
 		public static string CanonicalName(string assetPath) => Path.GetFileNameWithoutExtension(assetPath);
 
 		/// <summary>
+		/// Whether <paramref name="folder"/> is a folder assets live in, going by the path: Assets, a
+		/// package's root (Packages/&lt;name&gt;) or a folder under either. Packages itself isn't one.
+		/// </summary>
+		public static bool IsAssetFolder(string folder)
+		{
+			if (folder == AssetsFolder || folder.StartsWith(AssetsFolder + "/", StringComparison.Ordinal)) return true;
+			return folder.Length > PackagesPrefix.Length && folder.StartsWith(PackagesPrefix, StringComparison.Ordinal);
+		}
+
+		/// <summary>
 		/// Walks up from an asset path looking for a UidNamespace asset in the same or a parent
-		/// folder. Namespaced folders yield deterministic identities for assets created in them.
+		/// folder, up to Assets or the package's root. Namespaced folders yield deterministic
+		/// identities for assets created in them.
 		/// </summary>
 		public static UidNamespace FindNamespaceFor(string assetPath)
 		{
 			string dir = Path.GetDirectoryName(assetPath)?.Replace('\\', '/');
-			while (!string.IsNullOrEmpty(dir) && dir.StartsWith("Assets"))
+			while (dir != null && IsAssetFolder(dir))
 			{
 				foreach (string guid in AssetDatabase.FindAssets("t:UidNamespace", new[] { dir }))
 				{

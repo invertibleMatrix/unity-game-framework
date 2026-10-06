@@ -23,7 +23,7 @@ namespace AK.CoreDomain
 		public AnalyticsRegistry    Registry      => _registry;
 		public UidRegistryAssetBase RegistryAsset => _registry;
 
-		public override void InitializeMeta() { }
+		public void InitializeMeta() { }
 
 		/// <summary>Resolves an event definition by identity. False when unknown — never falls back to a name.</summary>
 		public bool TryGetEvent(Uid<AnalyticsEventDefinition> eventId, out AnalyticsEventDefinition definition)

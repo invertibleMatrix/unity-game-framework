@@ -1,308 +1,151 @@
 ﻿using System;
 using System.Globalization;
-using System.Text;
-using System.Text.RegularExpressions;
+using AK.Kernel.Formatting;
 
 namespace AK.Utilities
 {
 	/// <summary>
-	/// Utility class for formatting numbers in abbreviated format (K, M, B, etc.)
-	/// Useful for displaying large numbers in UI elements with limited space.
+	/// Short numbers for UI, such as 1500 as "1.5K": a facade over the kernel's
+	/// <see cref="CompactNumber"/>.
+	///
+	/// <para><b>FormatAbbreviated</b> rounds to the nearest, halves away from zero, and uses the
+	/// suffixes K, M, B, T and Q. <b>FormatDouble</b> rounds down or up, shows no decimals below a
+	/// thousand, and goes on past T with aa to zz.</para>
+	///
+	/// <para>Both round before they pick the suffix, so 999,950 at one decimal is "1M", and both
+	/// write the same text on every device: a point before the decimals and no thousands
+	/// separators. A long is taken exactly, a double to fifteen significant digits and a float to
+	/// seven.</para>
 	/// </summary>
 	public static class NumberFormatter
 	{
-		// Suffixes for thousands, millions, billions, trillions, quadrillions
-		private static readonly string[] Suffixes = { "", "K", "M", "B", "T", "Q" };
+		/// <summary>
+		/// Formats a number with the suffixes K, M, B, T and Q, rounded to the nearest:
+		/// 1500 → "1.5K", 999,950 → "1M". Zeros after the point are left off; past Q the number
+		/// keeps growing.
+		/// </summary>
+		/// <param name="decimalPlaces">The most decimals shown, from 0 to 15.</param>
+		public static string FormatAbbreviated(this int number, int decimalPlaces = 1) =>
+			FormatAbbreviated((long)number, decimalPlaces);
 
-		private const int    ASCII_OFFSET = 97;
-		private const string SUFFIXES     = "KMBT";
+		/// <inheritdoc cref="FormatAbbreviated(int, int)"/>
+		public static string FormatAbbreviated(long number, int decimalPlaces = 1) =>
+			CompactNumber.Format(number, Abbreviated(decimalPlaces));
 
 		/// <summary>
-		/// Formats a number into abbreviated format (K, M, B, T, Q)
-		/// Examples: 1500 -> "1.5K", 2500000 -> "2.5M", 1000000000 -> "1B"
+		/// Formats a number with the suffixes K, M, B, T and Q, rounded to the nearest:
+		/// 1500.5 → "1.5K", 999.95 → "1K". NaN and infinities are written "NaN", "Infinity" and
+		/// "-Infinity".
 		/// </summary>
-		/// <param name="number">The number to format</param>
-		/// <param name="decimalPlaces">Number of decimal places to show (default: 1)</param>
-		/// <returns>Formatted string representation</returns>
-		public static string FormatAbbreviated(this int number, int decimalPlaces = 1)
-		{
-			return FormatAbbreviated((long)number, decimalPlaces);
-		}
+		/// <param name="decimalPlaces">The most decimals shown, from 0 to 15.</param>
+		public static string FormatAbbreviated(float number, int decimalPlaces = 1) =>
+			CompactNumber.Format(number, Abbreviated(decimalPlaces));
+
+		/// <inheritdoc cref="FormatAbbreviated(float, int)"/>
+		public static string FormatAbbreviated(double number, int decimalPlaces = 1) =>
+			CompactNumber.Format(number, Abbreviated(decimalPlaces));
 
 		/// <summary>
-		/// Formats a number into abbreviated format (K, M, B, T, Q)
-		/// Examples: 1500 -> "1.5K", 2500000 -> "2.5M", 1000000000 -> "1B"
+		/// Reads a number with one of the suffixes K, M, B, T and Q, in any case, rounded to a whole
+		/// number: "1.5K" → 1500, "1.2345K" → 1235. Returns 0 for text that isn't such a number or
+		/// doesn't fit a long.
 		/// </summary>
-		/// <param name="number">The number to format</param>
-		/// <param name="decimalPlaces">Number of decimal places to show (default: 1)</param>
-		/// <returns>Formatted string representation</returns>
-		public static string FormatAbbreviated(long number, int decimalPlaces = 1)
-		{
-			// Math.Abs on the double (not the long) to survive long.MinValue.
-			double magnitude = Math.Abs((double)number);
-
-			if (magnitude < 1000)
-				return number.ToString(CultureInfo.InvariantCulture);
-
-			// Determine the appropriate suffix on the magnitude, then reapply the sign.
-			int suffixIndex = 0;
-
-			while (magnitude >= 1000 && suffixIndex < Suffixes.Length - 1)
-			{
-				magnitude /= 1000;
-				suffixIndex++;
-			}
-
-			double scaledNumber = number / Math.Pow(1000, suffixIndex);
-
-			// Format with specified decimal places (invariant: keeps '.' and round-trips everywhere)
-			string format = $"0.{new string('0', decimalPlaces)}";
-			string formatted = scaledNumber.ToString(format, CultureInfo.InvariantCulture);
-
-			// Remove trailing zeros and decimal point if not needed
-			formatted = formatted.TrimEnd('0').TrimEnd('.');
-
-			return $"{formatted}{Suffixes[suffixIndex]}";
-		}
+		public static long ParseAbbreviated(string abbreviatedNumber) =>
+			CompactNumber.TryParseLong(abbreviatedNumber, NumberSuffixes.ShortScale, out long value) ? value : 0L;
 
 		/// <summary>
-		/// Formats a number into abbreviated format (K, M, B, T, Q)
-		/// Examples: 1500.5 -> "1.5K", 2500000.75 -> "2.5M", 1000000000.25 -> "1B"
+		/// Formats a number with between 0 and 2 decimals: see <see cref="FormatDouble(double, int, int, bool)"/>.
 		/// </summary>
-		/// <param name="number">The number to format</param>
-		/// <param name="decimalPlaces">Number of decimal places to show (default: 1)</param>
-		/// <returns>Formatted string representation</returns>
-		public static string FormatAbbreviated(float number, int decimalPlaces = 1)
-		{
-			return FormatAbbreviated((double)number, decimalPlaces);
-		}
+		public static string FormatDouble(double d, bool roundDown = false) => FormatDouble(d, 0, 2, roundDown);
 
 		/// <summary>
-		/// Formats a number into abbreviated format (K, M, B, T, Q)
-		/// Examples: 1500.5 -> "1.5K", 2500000.75 -> "2.5M", 1000000000.25 -> "1B"
+		/// Formats a number with exactly <paramref name="decimals"/> decimals above a thousand:
+		/// see <see cref="FormatDouble(double, int, int, bool)"/>.
 		/// </summary>
-		/// <param name="number">The number to format</param>
-		/// <param name="decimalPlaces">Number of decimal places to show (default: 1)</param>
-		/// <returns>Formatted string representation</returns>
-		public static string FormatAbbreviated(double number, int decimalPlaces = 1)
-		{
-			if (Math.Abs(number) < 1000)
-				return number.ToString($"F{decimalPlaces}", CultureInfo.InvariantCulture).TrimEnd('0').TrimEnd('.');
-
-			// Determine the appropriate suffix
-			int suffixIndex = 0;
-			double scaledNumber = Math.Abs(number);
-
-			while (scaledNumber >= 1000 && suffixIndex < Suffixes.Length - 1)
-			{
-				scaledNumber /= 1000;
-				suffixIndex++;
-			}
-
-			// Apply the scaling to the original number (preserving sign)
-			scaledNumber = number / Math.Pow(1000, suffixIndex);
-
-			// Format with specified decimal places (invariant: keeps '.' and round-trips everywhere)
-			string format = $"0.{new string('0', decimalPlaces)}";
-			string formatted = scaledNumber.ToString(format, CultureInfo.InvariantCulture);
-
-			// Remove trailing zeros and decimal point if not needed
-			formatted = formatted.TrimEnd('0').TrimEnd('.');
-
-			return $"{formatted}{Suffixes[suffixIndex]}";
-		}
+		public static string FormatDouble(double d, int decimals, bool roundDown = false) => FormatDouble(d, decimals, decimals, roundDown);
 
 		/// <summary>
-		/// Parses an abbreviated format string back to a long number
-		/// Examples: "1.5K" -> 1500, "2.5M" -> 2500000, "1B" -> 1000000000
+		/// Formats a number with the suffixes K, M, B and T, then aa to zz. Below a thousand it has
+		/// no decimals.
 		/// </summary>
-		/// <param name="abbreviatedNumber">The abbreviated string to parse</param>
-		/// <returns>The parsed number as long</returns>
-		public static long ParseAbbreviated(string abbreviatedNumber)
-		{
-			if (string.IsNullOrEmpty(abbreviatedNumber))
-				return 0;
-
-			abbreviatedNumber = abbreviatedNumber.Trim().ToUpperInvariant();
-
-			// Find the suffix. Iterate from the highest suffix down and SKIP the empty suffix:
-			// Suffixes[0] is "" and string.EndsWith("") is always true, which previously made
-			// every input "match" suffix-less parsing and return 0 for "1.5K".
-			int suffixIndex = 0;
-			string numberPart = abbreviatedNumber;
-
-			for (int i = Suffixes.Length - 1; i >= 1; i--)
-			{
-				if (abbreviatedNumber.EndsWith(Suffixes[i], StringComparison.Ordinal))
-				{
-					suffixIndex = i;
-					numberPart = abbreviatedNumber.Substring(0, abbreviatedNumber.Length - Suffixes[i].Length);
-					break;
-				}
-			}
-
-			if (!double.TryParse(numberPart, NumberStyles.Float, CultureInfo.InvariantCulture, out double number))
-				return 0;
-
-			return (long)(number * Math.Pow(1000, suffixIndex));
-		}
+		/// <param name="roundDown">
+		/// True to round toward negative infinity, so the text is never more than the value: for
+		/// amounts the player holds. False to round toward positive infinity: for costs and targets.
+		/// </param>
+		/// <exception cref="NumberFormatterException">The value is NaN or infinite, or <paramref name="maxDecimals"/> is below <paramref name="minDecimals"/>.</exception>
+		public static string FormatDouble(double d, int minDecimals, int maxDecimals, bool roundDown = false) =>
+			CompactNumber.Format(d, Directed(d, minDecimals, maxDecimals, roundDown));
 
 		/// <summary>
-		/// Takes a double and converts it to a short value with a suffix.
-		/// By default, between 0 and 2 decimals will be used
+		/// The number <see cref="FormatDouble(double, int, int, bool)"/> shows before its suffix:
+		/// 1,234,567 rounded down to two decimals is 1.23.
 		/// </summary>
-		/// <param name="d">The number to be formatted</param>
-		/// <param name="roundDown">Pass true to floor the value, false to ceiling it.</param>
-		/// <remarks>Values relating to user inventory should be rounded down while costs and targets should not.
-		/// Numbers below 1000 will always be displayed with zero decimals.</remarks>
-		/// <returns></returns>
-		public static string FormatDouble(double d, bool roundDown = false)
-		{
-			return FormatDouble(d, 0, 2, roundDown);
-		}
-
-		/// <summary>
-		/// Takes a double and converts it to a short value with a suffix.
-		/// </summary>
-		/// <param name="d">The number to be formatted</param>
-		/// <param name="decimals">The minimum and maximum number of decimals to display</param>
-		/// <param name="roundDown">Pass true to floor the value, false to ceiling it.</param>
-		/// <remarks>Values relating to user inventory should be rounded down while costs and targets should not.
-		/// Numbers below 1000 will always be displayed with zero decimals.</remarks>
-		/// <returns></returns>
-		public static string FormatDouble(double d, int decimals, bool roundDown = false)
-		{
-			return FormatDouble(d, decimals, decimals, roundDown);
-		}
-
-		/// <summary>
-		/// Takes a double and converts it to a short value with a suffix.
-		/// </summary>
-		/// <param name="d">The number to be formatted</param>
-		/// <param name="minDecimals">The minimum number of decimals to display</param>
-		/// <param name="maxDecimals">The maximum number of decimals to display</param>
-		/// <param name="roundDown">Pass true to floor the value, false to ceiling it.</param>
-		/// <remarks>Values relating to user inventory should be rounded down while costs and targets should not.
-		/// Numbers below 1000 will always be displayed with zero decimals.</remarks>
-		/// <returns></returns>
-		public static string FormatDouble(double d, int minDecimals, int maxDecimals, bool roundDown = false)
-		{
-			if (Double.IsNaN(d) || Double.IsInfinity(d))
-				throw new NumberFormatterException(String.Format(NumberFormatterException.FORMAT_VALUE_INVALID_MESSAGE, d));
-			if (maxDecimals < minDecimals)
-				throw new NumberFormatterException(String.Format(NumberFormatterException.FORMAT_DECIMALS_INVALID_MESSAGE,
-					maxDecimals, minDecimals));
-			string format = GetFormat(minDecimals, maxDecimals);
-			if (d < 1000d)
-			{
-				d = roundDown ? Math.Floor(d) : Math.Ceiling(d); //If d is less than 1000 we can simply return it without a suffix
-				return d.ToString(CultureInfo.InvariantCulture);
-			}
-
-			double shortened = ShortenDouble(d, minDecimals, maxDecimals, roundDown);
-			int e = GetExponent(d);
-			return string.Format(CultureInfo.InvariantCulture, format, shortened, GetSuffix(e));
-		}
-
 		public static double ShortenDouble(double d, int minDecimals, int maxDecimals, bool roundDown = false)
 		{
-			if (Double.IsNaN(d) || Double.IsInfinity(d))
-				throw new NumberFormatterException(String.Format(NumberFormatterException.FORMAT_VALUE_INVALID_MESSAGE, d));
-			if (maxDecimals < minDecimals)
-				throw new NumberFormatterException(String.Format(NumberFormatterException.FORMAT_DECIMALS_INVALID_MESSAGE,
-					maxDecimals, minDecimals));
-			int e = GetExponent(d); //First get the exponent, what power of 1000 is less than d
-			d = d / Math.Pow(1000,
-				e); //Second, divide d by that power of 1000 to get the value that will display before the suffix
-			double t = Math.Pow(10, maxDecimals); //Third, we need to find 10 to the power of our maxDecimals for rounding
-			d = roundDown
-				? Math.Floor(d * t) / t
-				: Math.Ceiling(d * t) / t; //Fourth, we either floor or ceiling d to the number of maxDecimals requested
-			return d;
-		}
+			Span<char> text = stackalloc char[CompactNumber.MaxLength];
+			CompactNumber.TryFormat(d, Directed(d, minDecimals, maxDecimals, roundDown), text, out int written);
 
-		private static int GetExponent(double d) => (int)Math.Floor(Math.Log(Math.Abs(d)) / Math.Log(1000));
+			int end = written;
+			while (end > 0 && char.IsLetter(text[end - 1])) end--;
+
+			CompactNumber.TryParseDouble(text.Slice(0, end), NumberSuffixes.Letters, out double shortened);
+			return shortened;
+		}
 
 		/// <summary>
-		/// Takes a formatted string and attempts to parse the decimal value
+		/// Reads text that <see cref="FormatDouble(double, int, int, bool)"/> writes, such as "1.5K"
+		/// or "3.25aa". Suffixes are read in any case.
 		/// </summary>
-		/// <param name="s">The string value to parse</param>
-		/// <returns>The double value of the string</returns>
-		private static readonly Regex ParsePattern = new Regex("^(-?[0-9,.]+)([a-zA-Z]+)$", RegexOptions.Compiled);
-
+		/// <exception cref="NumberFormatterException">The number or its suffix can't be read.</exception>
 		public static double Parse(string s)
 		{
-			Match match = ParsePattern.Match(s);
-			double d = 0;
-			int e = 0;
-			if (!match.Success)
-			{
-				if (!Double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out d))
-					throw new NumberFormatterException(String.Format(NumberFormatterException.PARSE_NUMERIC_VALUE_INVALID_MESSAGE,
-						s));
-				else
-					return d;
-			}
+			if (s == null) throw new ArgumentNullException(nameof(s));
+			if (CompactNumber.TryParseDouble(s, NumberSuffixes.Letters, out double value)) return value;
 
-			string numericString = match.Groups[1].Value;
-			string exponentString = match.Groups[2].Value;
-			if (!Double.TryParse(numericString, NumberStyles.Float, CultureInfo.InvariantCulture, out d))
-				throw new NumberFormatterException(String.Format(NumberFormatterException.PARSE_NUMERIC_VALUE_INVALID_MESSAGE, s));
-			if (exponentString.Length == 1)
-			{
-				e = SUFFIXES.IndexOf(exponentString) + 1;
-				if (e == 0)
-					throw new NumberFormatterException(String.Format(NumberFormatterException.PARSE_SUFFIX_VALUE_INVALID_MESSAGE,
-						s));
-			}
-			else if (exponentString.Length == 2)
-			{
-				e = (int)(exponentString[0] - ASCII_OFFSET) * 26 + (int)exponentString[1] - ASCII_OFFSET + 5;
-				if (e < 5 || e > 26 * 26 + 5)
-					throw new NumberFormatterException(String.Format(NumberFormatterException.PARSE_SUFFIX_VALUE_INVALID_MESSAGE,
-						s));
-			}
-			else
-				throw new NumberFormatterException(String.Format(NumberFormatterException.PARSE_SUFFIX_VALUE_INVALID_MESSAGE, s));
+			string message = IsNumberWithUnknownSuffix(s)
+				? NumberFormatterException.PARSE_SUFFIX_VALUE_INVALID_MESSAGE
+				: NumberFormatterException.PARSE_NUMERIC_VALUE_INVALID_MESSAGE;
 
-			d *= Math.Pow(1000, e);
-			return d;
+			throw new NumberFormatterException(string.Format(message, s));
 		}
 
-		public static bool TryParse(string s, out double d)
+		/// <summary>As <see cref="Parse"/>, but false instead of throwing.</summary>
+		public static bool TryParse(string s, out double d) =>
+			CompactNumber.TryParseDouble(s, NumberSuffixes.Letters, out d);
+
+		/// <summary>
+		/// <see cref="FormatDouble(double, bool)"/> for a whole number, taken exactly: a long past
+		/// 2^53 has no exact double.
+		/// </summary>
+		internal static string FormatWhole(long value, bool roundDown) =>
+			CompactNumber.Format(value, new CompactNumberFormat(0, 2, roundDown ? NumberRounding.Down : NumberRounding.Up, NumberSuffixes.Letters, wholeBelowThousand: true));
+
+		private static CompactNumberFormat Abbreviated(int decimalPlaces) =>
+			new(0, decimalPlaces, NumberRounding.Nearest, NumberSuffixes.ShortScale);
+
+		private static CompactNumberFormat Directed(double d, int minDecimals, int maxDecimals, bool roundDown)
 		{
-			try
+			if (double.IsNaN(d) || double.IsInfinity(d))
 			{
-				d = Parse(s);
-				return true;
+				throw new NumberFormatterException(string.Format(CultureInfo.InvariantCulture, NumberFormatterException.FORMAT_VALUE_INVALID_MESSAGE, d));
 			}
-			catch (NumberFormatterException)
+
+			if (maxDecimals < minDecimals)
 			{
-				d = 0;
-				return false;
+				throw new NumberFormatterException(string.Format(NumberFormatterException.FORMAT_DECIMALS_INVALID_MESSAGE, maxDecimals, minDecimals));
 			}
+
+			return new CompactNumberFormat(minDecimals, maxDecimals, roundDown ? NumberRounding.Down : NumberRounding.Up, NumberSuffixes.Letters, wholeBelowThousand: true);
 		}
 
-		private static string GetFormat(int minDecimals, int maxDecimals)
+		/// <summary>A number followed by letters that aren't a suffix, such as "1.5X".</summary>
+		private static bool IsNumberWithUnknownSuffix(string text)
 		{
-			StringBuilder format = new StringBuilder("{0:0.");
-			format.Append('0', minDecimals);
-			format.Append('#', maxDecimals - minDecimals);
-			format.Append("}{1}");
-			return format.ToString();
-		}
+			ReadOnlySpan<char> span = text.AsSpan().TrimEnd();
+			int end = span.Length;
+			while (end > 0 && char.IsLetter(span[end - 1])) end--;
 
-		private static string GetSuffix(int e)
-		{
-			if (e == 0)
-				return "";
-			else if (e < 5)
-				return SUFFIXES.Substring(e - 1, 1);
-			int index = e - 5;
-			char[] chars = new char[2];
-			chars[0] = (char)(ASCII_OFFSET + index / 26);
-			chars[1] = (char)(ASCII_OFFSET + index % 26);
-			return new string(chars);
+			return end < span.Length && CompactNumber.TryParseDouble(span.Slice(0, end), NumberSuffixes.Letters, out _);
 		}
 	}
 

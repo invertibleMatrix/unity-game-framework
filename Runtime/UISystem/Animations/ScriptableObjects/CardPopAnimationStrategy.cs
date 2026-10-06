@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -57,7 +59,7 @@ namespace AK.Systems.Animations
             Random
         }
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             var sequence = DOTween.Sequence();
             
@@ -133,10 +135,10 @@ namespace AK.Systems.Animations
                 sequence.Append(target.DOShakeRotation(_wobbleDuration, new Vector3(0, 0, _wobbleIntensity), 10, 0, true));
             }
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             var sequence = DOTween.Sequence();
             
@@ -147,7 +149,7 @@ namespace AK.Systems.Animations
             sequence.Append(target.DOScale(Vector3.zero, _popSpeed * 0.4f).SetEase(Ease.InBack));
             sequence.Join(canvasGroup.DOFade(0, _popSpeed * 0.4f).SetEase(Ease.InQuad));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
         private Vector2 GetMovementOffset()

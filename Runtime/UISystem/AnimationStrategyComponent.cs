@@ -1,3 +1,4 @@
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -8,8 +9,9 @@ namespace AK.Systems
 	/// the asset-based <see cref="AnimationStrategy"/> it can hold per-instance scene
 	/// references. Rule of thumb: asset strategies are shared and tuning-only; component
 	/// strategies are per-instance and may serialize scene geometry. Build the entrance and
-	/// exit as tweens; the system links and awaits them. A component that drives its own
-	/// timing implements <see cref="IAsyncAnimationStrategy"/> on top.
+	/// exit as tweens on the given <see cref="TimeDomain"/>; the system links and awaits them.
+	/// A component that drives its own timing implements <see cref="IAsyncAnimationStrategy"/>
+	/// on top.
 	/// </summary>
 	public abstract class AnimationStrategyComponent : MonoBehaviour, IAnimationStrategy
 	{
@@ -23,7 +25,7 @@ namespace AK.Systems
 
 		[SerializeField] protected Ease ExitEase = Ease.InCubic;
 
-		public abstract Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default);
-		public abstract Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup);
+		public abstract Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default);
+		public abstract Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time);
 	}
 }

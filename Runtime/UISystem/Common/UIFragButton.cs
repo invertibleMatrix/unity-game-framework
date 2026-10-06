@@ -1,4 +1,5 @@
 ﻿using System;
+using AK.Core.Extensions;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
@@ -35,7 +36,10 @@ namespace AK.Systems
 
 		public override void OnShow()
 		{
-			if (_animator != null) _animator.enabled = true;
+			if (_animator == null) return;
+
+			_animator.updateMode = TimeDomain.ToAnimatorUpdateMode();
+			_animator.enabled = true;
 		}
 
 		public override void OnHide()

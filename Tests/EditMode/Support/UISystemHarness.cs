@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AK.Kernel.Timing;
 using AK.Systems;
 using Cysharp.Threading.Tasks;
 using NUnit.Framework;
@@ -29,7 +30,7 @@ namespace AK.Tests.Support
 		/// <summary>The system as its views see it.</summary>
 		public IViewHost Host => System;
 
-		public UISystemHarness()
+		public UISystemHarness(int poolCapacityPerKind = ViewPool.DefaultCapacityPerKind)
 		{
 			Container = new ContainerBuilder().SetName("UISystemHarness").Build();
 
@@ -54,6 +55,7 @@ namespace AK.Tests.Support
 			so.FindProperty("_viewsContainer").objectReferenceValue = Root;
 			so.FindProperty("_spawnDefaultOverlayView").boolValue = false;
 			so.FindProperty("_ensureEventSystem").boolValue = false;
+			so.FindProperty("_poolCapacityPerKind").intValue = poolCapacityPerKind;
 			so.ApplyModifiedPropertiesWithoutUndo();
 
 			System.EnsureInitialized();
@@ -221,21 +223,27 @@ namespace AK.Tests.Support
 		/// <summary>How many entrances or exits were started.</summary>
 		public int Starts { get; private set; }
 
-		public override DG.Tweening.Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default) => null;
-		public override DG.Tweening.Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup) => null;
+		/// <summary>The time the last entrance or exit was asked to run on.</summary>
+		public TimeDomain LastTime { get; private set; }
 
-		public UniTask PlayShowAsync(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default,
-		                             System.Threading.CancellationToken ct = default) => Hold(ct);
+		public override DG.Tweening.Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time,
+		                                                    Vector2 entryPos = default) => null;
 
-		public UniTask PlayHideAsync(RectTransform target, CanvasGroup canvasGroup,
-		                             System.Threading.CancellationToken ct = default) => Hold(ct);
+		public override DG.Tweening.Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time) => null;
+
+		public UniTask PlayShowAsync(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default,
+		                             System.Threading.CancellationToken ct = default) => Hold(time, ct);
+
+		public UniTask PlayHideAsync(RectTransform target, CanvasGroup canvasGroup, TimeDomain time,
+		                             System.Threading.CancellationToken ct = default) => Hold(time, ct);
 
 		/// <summary>Finishes the animation in flight.</summary>
 		public void Release() => _pending?.TrySetResult();
 
-		private UniTask Hold(System.Threading.CancellationToken ct)
+		private UniTask Hold(TimeDomain time, System.Threading.CancellationToken ct)
 		{
 			Starts++;
+			LastTime = time;
 			var pending = new UniTaskCompletionSource();
 			_pending = pending;
 			ct.Register(() => pending.TrySetCanceled(ct));

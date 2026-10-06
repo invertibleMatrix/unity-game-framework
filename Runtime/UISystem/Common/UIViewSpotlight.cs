@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AK.Core.Extensions;
 using DG.Tweening;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -7,10 +8,28 @@ using UnityEngine.UI;
 
 namespace AK.Systems
 {
+	/// <summary>
+	/// Dims the screen except for holes over its targets. Opening the holes plays an iris-in:
+	/// the intro. Input is held off through the <see cref="UIInputGate"/> while the intro
+	/// plays, so a stray tap can't act on a half-presented step. The hold ends exactly once:
+	/// when the intro finishes or is stopped, or, failing both, when the gate times it out
+	/// <see cref="IntroHoldMargin"/> after the intro should have ended. The intro and the
+	/// dismiss hold run on the UI's time, unscaled by default, so they also finish in a game
+	/// paused at timeScale 0.
+	/// </summary>
 	[RequireComponent(typeof(Image), typeof(GraphicRaycaster))]
 	public class UIViewSpotlight : UIView<UIViewSpotlightContext>, ICanvasRaycastFilter, IPointerDownHandler, IPointerClickHandler
 	{
 		private const int MAX_HOLES = 8;
+
+		/// <summary>
+		/// How long past the intro's end the gate waits before ending the intro's input hold
+		/// itself: the backstop for an intro tween that never finishes, such as one paused with
+		/// all of DOTween. The holes then snap open.
+		/// </summary>
+		public const float IntroHoldMargin = 1f;
+
+		private const string IntroHoldOwner = nameof(UIViewSpotlight) + " intro";
 
 		private static readonly int HolesProperty     = Shader.PropertyToID("_Holes");
 		private static readonly int HoleCountProperty = Shader.PropertyToID("_HoleCount");
@@ -26,14 +45,18 @@ namespace AK.Systems
 		private readonly Vector4[]           _holes   = new Vector4[MAX_HOLES];
 		private readonly Vector3[]           _corners = new Vector3[4];
 
-		private Image    _dimImage;
-		private Material _materialInstance;
-		private int      _holeCount;
-		private Tween    _introTween;
-		private float    _introT = 1f;
-		private bool     _introActive;
-		private float    _dismissHoldUntil;
-		private bool     _downWhileAccepting;
+		private Image     _dimImage;
+		private Color     _defaultDimColor;
+		private Material  _materialInstance;
+		private int       _holeCount;
+		private Tween     _introTween;
+		private InputHold _introHold;
+		private int       _introRun;
+		private float     _introT = 1f;
+		private bool      _introActive;
+		private bool      _introPending;
+		private double    _dismissHoldUntil;
+		private bool      _downWhileAccepting;
 
 		public RectTransform FurnitureRoot => _furnitureRoot;
 
@@ -44,15 +67,22 @@ namespace AK.Systems
 		private Ease  EffectiveIntroEase            => Context?.IntroEase            ?? _introEase;
 		private float EffectiveDismissHoldDuration  => Context?.DismissHoldDuration  ?? 0f;
 		private bool  EffectivePassClicksThroughHole => Context?.PassClicksThroughHole ?? false;
+		private Color EffectiveDimColor             => Context?.DimColor             ?? _defaultDimColor;
 
-		private bool IsDismissHoldActive => Time.realtimeSinceStartup < _dismissHoldUntil;
-		private bool IsInputLocked => _introActive || IsDismissHoldActive;
+		private bool IsDismissHoldActive => TimeDomain.Now() < _dismissHoldUntil;
+
+		// The intro needs no lock of its own: the gate keeps every pointer off while it plays.
+		private bool IsInputLocked => IsDismissHoldActive;
+
+		/// <summary>True while the intro plays.</summary>
+		public bool IsIntroPlaying => _introActive;
 
 		public event Action BackgroundTapped;
 
 		private void Awake()
 		{
 			_dimImage = GetComponent<Image>();
+			_defaultDimColor = _dimImage.color;
 
 			// Prefabs created before the RequireComponent existed may miss this.
 			if (GetComponent<GraphicRaycaster>() == null)
@@ -67,6 +97,12 @@ namespace AK.Systems
 			}
 		}
 
+		/// <summary>
+		/// Puts holes over <paramref name="targets"/>. With <paramref name="animateSpotlight"/>
+		/// they open with the intro. A Show's onInit runs before the show sets its context, so the
+		/// intro plays with that show's IntroDuration and IntroEase: on a spotlight that is hidden
+		/// or closing it waits for the show, and on one already shown the show starts it again.
+		/// </summary>
 		public void SetTargets(IReadOnlyList<RectTransform> targets, bool animateSpotlight = true)
 		{
 			_targets.Clear();
@@ -81,21 +117,20 @@ namespace AK.Systems
 				}
 			}
 
-			_introTween?.Kill();
-			if (animateSpotlight)
+			StopIntro();
+			_introPending = false;
+
+			if (!animateSpotlight) return;
+
+			if (State is ViewState.Hidden or ViewState.Hiding)
 			{
+				_introPending = true;
 				_introActive = true;
 				_introT = 0f;
-				_introTween = DOTween.To(() => _introT, v => _introT = v, 1f, EffectiveIntroDuration)
-				                     .SetEase(EffectiveIntroEase)
-				                     .SetTarget(this)
-				                     .OnComplete(() => _introActive = false)
-				                     .Play();
 			}
 			else
 			{
-				_introActive = false;
-				_introT = 1f;
+				StartIntro();
 			}
 		}
 
@@ -109,28 +144,97 @@ namespace AK.Systems
 		{
 			base.OnPrepareShow();
 			SetInteractable(true);
+			// Every show sets the tint, so a tinted step never leaks into the next spotlight.
+			_dimImage.color = EffectiveDimColor;
 			_downWhileAccepting = false;
 			float hold = EffectiveDismissHoldDuration;
-			_dismissHoldUntil = hold > 0f ? Time.realtimeSinceStartup + hold : 0f;
+			_dismissHoldUntil = hold > 0f ? TimeDomain.Now() + hold : 0d;
+
+			// A re-show's intro plays with this show's settings, also one started before the
+			// show set its context.
+			if (_introPending || _introActive) StartIntro();
 		}
 
 		public override void OnPrepareHide()
 		{
 			base.OnPrepareHide();
 			SetInteractable(false);
-			_introTween?.Kill();
-			_introActive = false;
-			_introT = 1f;
-			_dismissHoldUntil = 0f;
+			_introPending = false;
+			StopIntro();
+			_dismissHoldUntil = 0d;
 			_downWhileAccepting = false;
+		}
+
+		private void OnDisable()
+		{
+			// Inactive for any reason: nothing plays, so nothing may keep input held. An intro
+			// waiting for a show keeps waiting: a static spotlight re-shown while it closes is
+			// given its targets before the close deactivates it.
+			StopIntro();
 		}
 
 		private void Update()
 		{
+			// The gate ended the intro's hold before the intro ended, at the timeout or by a
+			// ReleaseAll. Open the holes too, so what the player sees matches what input does.
+			if (_introActive && !_introPending && _introHold.IsSet && !_introHold.IsHeld)
+			{
+				StopIntro();
+			}
+
 			if (_materialInstance != null)
 			{
 				PushHolesToMaterial();
 			}
+		}
+
+		/// <summary>Plays the intro from closed, holding input until it ends.</summary>
+		private void StartIntro()
+		{
+			_introPending = false;
+			StopIntro();
+
+			float duration = EffectiveIntroDuration;
+			if (!(duration > 0f)) return;
+
+			int run = ++_introRun;
+			_introActive = true;
+			_introT = 0f;
+
+			UIInputGate gate = UISystem?.InputGate;
+			if (gate != null) _introHold = gate.Hold(IntroHoldOwner, duration + IntroHoldMargin);
+
+			// OnKill fires when the tween completes (auto-kill) and when it is killed. A tween
+			// killed late, after a newer intro started, finds a newer run and leaves it alone.
+			_introTween = DOTween.To(() => _introT, v => _introT = v, 1f, duration)
+			                     .SetEase(EffectiveIntroEase)
+			                     .SetTimeDomain(TimeDomain)
+			                     .SetAutoKill(true)
+			                     .SetTarget(this)
+			                     .OnKill(() =>
+			                     {
+				                     if (run == _introRun) EndIntro();
+			                     })
+			                     .Play();
+		}
+
+		/// <summary>Stops any intro in place: the holes are fully open and input is released. Idempotent.</summary>
+		private void StopIntro()
+		{
+			_introRun++;
+			Tween tween = _introTween;
+			_introTween = null;
+			tween?.Kill();
+			EndIntro();
+		}
+
+		private void EndIntro()
+		{
+			_introTween = null;
+			_introActive = false;
+			_introT = 1f;
+			_introHold.Release();
+			_introHold = default;
 		}
 
 		protected override void OnDestroy()
@@ -147,8 +251,9 @@ namespace AK.Systems
 
 		public bool IsRaycastLocationValid(Vector2 screenPoint, Camera eventCamera)
 		{
-			// Iris, dismiss-hold, and tap-anywhere steps cover the whole screen so
-			// a hole tap dismisses instead of falling through to the control.
+			// Dismiss-hold and tap-anywhere steps cover the whole screen so a hole tap
+			// dismisses instead of falling through to the control. While the intro plays,
+			// the input gate keeps every pointer off anyway.
 			if (IsInputLocked || !EffectivePassClicksThroughHole)
 			{
 				return true;
@@ -164,7 +269,7 @@ namespace AK.Systems
 
 		public void OnPointerClick(PointerEventData eventData)
 		{
-			// Ignore iris/hold taps, and ignore a click whose press started then —
+			// Ignore dismiss-hold taps, and a click whose press started then —
 			// otherwise a mash down-during / up-after would dismiss instantly.
 			if (IsInputLocked || !_downWhileAccepting)
 			{
@@ -264,5 +369,6 @@ namespace AK.Systems
 		public Ease?  IntroEase;
 		public float? DismissHoldDuration;
 		public bool?  PassClicksThroughHole;
+		public Color? DimColor;
 	}
 }

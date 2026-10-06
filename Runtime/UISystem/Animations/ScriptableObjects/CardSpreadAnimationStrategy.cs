@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -6,12 +8,6 @@ namespace AK.Systems.Animations
     [CreateAssetMenu(fileName = "CardSpreadAnimation", menuName = "AK/UI/Animations/Card Spread Animation")]
     public class CardSpreadAnimationStrategy : AnimationStrategy
     {
-        [SerializeField] [Tooltip("Spread direction")]
-        private SpreadDirection _spreadDirection = SpreadDirection.Horizontal;
-        
-        [SerializeField] [Tooltip("Spread distance")]
-        private float _spreadDistance = 80f;
-        
         [SerializeField] [Tooltip("Index of this card in the spread (0 = first card)")]
         private int _cardIndex = 0;
         
@@ -23,9 +19,6 @@ namespace AK.Systems.Animations
         
         [SerializeField] [Tooltip("Add curve to spread")]
         private bool _addCurve = true;
-        
-        [SerializeField] [Tooltip("Curve intensity")]
-        private float _curveIntensity = 50f;
         
         [SerializeField] [Tooltip("Add rotation during spread")]
         private bool _addRotation = true;
@@ -47,13 +40,6 @@ namespace AK.Systems.Animations
         
         [SerializeField] [Tooltip("Bounce intensity")]
         private float _bounceIntensity = 0.03f;
-
-        public enum SpreadDirection
-        {
-            Horizontal,
-            Vertical,
-            Diagonal
-        }
         
         public enum RotationPattern
         {
@@ -62,7 +48,7 @@ namespace AK.Systems.Animations
             Random
         }
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             var sequence = DOTween.Sequence();
             
@@ -106,10 +92,10 @@ namespace AK.Systems.Animations
                 sequence.Append(target.DOScale(Vector3.one, 0.1f).SetEase(Ease.OutBack));
             }
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             var sequence = DOTween.Sequence();
             
@@ -122,7 +108,7 @@ namespace AK.Systems.Animations
             sequence.Join(target.DOLocalRotate(Vector3.zero, _spreadDuration * 0.5f).SetEase(Ease.InCubic));
             sequence.Join(canvasGroup.DOFade(0, _spreadDuration * 0.3f).SetEase(Ease.InQuad));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
         private float CalculateSpreadRotation()

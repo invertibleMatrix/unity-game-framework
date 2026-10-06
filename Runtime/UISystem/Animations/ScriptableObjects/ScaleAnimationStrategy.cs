@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -35,19 +37,12 @@ namespace AK.Systems.Animations
 		[SerializeField] [Tooltip("Add this offset to axial direction to compensate in and out tween")]
 		private Vector2 _edgesOffset = new Vector2(250, 250);
 
-		public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+		public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
 		{
 			canvasGroup.alpha = 1f;
 			var sequence = DOTween.Sequence();
 			target.localScale = _startScale;
-			var scaleTween = target.DOScale(Vector3.one, EntryDuration).SetEase(EntryEase);
-
-			if (_addPunch)
-			{
-				scaleTween.OnComplete(() => target.DOPunchScale(_punchAmount, EntryDuration / 2, _punchVibrato, _punchElasticity));
-			}
-
-			sequence.Join(scaleTween);
+			sequence.Join(target.DOScale(Vector3.one, EntryDuration).SetEase(EntryEase));
 
 			if (_slideWhileScaling)
 			{
@@ -56,10 +51,17 @@ namespace AK.Systems.Animations
 				sequence.Join(target.DOAnchorPos(Vector2.zero, EntryDuration).SetEase(EntryEase));
 			}
 
-			return sequence.Play();
+			// Part of the entrance: the view counts as shown once the punch has played, and a
+			// cut-short entrance stops it too.
+			if (_addPunch)
+			{
+				sequence.Append(target.DOPunchScale(_punchAmount, EntryDuration / 2, _punchVibrato, _punchElasticity));
+			}
+
+			return sequence.SetTimeDomain(time).Play();
 		}
 
-		public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+		public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
 		{
 			var sequence = DOTween.Sequence();
 			sequence.Join(target.DOScale(_startScale, ExitDuration).SetEase(ExitEase));
@@ -71,7 +73,7 @@ namespace AK.Systems.Animations
 				sequence.Join(target.DOAnchorPos(endPosition, ExitDuration).SetEase(ExitEase));
 			}
 
-			return sequence.Play();
+			return sequence.SetTimeDomain(time).Play();
 		}
 	}
 }

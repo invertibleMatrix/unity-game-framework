@@ -1,70 +1,68 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Cysharp.Threading.Tasks;
 using AK.Core;
 using UnityEngine;
 
-namespace Utilities.ParticleSpawner
+namespace AK.Utilities.Particles
 {
+	/// <summary>
+	/// Spawns pooled particle effects. A config with an <see cref="ParticleConfigBase.InitialPoolSize"/>
+	/// above zero has a pool of its own, filled to that size for the registry's configs and grown
+	/// when it runs dry; any other config's effects are made for one show and destroyed when
+	/// they stop. An effect counts toward its config's cap from the moment it is handed out
+	/// until it is recycled. Main thread only.
+	/// </summary>
 	public class ParticleSpawner : GameEntity, IParticleSpawner
 	{
 		[SerializeField]
 		private ParticlesRegistry _particlesRegistry;
 
-		private Dictionary<Uid, Queue<ParticleComponent>> _pools;
+		private readonly Dictionary<ParticleConfigBase, Stack<ParticleComponent>> _pools   = new();
+		private readonly List<ParticleComponent>                                  _effects = new();
 
-		// Active effect tracking — drives the concurrency cap and StopAll
-		private readonly List<ParticleComponent> _activeComponents = new();
+		private bool _initialized;
 
 		private void Awake()
 		{
-			InitializePools();
+			EnsureInitialized();
 		}
 
 		public T Spawn<T>(Uid<ParticleConfigBase> variant = default, Action onStop = null) where T : ParticleComponent
 		{
-			ParticleConfigBase config = _particlesRegistry.GetConfig<T>(variant);
+			ParticleConfigBase config = _particlesRegistry != null ? _particlesRegistry.GetConfig<T>(variant) : null;
 			if (config == null)
 			{
 				Debug.LogError($"Spawn<{typeof(T).Name}>() failed: no config for type with variant {UidDebugNames.Describe(variant)}.");
 				return null;
 			}
 
-			return SpawnByConfig(config, onStop) as T;
+			return Spawn<T>(config, onStop);
 		}
 
 		public async UniTask<T> SpawnAsync<T>(Uid<ParticleConfigBase> variant = default, Action onStop = null) where T : ParticleComponent
 		{
-			ParticleConfigBase config = _particlesRegistry.GetConfig<T>(variant);
+			ParticleConfigBase config = _particlesRegistry != null ? _particlesRegistry.GetConfig<T>(variant) : null;
 			if (config == null)
 			{
 				Debug.LogError($"SpawnAsync<{typeof(T).Name}>() failed: no config for type with variant {UidDebugNames.Describe(variant)}.");
 				return null;
 			}
 
-			if (!PassesConcurrencyGate(config))
+			if (!CanSpawn(config))
 			{
 				return null;
 			}
 
-			ParticleComponent particleComponent;
-			if (config.InitialPoolSize == 0)
+			EnsureInitialized();
+
+			ParticleComponent particleComponent = TakePooled(config);
+			if (particleComponent == null)
 			{
 				particleComponent = await CreateNewParticleAsync(config.Prefab);
 			}
-			else
-			{
-				if (!_pools.TryGetValue(config.Id, out var pool))
-				{
-					Debug.LogError($"No pool found for particle '{config.name}'.");
-					return null;
-				}
 
-				particleComponent = pool.Count > 0 ? pool.Dequeue() : await CreateNewParticleAsync(config.Prefab);
-			}
-
-			return FinalizeSpawn(particleComponent, config, onStop) as T;
+			return HandOut(particleComponent, config, onStop) as T;
 		}
 
 		public ParticleComponent Spawn(ParticleConfigBase config, Action onStop = null)
@@ -75,7 +73,20 @@ namespace Utilities.ParticleSpawner
 				return null;
 			}
 
-			return SpawnByConfig(config, onStop);
+			if (!CanSpawn(config))
+			{
+				return null;
+			}
+
+			EnsureInitialized();
+
+			ParticleComponent particleComponent = TakePooled(config);
+			if (particleComponent == null)
+			{
+				particleComponent = CreateNewParticle(config.Prefab);
+			}
+
+			return HandOut(particleComponent, config, onStop);
 		}
 
 		public T Spawn<T>(ParticleConfigBase config, Action onStop = null) where T : ParticleComponent
@@ -99,7 +110,7 @@ namespace Utilities.ParticleSpawner
 				return null;
 			}
 
-			var component = SpawnByConfig(config, onStop);
+			var component = Spawn(config, onStop);
 			if (component == null)
 			{
 				return null;
@@ -123,66 +134,59 @@ namespace Utilities.ParticleSpawner
 
 		public void StopAll(ParticleConfigBase config = null)
 		{
-			bool filter = config != null;
-			Uid<ParticleConfigBase> id = filter ? config.IdAs<ParticleConfigBase>() : default;
-
-			// Snapshot — Stop() mutates the active list via the recycle callback
-			foreach (var component in _activeComponents.ToList())
+			// Back to front: an effect recycled at once leaves the list.
+			for (int i = _effects.Count - 1; i >= 0; i--)
 			{
-				if (component == null) continue;
-				if (filter && component.ConfigId != id) continue;
+				if (i >= _effects.Count) continue;
 
-				component.Stop();
+				ParticleComponent effect = _effects[i];
+				if (config == null || ReferenceEquals(effect.Config, config))
+				{
+					effect.Stop();
+				}
 			}
 		}
 
-		private ParticleComponent SpawnByConfig(ParticleConfigBase config, Action onStop)
+		/// <summary>Takes back a recycled effect: untracked, then pooled, or destroyed when its config keeps no pool.</summary>
+		internal void Release(ParticleComponent effect, ParticleConfigBase config)
 		{
-			if (config.Prefab == null)
-			{
-				Debug.LogError($"SpawnByConfig() failed: config '{config.name}' has no prefab.", config);
-				return null;
-			}
+			_effects.Remove(effect);
 
-			if (!PassesConcurrencyGate(config))
+			if (config != null && config.InitialPoolSize > 0)
 			{
-				return null;
-			}
-
-			bool pooled = config.InitialPoolSize > 0;
-
-			ParticleComponent particleComponent;
-			if (!pooled)
-			{
-				particleComponent = CreateNewParticle(config.Prefab);
+				effect.gameObject.SetActive(false);
+				PoolOf(config).Push(effect);
 			}
 			else
 			{
-				if (!_pools.TryGetValue(config.Id, out var pool))
-				{
-					Debug.LogError($"No pool found for particle '{config.name}'.");
-					return null;
-				}
-
-				particleComponent = pool.Count > 0 ? pool.Dequeue() : CreateNewParticle(config.Prefab);
+				Destroy(effect.gameObject);
 			}
-
-			return FinalizeSpawn(particleComponent, config, onStop);
 		}
 
-		private bool PassesConcurrencyGate(ParticleConfigBase config)
+		/// <summary>Stops tracking an effect destroyed outside the spawner.</summary>
+		internal void Forget(ParticleComponent effect)
 		{
+			_effects.Remove(effect);
+		}
+
+		/// <summary>The config has a prefab, and room under its cap: extra spawns are refused (drop-newest).</summary>
+		private bool CanSpawn(ParticleConfigBase config)
+		{
+			if (config.Prefab == null)
+			{
+				Debug.LogError($"Spawning '{config.name}' failed: the config has no prefab.", config);
+				return false;
+			}
+
 			if (config.MaxActiveInstances <= 0)
 			{
 				return true;
 			}
 
-			Uid<ParticleConfigBase> id = config.IdAs<ParticleConfigBase>();
 			int active = 0;
-			for (int i = 0; i < _activeComponents.Count; i++)
+			for (int i = 0; i < _effects.Count; i++)
 			{
-				ParticleComponent component = _activeComponents[i];
-				if (component != null && component.ConfigId == id)
+				if (ReferenceEquals(_effects[i].Config, config))
 				{
 					active++;
 				}
@@ -191,55 +195,58 @@ namespace Utilities.ParticleSpawner
 			return active < config.MaxActiveInstances;
 		}
 
-		private ParticleComponent FinalizeSpawn(ParticleComponent particleComponent, ParticleConfigBase config, Action onStop)
+		private ParticleComponent TakePooled(ParticleConfigBase config)
 		{
-			bool pooled = config.InitialPoolSize > 0;
-			ParticleComponent captured = particleComponent;
-
-			_activeComponents.Add(captured);
-
-			captured.Init(config, () =>
+			if (config.InitialPoolSize <= 0 || !_pools.TryGetValue(config, out Stack<ParticleComponent> pool))
 			{
-				onStop?.Invoke();
-				_activeComponents.Remove(captured);
-				captured.gameObject.SetActive(false);
+				return null;
+			}
 
-				if (pooled)
-				{
-					if (_pools.TryGetValue(captured.ConfigId.Value, out var queue))
-					{
-						queue.Enqueue(captured);
-					}
-				}
-				else
-				{
-					// Non-pooled particles are one-shot instances — destroy on stop.
-					Destroy(captured.gameObject);
-				}
-			});
+			// Skips effects destroyed while pooled.
+			while (pool.Count > 0)
+			{
+				ParticleComponent effect = pool.Pop();
+				if (effect != null) return effect;
+			}
 
-			return particleComponent;
+			return null;
 		}
 
-		private void InitializePools()
+		private ParticleComponent HandOut(ParticleComponent effect, ParticleConfigBase config, Action onStop)
 		{
-			_pools = new Dictionary<Uid, Queue<ParticleComponent>>();
+			_effects.Add(effect);
+			effect.Init(config, onStop);
+			return effect;
+		}
 
-			if (_particlesRegistry == null || _particlesRegistry.ParticleConfigs == null) return;
-
-			foreach (var config in _particlesRegistry.ParticleConfigs)
+		private Stack<ParticleComponent> PoolOf(ParticleConfigBase config)
+		{
+			if (!_pools.TryGetValue(config, out Stack<ParticleComponent> pool))
 			{
-				if (config == null || config.Prefab == null || !config.HasIdentity || config.InitialPoolSize == 0) continue;
+				pool = new Stack<ParticleComponent>();
+				_pools.Add(config, pool);
+			}
 
-				if (!_pools.TryGetValue(config.Id, out var pool))
-				{
-					pool = new Queue<ParticleComponent>();
-					_pools[config.Id] = pool;
-				}
+			return pool;
+		}
 
-				for (int i = 0; i < config.InitialPoolSize; i++)
+		private void EnsureInitialized()
+		{
+			if (_initialized) return;
+			_initialized = true;
+
+			if (_particlesRegistry == null) return;
+
+			IReadOnlyList<ParticleConfigBase> configs = _particlesRegistry.ParticleConfigs;
+			for (int i = 0; i < configs.Count; i++)
+			{
+				ParticleConfigBase config = configs[i];
+				if (config == null || config.Prefab == null || config.InitialPoolSize <= 0) continue;
+
+				Stack<ParticleComponent> pool = PoolOf(config);
+				while (pool.Count < config.InitialPoolSize)
 				{
-					pool.Enqueue(CreateNewParticle(config.Prefab));
+					pool.Push(CreateNewParticle(config.Prefab));
 				}
 			}
 		}
@@ -249,6 +256,7 @@ namespace Utilities.ParticleSpawner
 			var go = Instantiate(prefab, transform);
 			go.name = prefab.name;
 			go.gameObject.SetActive(false);
+			go.Adopt(this);
 			return go;
 		}
 
@@ -257,45 +265,23 @@ namespace Utilities.ParticleSpawner
 			var go = await InstantiateAsync(prefab, transform).ToUniTask();
 			go[0].name = prefab.name;
 			go[0].gameObject.SetActive(false);
+			go[0].Adopt(this);
 			return go[0];
-		}
-
-		private void OnDestroy()
-		{
-			if (_pools == null) return;
-
-			foreach (var kvp in _pools)
-			{
-				var pool = kvp.Value;
-				while (pool.Count > 0)
-				{
-					var component = pool.Dequeue();
-					if (component != null) Destroy(component.gameObject);
-				}
-			}
-
-			_pools.Clear();
 		}
 
 #if UNITY_EDITOR
 		[ContextMenu("Log Pool Statistics")]
 		private void LogPoolStatistics()
 		{
-			if (_pools == null)
-			{
-				Debug.Log("No pools initialized.");
-				return;
-			}
-
 			int total = 0;
 			foreach (var kvp in _pools) total += kvp.Value.Count;
 
 			Debug.Log("=== Particle Pool Statistics ===");
-			Debug.Log($"Pools: {_pools.Count} | Pooled instances available: {total} | Active effects: {_activeComponents.Count}");
+			Debug.Log($"Pools: {_pools.Count} | Pooled instances available: {total} | Active effects: {_effects.Count}");
 
 			foreach (var kvp in _pools)
 			{
-				Debug.Log($"Pool '{UidDebugNames.Describe(kvp.Key)}': {kvp.Value.Count} available");
+				Debug.Log($"Pool '{(kvp.Key != null ? kvp.Key.name : "(destroyed config)")}': {kvp.Value.Count} available");
 			}
 		}
 #endif

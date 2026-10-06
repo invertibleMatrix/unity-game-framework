@@ -42,7 +42,7 @@ namespace AK.Core.Editor
 		{
 			private static void OnWillCreateAsset(string assetPath)
 			{
-				if (!assetPath.EndsWith(".asset", StringComparison.OrdinalIgnoreCase)) return;
+				if (!UidEditorUtility.IsAssetFile(assetPath)) return;
 				_pendingCreatePaths.Add(assetPath);
 			}
 		}
@@ -53,9 +53,10 @@ namespace AK.Core.Editor
 		{
 			bool touched = false;
 
+			// The type is read before anything loads, so only UID assets are loaded.
 			foreach (string path in imported)
 			{
-				if (!path.EndsWith(".asset", StringComparison.OrdinalIgnoreCase)) continue;
+				if (!UidEditorUtility.IsUidAsset(path)) continue;
 
 				var asset = AssetDatabase.LoadAssetAtPath<UID>(path);
 				if (asset == null) continue;
@@ -67,7 +68,8 @@ namespace AK.Core.Editor
 
 			_pendingCreatePaths.Clear();
 
-			if (touched || deleted.Length > 0 || moved.Length > 0)
+			// The index holds paths: a moved UID asset or a deleted .asset file makes it stale.
+			if (touched || Array.Exists(deleted, UidEditorUtility.IsAssetFile) || Array.Exists(moved, UidEditorUtility.IsUidAsset))
 			{
 				UidEditorIndex.Invalidate();
 			}

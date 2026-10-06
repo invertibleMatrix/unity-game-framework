@@ -1,4 +1,6 @@
 ﻿using System;
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -10,12 +12,15 @@ namespace AK.Utilities
 		public Vector3 RotationEnd;
 		public float   Time;
 
+		[SerializeField, Tooltip("The time the rotation runs on.")]
+		private TimeDomain _timeDomain = TimeDomain.Scaled;
+
 		private Tween _tween;
 
 		void OnEnable()
 		{
 			transform.localEulerAngles = RotationStart;
-			_tween = transform.DOLocalRotate(RotationEnd, Time).SetEase(Ease.Linear).SetLoops(-1, LoopType.Yoyo).Play();
+			_tween = transform.DOLocalRotate(RotationEnd, Time).SetEase(Ease.Linear).SetLoops(-1, LoopType.Yoyo).SetTimeDomain(_timeDomain).Play();
 		}
 
 		private void OnDisable()

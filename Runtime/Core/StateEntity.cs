@@ -1,9 +1,13 @@
-﻿using System;
-using AK.StateMachine;
-using UnityEngine;
+﻿using AK.StateMachines;
 
 namespace AK.Core
 {
+    /// <summary>
+    /// A <see cref="GameEntity"/> run by a <see cref="StateMachine{TMediator, TBaseState}"/>: the
+    /// machine starts in a new <typeparamref name="TStateBase"/> in <c>Awake</c>, ticks in
+    /// <c>Update</c>, and is disposed in <c>OnDestroy</c>, exiting and disposing its state.
+    /// Subclasses that override these call the base.
+    /// </summary>
     public abstract class StateEntity<TStateEntity, TStateBase> : GameEntity
         where TStateEntity : GameEntity
         where TStateBase : BaseState<TStateEntity>, new()
@@ -23,6 +27,9 @@ namespace AK.Core
             }
         }
 
-        protected virtual void OnDestroy() { }
+        protected virtual void OnDestroy()
+        {
+            _stateMachine?.Dispose();
+        }
     }
 }

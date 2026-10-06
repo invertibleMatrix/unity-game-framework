@@ -1,46 +1,89 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Threading;
 using Cysharp.Threading.Tasks;
 using AK.Core;
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using UnityEngine;
 
-namespace Utilities.ParticleSpawner
+namespace AK.Utilities.Particles
 {
+	/// <summary>
+	/// A pooled particle effect. Its start delay, stop-after and the wait for its children to
+	/// die count the time its root ParticleSystem simulates on: unscaled when the root uses
+	/// unscaled time, as UI effects do, and scaled otherwise, as gameplay effects do.
+	///
+	/// <para>An effect is handed out by <see cref="Init"/> and recycled once it has stopped:
+	/// when its root system stops by itself, once its particles have died after
+	/// <see cref="Stop"/> or its stop-after time, or at once when it is stopped before it plays.
+	/// Recycling restores the prefab's pose, layers and colors. A pooled effect then goes back
+	/// to its spawner and forgets its config, so keep no reference to it past then.</para>
+	/// </summary>
 	public class ParticleComponent : GameEntity
 	{
+		private const double RecyclePollSeconds = 0.25d;
+		private const double MaxRecycleWaitSeconds = 10d;
+
 		[SerializeField] protected ParticleSystem       _rootParticle;
 		[SerializeField] protected List<ParticleSystem> _colorTargets;
 
-		private ParticleConfigBase      _configBase;
-		private Action                  _onStop;
-		private Transform               _parent;
-		private CancellationTokenSource _playCts;
+		private ParticleConfigBase _configBase;
+		private Action             _onStop;
+		private Transform          _parent;
 
-		// Prefab-authored defaults captured once at Awake — ResetState restores them on
-		// recycle so the pool never holds an instance mutated by a spawn (scale, tint,
-		// preview layer, re-parenting).
-		private Vector3                                _defaultLocalPosition;
-		private Quaternion                             _defaultLocalRotation;
-		private Vector3                                _defaultLocalScale;
-		private List<KeyValuePair<Transform, int>>     _defaultLayers;
-		private ParticleSystem.MinMaxGradient[]        _defaultColors;
+		// Prefab-authored defaults, captured once before the first spawn mutates anything.
+		// ResetState restores them on recycle, so the pool never holds an instance changed by a
+		// spawn (scale, tint, preview layer, re-parenting).
+		private bool                               _defaultsCaptured;
+		private Vector3                            _defaultLocalPosition;
+		private Quaternion                         _defaultLocalRotation;
+		private Vector3                            _defaultLocalScale;
+		private List<KeyValuePair<Transform, int>> _defaultLayers;
+		private ParticleSystem.MinMaxGradient[]    _defaultColors;
 
-		// Set while this instance is owned by the world (not the pool). Makes the
-		// recycle path idempotent — the stop callback and a direct Stop() can race.
-		private bool _active;
+		// Out of its pool: from Init until recycled. Makes recycling idempotent, as the stop
+		// callback and a direct Stop() can both recycle.
+		private bool _leased;
+
+		// Shown since it was handed out.
+		private bool _shown;
+
+		// Told to stop: its root stopped emitting, and its stop callback will recycle it.
+		private bool _stopping;
+
+		// Moves on at every hand-out, show and recycle: a wait begun for one show ends quietly
+		// once another came since.
+		private int _generation;
 
 		public ParticleSystem          RootParticle => _rootParticle;
 		public Uid<ParticleConfigBase> ConfigId     { get; private set; }
 
+		/// <summary>The config the effect is handed out for; null once a pooled effect is recycled.</summary>
+		internal ParticleConfigBase Config => _configBase;
+
+		/// <summary>The spawner whose pool the effect belongs to; null for an effect of your own.</summary>
+		internal ParticleSpawner Owner { get; private set; }
+
+		private TimeDomain EffectTime =>
+			_rootParticle != null && _rootParticle.main.useUnscaledTime ? TimeDomain.Unscaled : TimeDomain.Scaled;
+
 		private void Awake()
 		{
-			_parent = transform.parent;
 			CaptureDefaults();
+		}
+
+		/// <summary>Makes the effect one of <paramref name="owner"/>'s pooled effects.</summary>
+		internal void Adopt(ParticleSpawner owner)
+		{
+			Owner = owner;
 		}
 
 		private void CaptureDefaults()
 		{
+			if (_defaultsCaptured) return;
+			_defaultsCaptured = true;
+
+			_parent = transform.parent;
 			_defaultLocalPosition = transform.localPosition;
 			_defaultLocalRotation = transform.localRotation;
 			_defaultLocalScale = transform.localScale;
@@ -67,6 +110,8 @@ namespace Utilities.ParticleSpawner
 		/// </summary>
 		public void ResetState()
 		{
+			CaptureDefaults();
+
 			ResetParent();
 			transform.localPosition = _defaultLocalPosition;
 			transform.localRotation = _defaultLocalRotation;
@@ -82,7 +127,7 @@ namespace Utilities.ParticleSpawner
 
 			if (_colorTargets != null && _defaultColors != null)
 			{
-				for (int i = 0; i < _colorTargets.Count; i++)
+				for (int i = 0; i < _colorTargets.Count && i < _defaultColors.Length; i++)
 				{
 					if (_colorTargets[i] != null)
 					{
@@ -93,14 +138,30 @@ namespace Utilities.ParticleSpawner
 			}
 		}
 
+		/// <summary>
+		/// Hands the effect out for <paramref name="configBase"/>, ending what it was doing.
+		/// <paramref name="onStop"/> runs once it is recycled, after a pooled effect is back in
+		/// its pool.
+		/// </summary>
+		/// <exception cref="ArgumentNullException"><paramref name="configBase"/> is null.</exception>
 		public virtual void Init(ParticleConfigBase configBase, Action onStop)
 		{
-			CancelPlay();
+			if (configBase == null) throw new ArgumentNullException(nameof(configBase));
 
+			CaptureDefaults();
+
+			_generation++;
 			_configBase = configBase;
 			ConfigId = configBase.IdAs<ParticleConfigBase>();
 			_onStop = onStop;
-			_active = false;
+			_leased = true;
+			_shown = false;
+			_stopping = false;
+
+			if (_rootParticle == null)
+			{
+				_rootParticle = GetComponent<ParticleSystem>();
+			}
 
 			if (_rootParticle != null)
 			{
@@ -114,26 +175,25 @@ namespace Utilities.ParticleSpawner
 			transform.parent = _parent;
 		}
 
+		/// <summary>
+		/// Stops the effect: its systems stop emitting, and it is recycled once its particles
+		/// have died. An effect that isn't playing yet, handed out or in its start delay, is
+		/// recycled at once.
+		/// </summary>
 		public void Stop()
 		{
-			CancelPlay();
+			if (!_leased || _stopping) return;
 
-			if (_rootParticle == null)
+			if (_shown && _rootParticle != null && _rootParticle.isPlaying)
 			{
-				_rootParticle = GetComponent<ParticleSystem>();
-			}
-
-			if (_rootParticle.isPlaying)
-			{
-				// The stopAction callback recycles via OnParticleSystemStopped.
+				// The stop callback recycles through OnParticleSystemStopped.
+				_stopping = true;
 				_rootParticle.Stop(true);
+				return;
 			}
-			else
-			{
-				// Never started (e.g. stopped during the start delay) — no callback
-				// will fire, so recycle directly.
-				Recycle();
-			}
+
+			_generation++;
+			Recycle();
 		}
 
 		protected void OnParticleSystemStopped()
@@ -141,13 +201,26 @@ namespace Utilities.ParticleSpawner
 			Recycle();
 		}
 
+		/// <summary>
+		/// Plays the effect after its start delay. A pooled effect must be handed out first; an
+		/// effect of your own plays again with its config.
+		/// </summary>
 		public virtual void Show()
 		{
-			_active = true;
+			if (!_leased)
+			{
+				if (Owner is not null || _configBase == null)
+				{
+					Debug.LogError($"ParticleComponent '{name}' has no config to show: Init it first. A pooled effect forgets its config when it is recycled.", this);
+					return;
+				}
 
-			CancelPlay();
-			_playCts = new CancellationTokenSource();
-			Activate(_playCts.Token).Forget();
+				_leased = true;
+			}
+
+			_shown = true;
+			_stopping = false;
+			ActivateAsync(++_generation).Forget();
 		}
 
 		public virtual void Show(Vector3 position)
@@ -164,30 +237,34 @@ namespace Utilities.ParticleSpawner
 
 		public virtual void Show(Vector3 position, Quaternion rotation, Color color)
 		{
-			for (int i = 0; i < _colorTargets.Count; i++)
+			if (_colorTargets != null)
 			{
-				var mainModule = _colorTargets[i].main;
-				mainModule.startColor = color;
+				for (int i = 0; i < _colorTargets.Count; i++)
+				{
+					if (_colorTargets[i] == null) continue;
+
+					var mainModule = _colorTargets[i].main;
+					mainModule.startColor = color;
+				}
 			}
 
 			Show(position, rotation);
 		}
 
+		/// <summary>Runs once the effect is recycled, before its stop callback.</summary>
 		protected virtual void OnStop()
 		{
-			_onStop?.Invoke();
 		}
 
 		private void Recycle()
 		{
-			if (!_active) return;
+			if (!_leased) return;
 
 			// Root stopped but children (trails, fading smoke) can still be alive —
 			// recycle only when the whole hierarchy is truly dead, else pop.
-			if (_configBase != null && _configBase.WaitForChildrenToFinish &&
-			    _rootParticle != null && _rootParticle.IsAlive(true))
+			if (_configBase.WaitForChildrenToFinish && _rootParticle != null && _rootParticle.IsAlive(true))
 			{
-				RecycleWhenFullyDeadAsync().Forget();
+				RecycleWhenFullyDeadAsync(_generation).Forget();
 				return;
 			}
 
@@ -196,37 +273,62 @@ namespace Utilities.ParticleSpawner
 
 		private void FinalizeRecycle()
 		{
-			if (!_active) return;
-			_active = false;
+			if (!_leased) return;
+
+			_leased = false;
+			_shown = false;
+			_stopping = false;
+			_generation++;
 			ResetState();
-			OnStop();
-		}
 
-		private async UniTaskVoid RecycleWhenFullyDeadAsync()
-		{
-			float waited = 0f;
+			Action onStop = _onStop;
 
-			while (_rootParticle != null && _rootParticle.IsAlive(true) && waited < 10f)
+			if (Owner is not null)
 			{
-				bool cancelled = await UniTask.Delay(250, DelayType.DeltaTime, PlayerLoopTiming.Update,
-				                                     this.GetCancellationTokenOnDestroy())
-				                              .SuppressCancellationThrow();
-				if (cancelled) return;
+				// Forgets its hand-out before the pool can hand it out again.
+				ParticleConfigBase config = _configBase;
+				_configBase = null;
+				_onStop = null;
+				ConfigId = default;
 
-				waited += 0.25f;
+				if (Owner != null) Owner.Release(this, config);
+				else Destroy(gameObject); // its spawner is gone
 			}
 
-			FinalizeRecycle();
+			OnStop();
+			onStop?.Invoke();
 		}
 
-		private async UniTaskVoid Activate(CancellationToken ct)
+		private async UniTaskVoid RecycleWhenFullyDeadAsync(int generation)
+		{
+			try
+			{
+				double waited = 0d;
+
+				while (_rootParticle != null && _rootParticle.IsAlive(true) && waited < MaxRecycleWaitSeconds)
+				{
+					await EffectTime.Delay(RecyclePollSeconds, destroyCancellationToken);
+					if (generation != _generation) return;
+
+					waited += RecyclePollSeconds;
+				}
+
+				FinalizeRecycle();
+			}
+			catch (OperationCanceledException)
+			{
+				// Destroyed while waiting.
+			}
+		}
+
+		private async UniTaskVoid ActivateAsync(int generation)
 		{
 			try
 			{
 				if (_configBase.StartDelayInSeconds > 0)
 				{
-					await UniTask.Delay(TimeSpan.FromSeconds(_configBase.StartDelayInSeconds),
-					                    DelayType.DeltaTime, PlayerLoopTiming.Update, ct);
+					await EffectTime.Delay(_configBase.StartDelayInSeconds, destroyCancellationToken);
+					if (generation != _generation) return;
 				}
 
 				gameObject.SetActive(true);
@@ -234,32 +336,25 @@ namespace Utilities.ParticleSpawner
 
 				if (_rootParticle.main.loop && _configBase.StopAfterSeconds > 0)
 				{
-					await UniTask.Delay(TimeSpan.FromSeconds(_configBase.StopAfterSeconds),
-					                    DelayType.DeltaTime, PlayerLoopTiming.Update, ct);
-					gameObject.SetActive(false);
+					await EffectTime.Delay(_configBase.StopAfterSeconds, destroyCancellationToken);
+					if (generation == _generation) Stop();
 				}
 			}
 			catch (OperationCanceledException)
 			{
-				// Stopped or recycled during the delay — the cancelling path owns recycling.
+				// Destroyed while waiting.
 			}
-		}
-
-		private void CancelPlay()
-		{
-			_playCts?.Cancel();
-			_playCts?.Dispose();
-			_playCts = null;
-		}
-
-		private void OnDisable()
-		{
-			CancelPlay();
 		}
 
 		private void OnDestroy()
 		{
-			CancelPlay();
+			_generation++;
+			_leased = false;
+
+			if (Owner != null)
+			{
+				Owner.Forget(this);
+			}
 		}
 	}
 }

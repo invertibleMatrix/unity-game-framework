@@ -139,7 +139,26 @@ namespace AK.Tests
 			highlight.Restore();
 
 			Assert.That(screen.GetComponents<Canvas>().Length, Is.EqualTo(1));
-			Assert.That(channelCanvas.sortingOrder, Is.EqualTo((int)UIChannel.Overlay + 1), "sortingOrder belongs to the UISystem and is left alone");
+			Assert.That(channelCanvas.sortingOrder, Is.EqualTo(sortingBefore), "the screen sorts where its stack puts it again");
+		}
+
+		[Test]
+		public void Enter_OnAScreen_StaysRaised_WhileItsStackResorts_AndRestoreLowersItToItsNewPlace()
+		{
+			_h.MakePrefab<HostScreen>(screen: true, allowMultiple: true);
+			var first = _h.System.Show<HostScreen>();
+			var second = _h.System.Show<HostScreen>();
+			Canvas canvas = second.GetComponent<Canvas>();
+			Assert.That(canvas.sortingOrder, Is.EqualTo((int)UIChannel.HUD + 2));
+
+			var highlight = ViewHighlight.Enter(second);
+			UISystemHarness.Complete(_h.System.CloseAsync(first));
+
+			Assert.That(canvas.sortingOrder, Is.EqualTo((int)UIChannel.Overlay + 1), "the re-sort below doesn't drop the highlight");
+
+			highlight.Restore();
+
+			Assert.That(canvas.sortingOrder, Is.EqualTo((int)UIChannel.HUD + 1), "the bottom of its stack now");
 		}
 
 		[Test]

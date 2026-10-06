@@ -1,7 +1,7 @@
 using DG.Tweening;
 using UnityEngine;
 
-namespace Utilities.ModelPreview
+namespace AK.Utilities.Previews
 {
 	/// <summary>How a model makes its entrance when a preview loads.</summary>
 	public enum ModelPreviewIntro

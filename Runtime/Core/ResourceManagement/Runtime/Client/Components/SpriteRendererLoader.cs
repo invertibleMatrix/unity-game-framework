@@ -1,3 +1,4 @@
+#if UGFW_ADDRESSABLES
 using UnityEngine;
 
 namespace AK.Core.ResourceManagement
@@ -20,3 +21,4 @@ namespace AK.Core.ResourceManagement
 		private void Reset() => _renderer = this.GetComponent<SpriteRenderer>();
 	}
 }
+#endif

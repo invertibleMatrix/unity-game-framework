@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -33,9 +35,6 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Flash intensity")]
         private float _flashIntensity = 1.5f;
         
-        [SerializeField] [Tooltip("Add ripple effect")]
-        private bool _addRippleEffect = false;
-        
         [SerializeField] [Tooltip("Pop sequence")]
         private PopSequence _popSequence = PopSequence.Single;
         
@@ -54,12 +53,6 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Add final breathing")]
         private bool _addFinalBreathing = false;
         
-        [SerializeField] [Tooltip("Pop sound type")]
-        private PopSoundType _popSoundType = PopSoundType.Bubble;
-        
-        [SerializeField] [Tooltip("Add pitch variation")]
-        private bool _addPitchVariation = true;
-        
         public enum PopSequence
         {
             Single,      // One quick pop
@@ -67,17 +60,8 @@ namespace AK.Systems.Animations
             Delayed,     // Pop with anticipation
             Chain        // Chain reaction pops
         }
-        
-        public enum PopSoundType
-        {
-            Bubble,
-            Snap,
-            Click,
-            Pop,
-            Boing
-        }
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             // Kill any existing tweens on this target to prevent memory leaks
             target.DOKill();
@@ -107,19 +91,19 @@ namespace AK.Systems.Animations
             // Settlement phase
             if (_addSettleWobble) {
                 sequence.AppendCallback(() => {
-                    target.DOShakeRotation(0.5f, new Vector3(0, 0, _settleIntensity), 8, 0, true);
+                    target.DOShakeRotation(0.5f, new Vector3(0, 0, _settleIntensity), 8, 0, true).SetTimeDomain(time);
                 });
             }
             
             // Final breathing
             if (_addFinalBreathing) {
-                sequence.AppendCallback(() => StartBreathing(target));
+                sequence.AppendCallback(() => StartBreathing(target, time));
             }
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             // Kill any existing tweens on this target to prevent memory leaks
             target.DOKill();
@@ -131,15 +115,12 @@ namespace AK.Systems.Animations
             
             // Quick reverse pop
             sequence.Append(target.DOScale(Vector3.one * _popScaleMultiplier, _popSpeed * 0.5f).SetEase(Ease.OutBack));
-            
-            // Pop sound
-            PlayPopSound();
-            
+
             // Disappear
             sequence.Append(target.DOScale(Vector3.zero, _popSpeed * 0.5f).SetEase(Ease.InBack));
             sequence.Join(canvasGroup.DOFade(0, _popSpeed * 0.3f).SetEase(Ease.InQuad));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
         private void ExecuteSinglePop(Sequence sequence, RectTransform target, CanvasGroup canvasGroup)
@@ -149,10 +130,7 @@ namespace AK.Systems.Animations
             sequence.Append(target.DOScale(Vector3.one * 0.1f, _popSpeed * 0.3f).SetEase(Ease.OutBack));
             
             // THE POP!
-            sequence.AppendCallback(() => {
-                canvasGroup.alpha = 1f;
-                PlayPopSound();
-            });
+            sequence.AppendCallback(() => canvasGroup.alpha = 1f);
             
             sequence.Append(target.DOScale(Vector3.one * _popScaleMultiplier, _popSpeed * 0.7f).SetEase(Ease.OutBack));
             
@@ -185,11 +163,8 @@ namespace AK.Systems.Animations
                 }
                 
                 var popScale = Vector3.one * (1f + (i * 0.1f));
-                
-                sequence.AppendCallback(() => {
-                    if (i == 0) canvasGroup.alpha = 1f;
-                    PlayPopSound(i);
-                });
+
+                if (i == 0) sequence.AppendCallback(() => canvasGroup.alpha = 1f);
                 
                 sequence.Append(target.DOScale(popScale * _popScaleMultiplier, _popSpeed * 0.5f).SetEase(Ease.OutBack));
                 
@@ -217,10 +192,7 @@ namespace AK.Systems.Animations
             
             // DELAYED POP!
             sequence.AppendInterval(0.2f);
-            sequence.AppendCallback(() => {
-                canvasGroup.alpha = 1f;
-                PlayPopSound();
-            });
+            sequence.AppendCallback(() => canvasGroup.alpha = 1f);
             
             sequence.Append(target.DOScale(Vector3.one * _popScaleMultiplier * 1.5f, _popSpeed).SetEase(Ease.OutBack));
             
@@ -242,34 +214,25 @@ namespace AK.Systems.Animations
                 }
                 
                 var chainScale = Vector3.one * (0.3f + (i * 0.2f));
-                
-                sequence.AppendCallback(() => {
-                    if (i == 0) canvasGroup.alpha = 1f;
-                    PlayPopSound(i);
-                });
+
+                if (i == 0) sequence.AppendCallback(() => canvasGroup.alpha = 1f);
                 
                 sequence.Append(target.DOScale(chainScale * _popScaleMultiplier, _popSpeed * 0.4f).SetEase(Ease.OutBack));
                 sequence.Append(target.DOScale(chainScale, _popSpeed * 0.4f).SetEase(Ease.InBack));
             }
             
             // Final big pop
-            sequence.AppendCallback(() => PlayPopSound());
             sequence.Append(target.DOScale(Vector3.one * _popScaleMultiplier * 1.2f, _popSpeed * 0.6f).SetEase(Ease.OutBack));
             sequence.Append(target.DOScale(Vector3.one, _popSpeed * 0.4f).SetEase(Ease.InBack));
         }
 
-        private void PlayPopSound(int variation = 0)
-        {
-            var pitch = _addPitchVariation ? 1f + (variation * 0.2f) : 1f;
-            Debug.Log($"🫧 {_popSoundType} pop sound! Pitch: {pitch}");
-        }
-
-        private void StartBreathing(RectTransform target)
+        private void StartBreathing(RectTransform target, TimeDomain time)
         {
             if (!_addFinalBreathing) return;
             
             var breatheScale = Vector3.one * 1.05f;
             target.DOScale(breatheScale, 2f).SetEase(Ease.InOutSine).SetLoops(-1, LoopType.Yoyo)
+                .SetTimeDomain(time)
                 .SetLink(target.gameObject, LinkBehaviour.KillOnDisable);
         }
 

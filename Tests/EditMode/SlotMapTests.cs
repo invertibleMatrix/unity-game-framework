@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using AK.Core.Collections;
+using AK.Kernel.Collections;
 using AK.Tests.Support;
 using NUnit.Framework;
 

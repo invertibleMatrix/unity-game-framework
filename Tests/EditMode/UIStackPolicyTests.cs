@@ -151,6 +151,50 @@ namespace AK.Tests
 			Assert.That(third, Is.SameAs(first), "the pooled instance is reused");
 		}
 
+		[TestCase(ViewStackBehaviour.HideBelow)]
+		[TestCase(ViewStackBehaviour.PauseOnlyBelow)]
+		public void Screen_MidStackClose_ResumesTheScreenBelow_WhenNothingElseCoversIt(ViewStackBehaviour behaviour)
+		{
+			_h.MakePrefab<RecordingScreen>(screen: true);
+			_h.MakePrefab<RecordingFragment>(screen: true, behaviour: behaviour);
+			_h.MakePrefab<RecordingFragmentB>(screen: true);
+
+			var bottom = _h.System.Show<RecordingScreen>();
+			var middle = _h.System.Show<RecordingFragment>();
+			bottom.Clear();
+
+			// A DoNothing screen on top, so `middle` is not the top of the stack.
+			var top = _h.System.Show<RecordingFragmentB>();
+			top.Clear();
+			Assert.That(bottom.Trace, Is.EqualTo(""), "DoNothing on top touches nothing");
+
+			UISystemHarness.Complete(_h.System.CloseAsync(middle));
+
+			Assert.That(bottom.Trace, Is.EqualTo("Resume"), "bottom was covered only by middle");
+			Assert.That(bottom.Interactable, Is.True);
+			Assert.That(bottom.IsVisible, Is.True);
+			Assert.That(top.Trace, Is.EqualTo(""), "the top screen sees nothing");
+			Assert.That(top.IsVisible, Is.True);
+		}
+
+		[Test]
+		public void Screen_MidStackClose_LeavesTheScreenBelowCovered_WhenAnotherCoverRemains()
+		{
+			_h.MakePrefab<RecordingScreen>(screen: true);
+			_h.MakePrefab<RecordingFragment>(screen: true, behaviour: ViewStackBehaviour.HideBelow, allowMultiple: true);
+
+			var bottom = _h.System.Show<RecordingScreen>();
+			var middle = _h.System.Show<RecordingFragment>();
+			var top = _h.System.Show<RecordingFragment>();
+			bottom.Clear();
+
+			UISystemHarness.Complete(_h.System.CloseAsync(middle));
+
+			Assert.That(bottom.Trace, Is.EqualTo(""), "top still hides what is below, so bottom stays hidden");
+			Assert.That(bottom.IsVisible, Is.False);
+			Assert.That(top.IsVisible, Is.True);
+		}
+
 		// ---------------------------------------------------------------
 		// Fragments (per-parent history)
 		// ---------------------------------------------------------------

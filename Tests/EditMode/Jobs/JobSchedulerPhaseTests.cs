@@ -9,7 +9,7 @@ namespace AK.Tests.Jobs
 	[TestFixture]
 	public sealed class JobSchedulerPhaseTests
 	{
-		private sealed class OrderJob : IJob
+		private sealed class OrderJob : IFrameJob
 		{
 			private readonly List<char> _log;
 			private readonly char       _id;
@@ -23,7 +23,7 @@ namespace AK.Tests.Jobs
 			public void Execute(in FrameContext ctx) => _log.Add(_id);
 		}
 
-		private struct ProducerJob : IJob
+		private struct ProducerJob : IFrameJob
 		{
 			public int   Index;
 			public int   Frame;
@@ -36,7 +36,7 @@ namespace AK.Tests.Jobs
 			}
 		}
 
-		private struct ConsumerJob : IJob
+		private struct ConsumerJob : IFrameJob
 		{
 			public int   Index;
 			public int   Frame;
@@ -78,9 +78,9 @@ namespace AK.Tests.Jobs
 		[Test]
 		public void Repeating_RunsOncePerTick_UntilCancelled_ThenCallbackCancelledTrue()
 		{
-			JobScheduler scheduler = Create(workers: 2);
-			var          job       = new RecordingJob();
-			JobHandle    handle    = scheduler.ScheduleRepeating(job);
+			JobScheduler   scheduler = Create(workers: 2);
+			var            job       = new RecordingJob();
+			FrameJobHandle handle    = scheduler.ScheduleRepeating(job);
 
 			for (int frame = 1; frame <= 5; frame++) RunFrame(scheduler, frame);
 			Assert.AreEqual(5, job.ExecuteCount);
@@ -130,7 +130,7 @@ namespace AK.Tests.Jobs
 		{
 			JobScheduler scheduler = Create(workers: 1);
 			var          log       = new List<char>();
-			var          handles   = new Dictionary<char, JobHandle>();
+			var          handles   = new Dictionary<char, FrameJobHandle>();
 
 			foreach (char id in "ABCDE") handles[id] = scheduler.ScheduleRepeating(new OrderJob(log, id));
 

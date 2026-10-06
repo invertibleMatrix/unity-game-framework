@@ -6,8 +6,8 @@ namespace AK.Systems
 	/// <summary>
 	/// One navigation stack per <see cref="UIChannel"/> for screens (views with a
 	/// <see cref="UIViewChannel"/>). The default channel always exists. Pushing gives a
-	/// screen's canvas its depth-based sorting order; popping and mid-stack removal re-sort
-	/// the survivors so a later push can never collide with a baked-in order.
+	/// screen's canvas the sorting order of its depth on the stack it lands on; every removal
+	/// re-sorts the survivors so a later push can never collide with a baked-in order.
 	/// </summary>
 	internal sealed class ScreenStacks
 	{
@@ -36,7 +36,7 @@ namespace AK.Systems
 			}
 
 			stack.Push(screen);
-			screen.Channel.Initialize(_uiCamera, stack.Count);
+			screen.Channel.Initialize(_uiCamera, channel, stack.Count);
 			return stack;
 		}
 
@@ -58,8 +58,19 @@ namespace AK.Systems
 		{
 			foreach (var stack in _stacks.Values)
 			{
-				stack.Remove(view);
+				if (stack.Remove(view)) Resort(stack);
 			}
+		}
+
+		/// <summary>The stack <paramref name="screen"/> is on, or null when it is on none.</summary>
+		public ViewStack FindStackOf(UIView screen)
+		{
+			foreach (var stack in _stacks.Values)
+			{
+				if (stack.Contains(screen)) return stack;
+			}
+
+			return null;
 		}
 
 		/// <summary>

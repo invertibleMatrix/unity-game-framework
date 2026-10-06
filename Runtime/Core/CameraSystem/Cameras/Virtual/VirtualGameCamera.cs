@@ -1,3 +1,4 @@
+#if UGFW_CINEMACHINE
 using AK.Core;
 using Reflex.Attributes;
 using Unity.Cinemachine;
@@ -20,7 +21,7 @@ namespace AK.Systems
 	/// same type (e.g. several prefab variants) that you need to address individually.
 	/// </summary>
 	[RequireComponent(typeof(CinemachineVirtualCameraBase))]
-	public class VirtualGameCamera : MonoBehaviour, IVirtualGameCamera
+	public class VirtualGameCamera : MonoBehaviour, IVirtualGameCamera, ISpawnableCamera
 	{
 		[Header("Camera Config")]
 		[Tooltip("OPTIONAL. The CameraType identifying this camera. Leave empty to be found as 'first of this type'. " +
@@ -128,18 +129,19 @@ namespace AK.Systems
 		}
 
 		/// <summary>
-		/// Makes this the live camera (priority boost via the system). When not bound and
-		/// enableGameObject is true, simply activates the GameObject (standalone usage).
+		/// Makes this the live camera (priority boost via the system), and activates the
+		/// GameObject when asked to. Without a system, it only activates the GameObject.
 		/// </summary>
 		public void Enable(bool enableGameObject = true)
 		{
 			if (_cameraSystem != null)
 			{
-				_cameraSystem.ActivateVirtualCamera(CameraTypeId, this);
-				return;
+				_cameraSystem.EnableCamera(this, enableGameObject);
 			}
-
-			if (enableGameObject) gameObject.SetActive(true);
+			else if (enableGameObject)
+			{
+				gameObject.SetActive(true);
+			}
 		}
 
 		/// <summary>
@@ -150,12 +152,12 @@ namespace AK.Systems
 		{
 			if (_cameraSystem != null)
 			{
-				_cameraSystem.DeactivateVirtualCamera(this);
-				if (disableGameObject) gameObject.SetActive(false);
-				return;
+				_cameraSystem.DisableCamera(this, disableGameObject);
 			}
-
-			if (disableGameObject) gameObject.SetActive(false);
+			else if (disableGameObject)
+			{
+				gameObject.SetActive(false);
+			}
 		}
 
 		public virtual void Shake(float intensity, float duration)
@@ -180,3 +182,4 @@ namespace AK.Systems
 		}
 	}
 }
+#endif

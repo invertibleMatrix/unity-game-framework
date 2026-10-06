@@ -1,11 +1,12 @@
 ﻿using System;
-using AK.Systems;
+using AK.Core.Extensions;
 using Cysharp.Threading.Tasks;
 
-namespace UI
+namespace AK.Systems
 {
 	public class UIFragLoadSpinner : UIView
 	{
+		/// <summary>Closes the spinner after <paramref name="seconds"/> of the UI's time, unless it is destroyed first.</summary>
 		public void AutoCloseAfterSeconds(int seconds)
 		{
 			if (seconds > 0)
@@ -17,7 +18,7 @@ namespace UI
 			{
 				try
 				{
-					await UniTask.WaitForSeconds(seconds, cancellationToken: gameObject.GetCancellationTokenOnDestroy());
+					await TimeDomain.Delay(seconds, gameObject.GetCancellationTokenOnDestroy());
 					Close();
 				}
 				catch (OperationCanceledException) { }

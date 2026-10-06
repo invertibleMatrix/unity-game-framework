@@ -1,130 +1,93 @@
+using System;
+using AK.Kernel.Persistence;
+using AK.Kernel.RemoteConfig;
 using UnityEngine;
 
 namespace AK.CoreDomain.RemoteConfig
 {
-	[System.Serializable]
-	internal sealed class RemoteJsonQuotedString
-	{
-		public string value;
-	}
-
 	/// <summary>
-	/// Base class for complex/serializable type remote variables.
-	/// Firebase returns these as JSON strings which are deserialized via JsonUtility.
+	/// A remote JSON object, read with JsonUtility into a <typeparamref name="T"/>.
 	///
-	/// Usage:
-	/// 1. Create a [Serializable] class:
-	///    [Serializable] public class GameConfig { public int MaxLives; public float CoinMultiplier; }
+	/// <para><b>Usage.</b>
+	/// <list type="number">
+	/// <item>A serializable class: <c>[Serializable] public class GameConfig { public int MaxLives; public float CoinMultiplier; }</c></item>
+	/// <item>A concrete variable: <c>[CreateAssetMenu(...)] public class RemoteGameConfig : RemoteJson&lt;GameConfig&gt; { }</c></item>
+	/// <item>The asset, with its key and default value set in the inspector.</item>
+	/// <item>The provider's value, as a JSON object: <c>{"MaxLives":10,"CoinMultiplier":1.5}</c></item>
+	/// </list></para>
 	///
-	/// 2. Create a concrete wrapper:
-	///    [CreateAssetMenu(fileName = "RemoteGameConfig_", menuName = "Gameplay/MetaData/RemoteConfig/Remote GameConfig")]
-	///    public class RemoteGameConfig : RemoteJson<GameConfig> { }
+	/// <para><b>Reading.</b> The value must be one well-formed JSON object. Some providers
+	/// deliver it inside a JSON string, <c>"{\"MaxLives\":10}"</c>; that string is decoded first
+	/// (<see cref="RemoteValueText.UnwrapJson"/>). JsonUtility leaves members the JSON doesn't
+	/// mention at their field initializers.</para>
 	///
-	/// 3. Create the asset in Unity Editor and set the default value
-	///
-	/// 4. In Firebase Console, set the value as JSON:
-	///    {"MaxLives":10,"CoinMultiplier":1.5}
+	/// <para><b>Sharing.</b> Without a remote value, <see cref="RemoteVariable{T}.Value"/> is a
+	/// copy of the default, made once, so a caller can't change the asset. Every caller still
+	/// gets the same object: treat it as read-only.</para>
 	/// </summary>
 	public abstract class RemoteJson<T> : RemoteVariable<T> where T : class, new()
 	{
-		public override void SetRemoteValueFromString(string value)
-		{
-			SetRemoteValueFromJson(value);
-		}
+		private const int ExcerptLength = 64;
 
-		public void SetRemoteValueFromJson(string json)
+		[NonSerialized] private T _defaultCopy;
+
+		/// <summary>The value as JSON.</summary>
+		public string ToJson() => JsonUtility.ToJson(Value);
+
+		protected override bool TryParseValue(string text, out T value)
 		{
-			json = UnwrapFirebaseJson(json);
-			if (string.IsNullOrEmpty(json))
+			value = null;
+
+			string json = RemoteValueText.UnwrapJson(text, out bool repaired);
+			if (repaired)
 			{
-				Debug.LogWarning($"RemoteJson '{name}': Attempted to set null or empty JSON value.");
-				return;
+				Debug.LogWarning($"Remote variable '{name}' ({VariableKey}) holds a JSON string that isn't valid JSON, most often for a quote " +
+				                 $"that isn't escaped. It was decoded leniently; fix the value at the provider. It begins '{Excerpt(text)}'.", this);
 			}
 
+			// JsonUtility reads a malformed or non-object value as defaults without complaint.
+			if (JsonEnvelope.Inspect(json, string.Empty, out _) != JsonShape.Object)
+			{
+				return false;
+			}
+
+			// Overwrite reads into the concrete runtime type, arrays and lists included.
+			var parsed = new T();
 			try
 			{
-				// FromJson<T>() with T as a generic parameter drops arrays/lists
-				// (ads_config is nested objects so it still worked). Overwrite uses
-				// the concrete runtime type, matching AgeUp / district catalogs.
-				T parsed = new T();
 				JsonUtility.FromJsonOverwrite(json, parsed);
-				_remoteValue = parsed;
-				_hasRemoteValue = true;
-
-				if (_cacheValue)
-				{
-					SaveCachedValue();
-				}
 			}
-			catch (System.Exception e)
+			catch (ArgumentException)
 			{
-				Debug.LogError($"RemoteJson '{name}': Failed to parse JSON '{json}'. Error: {e.Message}");
+				return false;
 			}
+
+			value = parsed;
+			return true;
 		}
 
-		/// <summary>
-		/// Firebase JSON-typed params are sometimes a quoted JSON string.
-		/// The game server already double-parses this; Unity must too.
-		/// </summary>
-		internal static string UnwrapFirebaseJson(string value)
+		protected override string FormatValue(T value) => value != null ? JsonUtility.ToJson(value) : "{}";
+
+		protected override T GetDefault() => _defaultCopy ??= Copy(_defaultValue);
+
+		protected override void OnValidate()
 		{
-			if (string.IsNullOrEmpty(value))
-			{
-				return value;
-			}
-
-			string trimmed = value.Trim();
-			if (trimmed.Length > 0 && trimmed[0] == '\uFEFF')
-			{
-				trimmed = trimmed.Substring(1).TrimStart();
-			}
-
-			// Not a quoted JSON string — already a bare object/array/primitive.
-			if (trimmed.Length < 2 || trimmed[0] != '"' || trimmed[trimmed.Length - 1] != '"')
-			{
-				return trimmed;
-			}
-
-			// Strict path: re-wrap and let JsonUtility decode escapes for us.
-			RemoteJsonQuotedString box = null;
-			try
-			{
-				box = JsonUtility.FromJson<RemoteJsonQuotedString>("{\"value\":" + trimmed + "}");
-			}
-			catch (System.Exception)
-			{
-				// fall through to the tolerant path below
-			}
-
-			if (box != null && !string.IsNullOrEmpty(box.value))
-			{
-				return box.value;
-			}
-
-			// Tolerant fallback: the strict box parse failed (a stray unescaped
-			// quote in the payload breaks the re-wrapped object). Strip the outer
-			// quotes and unescape the common sequences by hand so we still recover,
-			// and log a warning that names the unwrap step — otherwise the caller's
-			// FromJsonOverwrite fails against a double-wrapped string with no clue.
-			string inner = trimmed.Substring(1, trimmed.Length - 2)
-				.Replace("\\\"", "\"")
-				.Replace("\\\\", "\\")
-				.Replace("\\/", "/")
-				.Replace("\\n", "\n")
-				.Replace("\\r", "\r")
-				.Replace("\\t", "\t");
-
-			Debug.LogWarning($"RemoteJson: strict quoted-JSON parse failed; used tolerant unwrap. Value begins '{trimmed.Substring(0, System.Math.Min(48, trimmed.Length))}…'");
-			return inner;
+			base.OnValidate();
+			_defaultCopy = null;
 		}
 
-		/// <summary>
-		/// Gets the current value as a JSON string.
-		/// Useful for debugging or logging.
-		/// </summary>
-		public string ToJson()
+		private static T Copy(T source)
 		{
-			return JsonUtility.ToJson(Value);
+			var copy = new T();
+			if (source != null)
+			{
+				JsonUtility.FromJsonOverwrite(JsonUtility.ToJson(source), copy);
+			}
+
+			return copy;
 		}
+
+		private static string Excerpt(string text) =>
+			text.Length <= ExcerptLength ? text : text.Substring(0, ExcerptLength) + "…";
 	}
 }

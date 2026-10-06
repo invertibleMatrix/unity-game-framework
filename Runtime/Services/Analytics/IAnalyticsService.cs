@@ -11,6 +11,12 @@ namespace AK.Services
 	/// </summary>
 	public interface IAnalyticsService
 	{
+		/// <summary>
+		/// Starts providers that must run before identity exists (attribution). Safe to call
+		/// once at the top of boot; <see cref="Initialize()"/> still runs the full init later.
+		/// </summary>
+		void EarlyStart();
+
 		void Initialize();
 		void Initialize(AnalyticsMeta meta, AnalyticsInitOptions options = null);
 
@@ -74,13 +80,15 @@ namespace AK.Services
 		bool IsInitialized { get; }
 	}
 
+	/// <summary>
+	/// Per-run settings for <see cref="IAnalyticsService.Initialize(AnalyticsMeta, AnalyticsInitOptions)"/>.
+	/// The custom dimensions' names and allowed values belong to the game's
+	/// <see cref="AK.Services.Analytics.AnalyticsTaxonomy"/>; these only set their first values.
+	/// </summary>
 	public sealed class AnalyticsInitOptions
 	{
 		public string UserId;
 		public string Build;
-		public string[] CustomDimension01Values;
-		public string[] CustomDimension02Values;
-		public string[] CustomDimension03Values;
 		public string CustomDimension01;
 		public string CustomDimension02;
 		public string CustomDimension03;

@@ -23,8 +23,31 @@ namespace AK.Core
 		}
 	}
 
+	/// <summary>
+	/// Runs the game's top-level states. One state is current; states paused under it wait on a
+	/// stack until <see cref="TryGoBack"/> resumes them.
+	///
+	/// <para><b>One transition at a time.</b> A transition exits or pauses the current state,
+	/// enters or resumes the next, then reports itself: <see cref="OnStateChange"/> after an
+	/// entry, and <see cref="OnTransition"/> after every transition. A change requested while a
+	/// transition runs, from a state's callback or from a listener, waits until that transition
+	/// has been reported, and requests run in the order made. So each transition is reported
+	/// once, and a state never exits before its own OnEnter has returned.</para>
+	///
+	/// <para><b>Failures.</b> An exception from a state's callback ends its transition there and
+	/// reaches the caller of the change that started the run. Changes queued behind it are
+	/// dropped, and the machine takes new ones.</para>
+	///
+	/// <para>Main thread only.</para>
+	/// </summary>
 	public sealed class AppStateMachine : MonoBehaviour, IAppStateMachine
 	{
+		/// <summary>
+		/// Transitions one request may lead to, those its states request included. More means
+		/// states keep changing state from their callbacks without end.
+		/// </summary>
+		internal const int MaxTransitionsPerRun = 64;
+
 		[SerializeField] private AppState _bootState;
 
 		[Inject] private readonly Container _container;
@@ -33,9 +56,13 @@ namespace AK.Core
 		private AppState _previousState;
 		private readonly List<AppState> _pausedStates = new();
 
+		private readonly Queue<Request> _requests = new();
+		private bool _running;
+
+		/// <summary>Fires after a state is entered, the boot state included. A resumed state doesn't fire it.</summary>
 		public event Action<AppState> OnStateChange;
 
-		/// <summary>Debug/tooling hook — fires on every transition including boot and pause-stack resumes.</summary>
+		/// <summary>Fires after every transition, the boot state's entry and resumes included.</summary>
 		public event Action<StateTransitionInfo> OnTransition;
 
 		public AppState CurrentState => _currentState;
@@ -48,24 +75,14 @@ namespace AK.Core
 			{
 				Debug.LogError("No Boot State Provided, Halting!");
 				enabled = false;
-				return;
 			}
 		}
 
-		// Booting in Start so that all objects in the scene have been loaded
+		// Boots in Start, once every object in the scene has loaded. The boot state is entered
+		// like any other: OnEnter, then OnStateChange and OnTransition.
 		private void Start()
 		{
-			Boot();
-		}
-
-		private void Boot()
-		{
-			_currentState = _bootState;
-			_bootState.Inject(_container);
-			_bootState._appStateMachine = this;
-			_bootState.SetContext(new TransitionContext());
-			_bootState.OnEnter();
-			OnTransition?.Invoke(new StateTransitionInfo(null, _bootState, false, false));
+			ChangeState(_bootState);
 		}
 
 		private void Update()
@@ -84,62 +101,118 @@ namespace AK.Core
 				return;
 			}
 
-			_previousState = _currentState;
-
-			// NOTE: self-transitions are INTENTIONALLY allowed - OnExit -> OnEnter on the same
-			// state is the standard way to restart it (e.g. GameState re-enter on level restart).
-
-			if (pauseCurrent && _previousState != null)
-			{
-				_previousState.OnPause();
-
-				// Guard against pause-stacking the same state twice: a duplicate entry would make
-				// TryGoBack "resume" a state that is already current.
-				if (!_pausedStates.Contains(_previousState))
-				{
-					_pausedStates.Add(_previousState);
-				}
-				else
-				{
-					Debug.LogWarning($"AppStateMachine: state '{_previousState.name}' is already paused - not stacking a duplicate.");
-				}
-			}
-			else
-			{
-				// Note: may be legitimately re-entered from the pause stack below; OnExit there
-				// is skipped by design (resume semantics).
-				_previousState?.OnExit();
-			}
-
-			_currentState = appState;
-			_currentState.Inject(_container);
-			_currentState._appStateMachine = this;
-
-			context ??= new TransitionContext();
-
-			bool resumed = _pausedStates.Contains(_currentState);
-
-			if (resumed)
-			{
-				_currentState.SetContext(context);
-				_pausedStates.Remove(_currentState);
-				_currentState.OnResume();
-			}
-			else
-			{
-				_currentState.SetContext(context);
-				_currentState.OnEnter();
-				OnStateChange?.Invoke(_currentState);
-			}
-
-			OnTransition?.Invoke(new StateTransitionInfo(_previousState, _currentState, pauseCurrent, resumed));
+			Run(new Request(appState, pauseCurrent, context, goBack: false));
 		}
 
 		public void TryGoBack()
 		{
-			if (_pausedStates.Count > 0)
+			// Requested during a transition, the go-back takes the top of the stack as it stands
+			// when its turn comes.
+			if (!_running && _pausedStates.Count == 0) return;
+
+			Run(new Request(null, pauseCurrent: false, context: null, goBack: true));
+		}
+
+		private void Run(in Request request)
+		{
+			_requests.Enqueue(request);
+			if (_running) return;
+
+			_running = true;
+			try
 			{
-				ChangeState(_pausedStates[^1]);
+				for (int transitions = 0; _requests.Count > 0; transitions++)
+				{
+					if (transitions == MaxTransitionsPerRun)
+					{
+						throw new InvalidOperationException(
+							$"AppStateMachine: {MaxTransitionsPerRun} transitions in one run. States keep changing state from their callbacks.");
+					}
+
+					Transition(_requests.Dequeue());
+				}
+			}
+			finally
+			{
+				// Empty unless a callback threw: what it left queued is dropped.
+				_requests.Clear();
+				_running = false;
+			}
+		}
+
+		private void Transition(in Request request)
+		{
+			AppState next = request.GoBack ? TopOfPauseStack() : request.State;
+			if (next == null) return;
+
+			AppState from = _currentState;
+			bool paused = request.PauseCurrent && from != null;
+
+			_previousState = from;
+
+			if (paused)
+			{
+				from.OnPause();
+
+				// Guard against pause-stacking the same state twice: a duplicate entry would make
+				// TryGoBack "resume" a state that is already current.
+				if (!_pausedStates.Contains(from))
+				{
+					_pausedStates.Add(from);
+				}
+				else
+				{
+					Debug.LogWarning($"AppStateMachine: state '{from.name}' is already paused - not stacking a duplicate.");
+				}
+			}
+			else if (from != null)
+			{
+				// Self-transitions are intended: OnExit then OnEnter restarts a state.
+				from.OnExit();
+			}
+
+			_currentState = next;
+			next.Inject(_container);
+			next._appStateMachine = this;
+
+			bool resumed = _pausedStates.Remove(next);
+			if (resumed)
+			{
+				// A resumed state keeps the context it was entered with, unless it is handed a new one.
+				if (request.Context != null)
+				{
+					next.SetContext(request.Context);
+				}
+
+				next.OnResume();
+			}
+			else
+			{
+				next.SetContext(request.Context);
+				next.OnEnter();
+				OnStateChange?.Invoke(next);
+			}
+
+			OnTransition?.Invoke(new StateTransitionInfo(from, next, paused, resumed));
+		}
+
+		private AppState TopOfPauseStack() => _pausedStates.Count > 0 ? _pausedStates[^1] : null;
+
+		private readonly struct Request
+		{
+			public readonly AppState          State;
+			public readonly bool              PauseCurrent;
+			public readonly TransitionContext Context;
+
+			/// <summary>Resume the top of the pause stack, decided when the request runs.</summary>
+			public readonly bool GoBack;
+
+			public Request(AppState state, bool pauseCurrent, TransitionContext context, bool goBack)
+			{
+				State        = state;
+				PauseCurrent = pauseCurrent;
+				Context      = context;
+				GoBack       = goBack;
 			}
 		}
 	}

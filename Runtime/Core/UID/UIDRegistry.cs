@@ -27,8 +27,18 @@ namespace AK.Core
 		public IReadOnlyList<T> Objects => _objects;
 		public int              Count   => _objects.Count;
 
-		/// <summary>Increments on every rebuild. Zero means lookups have not been built yet.</summary>
-		public int Version => _version;
+		/// <summary>
+		/// Increments on every rebuild. Reading it builds the lookups first, so an index built
+		/// against it also sees a list that changed under the registry, as after a reimport.
+		/// </summary>
+		public int Version
+		{
+			get
+			{
+				if (_slots == null) Rebuild();
+				return _version;
+			}
+		}
 
 		/// <summary>Optional redirect table consulted on a miss. Set once by the owning repository.</summary>
 		public void SetRedirects(UidRedirectTable redirects)

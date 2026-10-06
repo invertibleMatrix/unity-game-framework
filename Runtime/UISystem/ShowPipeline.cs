@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using AK.Core.Extensions;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 
@@ -326,14 +327,14 @@ namespace AK.Systems
 				{
 					await gate.WaitForTurnAsync(ct);
 
-				// A parent that closed while this show was queued has already settled the view.
-				if (_registry.Contains(view))
-				{
-					await ShowInHistoryAsync(view, parent, immediate, ct);
+					// A parent that closed while this show was queued has already settled the view.
+					if (_registry.Contains(view))
+					{
+						await ShowInHistoryAsync(view, parent, immediate, ct);
 
-					// See PresentScreenAsync — a cancelled entrance abandons the show.
-					ct.ThrowIfCancellationRequested();
-				}
+						// See PresentScreenAsync — a cancelled entrance abandons the show.
+						ct.ThrowIfCancellationRequested();
+					}
 
 					gate.Complete();
 				}
@@ -520,7 +521,7 @@ namespace AK.Systems
 		}
 
 		/// <summary>
-		/// Waits out a ShowOnStart delay, then shows the fragment through the parallel path.
+		/// Waits out a ShowOnStart delay on the UI's time, then shows the fragment through the parallel path.
 		/// The armed token is cancelled by every close and teardown path on the view, and the
 		/// post-delay guards catch a parent that went away or a fragment someone else showed
 		/// during the wait — so a delayed start never pops a fragment back open after it was closed.
@@ -531,7 +532,7 @@ namespace AK.Systems
 
 			try
 			{
-				await UniTask.Delay(TimeSpan.FromSeconds(delay), DelayType.DeltaTime, PlayerLoopTiming.Update, ct);
+				await _host.TimeDomain.Delay(delay, ct);
 			}
 			catch (OperationCanceledException)
 			{

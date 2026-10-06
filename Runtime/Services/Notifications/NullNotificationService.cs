@@ -7,9 +7,10 @@ using UnityEngine;
 namespace AK.Services
 {
 	/// <summary>
-	/// No-op <see cref="INotificationService"/> used when the Unity Notifications package is absent
-	/// (no UNITY_NOTIFICATIONS define) or on unsupported platforms. Lets consumer code hold an
-	/// INotificationService reference without #if guards: everything degrades gracefully.
+	/// No-op <see cref="INotificationService"/>, which <see cref="NotificationServiceFactory"/> makes
+	/// when com.unity.mobile.notifications 2.4 or later isn't installed, or in a player for a
+	/// platform other than Android and iOS. Lets consumer code hold an INotificationService
+	/// reference without #if guards: everything degrades gracefully.
 	/// </summary>
 	public class NullNotificationService : INotificationService
 	{

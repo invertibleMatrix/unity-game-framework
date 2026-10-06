@@ -8,6 +8,22 @@ namespace AK.Services
 	/// Interface for ad network providers (AdMob, Unity Ads, IronSource, etc.).
 	/// Each provider handles the low-level SDK integration for a specific ad network.
 	/// The AdService coordinates between multiple providers.
+	///
+	/// <para>What <see cref="AdService"/> relies on:</para>
+	/// <list type="bullet">
+	/// <item>Every call is made on the main thread, and every task completes on it. SDK
+	/// callbacks from other threads go through <see cref="AK.Core.Threading.MainThreadInbox"/>.</item>
+	/// <item>Every task completes, whatever the SDK does; a provider bounds each wait with a
+	/// timeout. <see cref="AK.Services.Ads.FullscreenAdDriver"/> does this for fullscreen ads.</item>
+	/// <item><see cref="LoadAdAsync"/> joins a load already running for the same ad unit,
+	/// rather than failing it.</item>
+	/// <item><see cref="ShowAdAsync"/> shows an ad that is already loaded, and fails with
+	/// <see cref="AdErrorType.NotReady"/> otherwise; loading is the service's job. Its result
+	/// sets <see cref="AdResult.Displayed"/> for any ad that reached the screen, completed or
+	/// not, and grants a reward only on the network's reward callback.</item>
+	/// <item>A provider that is <see cref="System.IDisposable"/> is disposed by the service
+	/// that owns it, which ends its pending tasks and unhooks its SDK callbacks.</item>
+	/// </list>
 	/// </summary>
 	public interface IAdProvider
 	{
@@ -32,7 +48,9 @@ namespace AK.Services
 		IReadOnlyList<AdType> SupportedAdTypes { get; }
 
 		/// <summary>
-		/// Initializes the ad provider with the given placements.
+		/// Initializes the ad provider with the given placements. Completes when the SDK has
+		/// finished, however long that takes; the service decides how long to wait. Reports
+		/// failure as false rather than throwing.
 		/// </summary>
 		/// <param name="placements">All ad placements that may be used.</param>
 		/// <returns>True if initialization succeeded.</returns>
@@ -47,8 +65,8 @@ namespace AK.Services
 		bool IsAdReady(string placementId, AdType adType);
 
 		/// <summary>
-		/// Preloads an ad for the given placement.
-		/// Call this to have ads ready before showing.
+		/// Loads an ad for the given placement's ad unit. Joins a load already running for the
+		/// unit, and completes at once when an ad is loaded.
 		/// </summary>
 		/// <param name="placementId">The placement ID to load.</param>
 		/// <param name="adType">The type of ad to load.</param>
@@ -57,7 +75,9 @@ namespace AK.Services
 		UniTask<AdLoadResult> LoadAdAsync(string placementId, AdType adType, string adUnitId);
 
 		/// <summary>
-		/// Shows an ad for the given placement.
+		/// Shows the loaded ad for the given placement, and completes when the show is over.
+		/// Fails with <see cref="AdErrorType.NotReady"/> when no ad is loaded, and with
+		/// <see cref="AdErrorType.AlreadyShowing"/> while another fullscreen ad shows.
 		/// </summary>
 		/// <param name="placementId">The placement ID to show.</param>
 		/// <param name="adType">The type of ad to show.</param>

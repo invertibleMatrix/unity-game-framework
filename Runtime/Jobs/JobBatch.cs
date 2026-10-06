@@ -19,7 +19,7 @@ namespace AK.Jobs
 	/// Register the batch with a scheduler once; call <see cref="Add"/> and read <see cref="Results"/>
 	/// from the scheduler's thread only. Each element writes only itself, so elements never contend.
 	/// </summary>
-	public sealed class JobBatch<TJob> : IJobBatch where TJob : struct, IJob
+	public sealed class JobBatch<TJob> : IJobBatch where TJob : struct, IFrameJob
 	{
 		private TJob[] _pending;
 		private TJob[] _executing;
@@ -58,7 +58,7 @@ namespace AK.Jobs
 		/// <summary>Elements of the last finished frame. Mutable so a result can be fed straight back into <see cref="Add"/>.</summary>
 		public Span<TJob> Results => new(_results, 0, _resultCount);
 
-		/// <summary>Elements in <see cref="Results"/> whose <see cref="IJob.Execute"/> threw; their fields may be partially written.</summary>
+		/// <summary>Elements in <see cref="Results"/> whose <see cref="IFrameJob.Execute"/> threw; their fields may be partially written.</summary>
 		public int ResultFaults => _resultFaults;
 
 		public bool IsRegistered => Owner != null;

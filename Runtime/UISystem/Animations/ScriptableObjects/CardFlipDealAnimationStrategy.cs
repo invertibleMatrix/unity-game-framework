@@ -1,3 +1,5 @@
+using AK.Core.Extensions;
+using AK.Kernel.Timing;
 using DG.Tweening;
 using UnityEngine;
 
@@ -24,14 +26,8 @@ namespace AK.Systems.Animations
         [SerializeField] [Tooltip("Flip axis")]
         private FlipAxis _flipAxis = FlipAxis.Y;
         
-        [SerializeField] [Tooltip("Flip speed")]
-        private float _flipSpeed = 1f;
-        
         [SerializeField] [Tooltip("Scale during flip (3D effect)")]
         private Vector3 _flipScale = new Vector3(0.1f, 1f, 1f);
-        
-        [SerializeField] [Tooltip("Scale overshoot at end")]
-        private float _scaleOvershoot = 1.1f;
         
         [SerializeField] [Tooltip("Deal duration")]
         private float _dealDuration = 0.5f;
@@ -48,7 +44,7 @@ namespace AK.Systems.Animations
             Y
         }
 
-        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, Vector2 entryPos = default)
+        public override Tween PlayShowAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time, Vector2 entryPos = default)
         {
             var sequence = DOTween.Sequence();
             
@@ -106,10 +102,10 @@ namespace AK.Systems.Animations
                 sequence.Append(target.DOScale(Vector3.one, 0.1f).SetEase(Ease.OutBack));
             }
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
-        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup)
+        public override Tween PlayHideAnimation(RectTransform target, CanvasGroup canvasGroup, TimeDomain time)
         {
             var sequence = DOTween.Sequence();
             
@@ -124,7 +120,7 @@ namespace AK.Systems.Animations
             sequence.Append(target.DOLocalRotate(flipAxis * 360, _dealDuration * 0.3f).SetEase(Ease.OutBack));
             sequence.Join(target.DOScale(Vector3.zero, _dealDuration * 0.3f).SetEase(Ease.OutBack));
             
-            return sequence.Play();
+            return sequence.SetTimeDomain(time).Play();
         }
 
         private Vector3 GetFlipAxis()

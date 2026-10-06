@@ -1,4 +1,5 @@
-﻿using AK.Systems;
+﻿using AK.Core.Extensions;
+using AK.Systems;
 using DG.Tweening;
 using TMPro;
 using UnityEngine;
@@ -45,7 +46,7 @@ namespace AK.Systems.UI
 				                      .OnComplete(Hide))
 				.Join(FloaterBg.DOFade(1f, 0f))
 				.Join(FloaterText.DOFade(1f, 0f));
-			_floaterMoveSequence.Play();
+			_floaterMoveSequence.SetTimeDomain(TimeDomain).Play();
 		}
 
 		private void Hide()
@@ -56,7 +57,7 @@ namespace AK.Systems.UI
 			_floaterHideSequence = DOTween.Sequence();
 			_floaterHideSequence.Append(FloaterBg.DOFade(0f, _fadeOutDuration))
 			                    .Join(FloaterText.DOFade(0f, _fadeOutDuration).OnComplete(() => Close()));
-			_floaterHideSequence.Play();
+			_floaterHideSequence.SetTimeDomain(TimeDomain).Play();
 		}
 
 		/// <summary>

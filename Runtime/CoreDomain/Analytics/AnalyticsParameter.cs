@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using UnityEngine;
 
 namespace AK.CoreDomain.Analytics
@@ -29,7 +30,9 @@ namespace AK.CoreDomain.Analytics
 		public string Description;
 
 		/// <summary>
-		/// Gets the default value as the specified type.
+		/// The default value as <typeparamref name="T"/>, which may be string, int, float or bool.
+		/// Numbers parse with the invariant culture, so a definition reads the same on every device.
+		/// Returns default(T) when there is no default, it does not parse, or T is another type.
 		/// </summary>
 		public T GetDefaultValue<T>()
 		{
@@ -38,32 +41,57 @@ namespace AK.CoreDomain.Analytics
 				return default;
 			}
 
-			try
+			if (typeof(T) == typeof(string))
 			{
-				if (typeof(T) == typeof(string))
-				{
-					return (T)(object)DefaultValue;
-				}
-				if (typeof(T) == typeof(int))
-				{
-					return (T)(object)int.Parse(DefaultValue);
-				}
-				if (typeof(T) == typeof(float))
-				{
-					return (T)(object)float.Parse(DefaultValue);
-				}
-				if (typeof(T) == typeof(bool))
-				{
-					return (T)(object)bool.Parse(DefaultValue);
-				}
+				return (T)(object)DefaultValue;
 			}
-			catch
+			if (typeof(T) == typeof(int))
 			{
-				return default;
+				return TryParseInt(DefaultValue, out int i) ? (T)(object)i : default;
+			}
+			if (typeof(T) == typeof(float))
+			{
+				return TryParseFloat(DefaultValue, out float f) ? (T)(object)f : default;
+			}
+			if (typeof(T) == typeof(bool))
+			{
+				return bool.TryParse(DefaultValue, out bool b) ? (T)(object)b : default;
 			}
 
 			return default;
 		}
+
+		/// <summary>
+		/// The default value as <see cref="Type"/> says, or null when there is none. An Integer or
+		/// Float default that does not parse gives 0 and a Boolean one false; every other type gives
+		/// the text as written.
+		/// </summary>
+		public object GetDefaultValue()
+		{
+			if (string.IsNullOrEmpty(DefaultValue))
+			{
+				return null;
+			}
+
+			switch (Type)
+			{
+				case AnalyticsParameterType.Integer:
+					return TryParseInt(DefaultValue, out int i) ? i : 0;
+				case AnalyticsParameterType.Float:
+					return TryParseFloat(DefaultValue, out float f) ? f : 0f;
+				case AnalyticsParameterType.Boolean:
+					return bool.TryParse(DefaultValue, out bool b) && b;
+				default:
+					return DefaultValue;
+			}
+		}
+
+		// The styles int.Parse and float.Parse use by default, with the culture fixed.
+		private static bool TryParseInt(string text, out int value) =>
+			int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+
+		private static bool TryParseFloat(string text, out float value) =>
+			float.TryParse(text, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out value);
 	}
 
 	/// <summary>
