@@ -28,7 +28,7 @@ namespace AK.Services
 
 		/// <summary>
 		/// Opt in to the AppLovin MAX provider. Off unless this is called.
-		/// Requires the game assembly to reference AK.Services.MaxAds (and the MAX package).
+		/// Requires the MAX package (com.applovin.mediation.ads).
 		/// </summary>
 		public AdServiceBuilder UseMax(bool useMax = true)
 		{
@@ -140,7 +140,7 @@ namespace AK.Services
 				}
 				else
 				{
-					Debug.LogWarning($"{TAG} UseMax() requested but AK.Services.MaxAds is not loaded. Install com.applovin.mediation.ads and reference AK.Services.MaxAds from the game assembly.");
+					Debug.LogWarning($"{TAG} UseMax() requested but AK.Services.MaxAds is not loaded. Install com.applovin.mediation.ads so the MAX provider assembly compiles.");
 				}
 			}
 

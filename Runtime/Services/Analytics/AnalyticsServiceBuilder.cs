@@ -98,7 +98,7 @@ namespace AK.Services
 				}
 				else
 				{
-					Debug.LogWarning("[AnalyticsServiceBuilder] UseGameAnalytics() requested but AK.Services.GameAnalytics is not loaded. Install com.gameanalytics.sdk and reference AK.Services.GameAnalytics from the game assembly.");
+					Debug.LogWarning("[AnalyticsServiceBuilder] UseGameAnalytics() requested but AK.Services.GameAnalytics is not loaded. Install com.gameanalytics.sdk so the GameAnalytics provider assembly compiles.");
 				}
 			}
 
@@ -111,7 +111,7 @@ namespace AK.Services
 				}
 				else
 				{
-					Debug.LogWarning("[AnalyticsServiceBuilder] UseMixpanel() requested but AK.Services.Mixpanel is not loaded. Install com.mixpanel.unity and reference AK.Services.Mixpanel from the game assembly.");
+					Debug.LogWarning("[AnalyticsServiceBuilder] UseMixpanel() requested but AK.Services.Mixpanel is not loaded. Install com.mixpanel.unity so the Mixpanel provider assembly compiles.");
 				}
 			}
 
