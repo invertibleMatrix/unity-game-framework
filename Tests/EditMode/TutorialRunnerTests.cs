@@ -21,6 +21,7 @@ namespace AK.Tests
 	public class TutorialRunnerTests
 	{
 		private readonly List<Object> _created = new();
+		private readonly List<TutorialStepReport> _reports = new();
 		private UISystemHarness _h;
 		private StubFactService _facts;
 
@@ -31,11 +32,14 @@ namespace AK.Tests
 		{
 			_h = new UISystemHarness();
 			_facts = new StubFactService();
+			_reports.Clear();
+			TutorialProvider.StepReported += _reports.Add;
 		}
 
 		[TearDown]
 		public void TearDown()
 		{
+			TutorialProvider.StepReported -= _reports.Add;
 			foreach (var o in _created)
 				if (o != null) Object.DestroyImmediate(o);
 			_created.Clear();
@@ -47,6 +51,7 @@ namespace AK.Tests
 		{
 			public bool ReleasesHoldWhenUp  = true;
 			public bool HonoursCancellation = true;
+			public bool Declines;
 
 			public readonly List<Presentation> Presentations = new();
 
@@ -56,6 +61,10 @@ namespace AK.Tests
 			{
 				var presentation = new Presentation(context, ct);
 				Presentations.Add(presentation);
+				if (Declines)
+				{
+					throw new TutorialStepDeclinedException("no surface");
+				}
 
 				await Until(presentation.Up, ct);
 				if (ReleasesHoldWhenUp) context.InputHold.Release();
@@ -385,6 +394,110 @@ namespace AK.Tests
 
 			Complete(provider.RunDueAsync());
 			Assert.That(step.Presentations.Count, Is.EqualTo(1), "the next run doesn't show the step again");
+		}
+
+		// ---------------------------------------------------------------
+		// Step reports
+		// ---------------------------------------------------------------
+
+		[Test]
+		public void FinishedSteps_ReportStartedThenDone_AndTheLastCompletesTheTutorial()
+		{
+			ScriptedStep first = MakeStep("Tap");
+			ScriptedStep second = MakeStep("Drag");
+			TutorialProvider provider = MakeProvider(first, second);
+
+			UniTask run = provider.RunDueAsync();
+			first.Current.Finish();
+			second.Current.Finish();
+			Complete(run);
+
+			Assert.That(Describe(), Is.EqualTo(new[] { "0:Started", "0:Done", "1:Started", "1:Done" }));
+			Assert.That(_reports[1].CompletesTutorial, Is.False);
+			Assert.That(_reports[3].CompletesTutorial, Is.True);
+			Assert.That(_reports[3].Tutorial, Is.SameAs(provider));
+			Assert.That(_reports[3].Step, Is.SameAs(second));
+			Assert.That(_reports[3].StepCount, Is.EqualTo(2));
+			Assert.That(_facts.Recorded, Is.EqualTo(2), "a step's Done is reported after its progress is recorded");
+		}
+
+		[Test]
+		public void AbandonedStep_ReportsAbandoned()
+		{
+			ScriptedStep step = MakeStep("Tap");
+			TutorialProvider provider = MakeProvider(step);
+
+			UniTask run = provider.RunDueAsync();
+			provider.AbandonRun();
+			Complete(run);
+
+			Assert.That(Describe(), Is.EqualTo(new[] { "0:Started", "0:Abandoned" }));
+		}
+
+		[Test]
+		public void AbandonedStep_ThatFinishesAnyway_ReportsAbandoned_NotDone()
+		{
+			ScriptedStep step = MakeStep("Tap");
+			step.HonoursCancellation = false;
+			TutorialProvider provider = MakeProvider(step);
+
+			UniTask run = provider.RunDueAsync();
+			Presentation abandoned = step.Current;
+			provider.AbandonRun();
+			abandoned.Finish();
+			Complete(run);
+
+			Assert.That(Describe(), Is.EqualTo(new[] { "0:Started", "0:Abandoned" }));
+		}
+
+		[Test]
+		public void DeclinedStep_ReportsDeclined()
+		{
+			ScriptedStep step = MakeStep("Tap");
+			step.Declines = true;
+			TutorialProvider provider = MakeProvider(step);
+
+			Complete(provider.RunDueAsync());
+
+			Assert.That(Describe(), Is.EqualTo(new[] { "0:Started", "0:Declined" }));
+			Assert.That(_facts.Recorded, Is.EqualTo(0));
+		}
+
+		[Test]
+		public void AListenerThatThrows_IsLogged_AndTheRunGoesOn()
+		{
+			ScriptedStep step = MakeStep("Tap");
+			TutorialProvider provider = MakeProvider(step);
+			Action<TutorialStepReport> throwing = _ => throw new InvalidOperationException("listener broke");
+			TutorialProvider.StepReported += throwing;
+			try
+			{
+				UniTask run;
+				using (ExpectedLog.Exception("listener broke", expected: 2))
+				{
+					run = provider.RunDueAsync();
+					step.Current.Finish();
+					Complete(run);
+				}
+
+				Assert.That(_facts.Recorded, Is.EqualTo(1));
+				Assert.That(Gate.IsHeld, Is.False);
+			}
+			finally
+			{
+				TutorialProvider.StepReported -= throwing;
+			}
+		}
+
+		private string[] Describe()
+		{
+			var lines = new string[_reports.Count];
+			for (int i = 0; i < _reports.Count; i++)
+			{
+				lines[i] = $"{_reports[i].StepIndex}:{_reports[i].Action}";
+			}
+
+			return lines;
 		}
 
 		[Test]

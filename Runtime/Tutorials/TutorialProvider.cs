@@ -36,6 +36,12 @@ namespace AK.Tutorials
 		/// </summary>
 		public const float InputHoldAllowanceSeconds = 10f;
 
+		/// <summary>
+		/// Every tutorial's step reports: started, done, declined, abandoned. For analytics; a
+		/// listener can't change the run, and one that throws is logged and ignored.
+		/// </summary>
+		public static event Action<TutorialStepReport> StepReported;
+
 		[Tooltip("Ordered steps of this tutorial.")]
 		public List<TutorialStep> Steps = new();
 
@@ -164,6 +170,7 @@ namespace AK.Tutorials
 
 					InputHold hold = HoldInputFor(step);
 					_stepHold = hold;
+					Report(i, step, TutorialStepAction.Started);
 
 					try
 					{
@@ -174,11 +181,13 @@ namespace AK.Tutorials
 						// The step's surface never appeared — leave the progress counter
 						// untouched so the next checkpoint retries instead of killing
 						// the tutorial.
+						Report(i, step, TutorialStepAction.Declined);
 						return;
 					}
 					catch (OperationCanceledException) when (run.IsCancellationRequested && !ct.IsCancellationRequested)
 					{
 						// Abandoned: the step is cancelled and the run is over.
+						Report(i, step, TutorialStepAction.Abandoned);
 						return;
 					}
 					finally
@@ -191,11 +200,13 @@ namespace AK.Tutorials
 					// presents the step again.
 					if (run.IsCancellationRequested)
 					{
+						Report(i, step, TutorialStepAction.Abandoned);
 						ct.ThrowIfCancellationRequested();
 						return;
 					}
 
 					_facts.Record(ProgressFact);
+					Report(i, step, TutorialStepAction.Done);
 				}
 			}
 			finally
@@ -203,6 +214,25 @@ namespace AK.Tutorials
 				if (_run == run) _run = null;
 				run.Dispose();
 			}
+		}
+
+		private void Report(int stepIndex, TutorialStep step, TutorialStepAction action)
+		{
+			try
+			{
+				StepReported?.Invoke(new TutorialStepReport(this, stepIndex, step, action));
+			}
+			catch (Exception e)
+			{
+				Debug.LogException(e, this);
+			}
+		}
+
+		// Statics outlive Play sessions when domain reload is off.
+		[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+		private static void ResetForPlaySession()
+		{
+			StepReported = null;
 		}
 
 		private InputHold HoldInputFor(TutorialStep step)
