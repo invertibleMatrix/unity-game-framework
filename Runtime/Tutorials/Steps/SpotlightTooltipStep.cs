@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using AK.Systems;
 using Cysharp.Threading.Tasks;
@@ -20,6 +21,9 @@ namespace AK.Tutorials
 
 		public Sprite Icon;
 		
+		[Tooltip("When false, skip target lookup: full dim, no hole, tooltip at its default position.")]
+		public bool HasUITarget = true;
+
 		[Tooltip("UITargetId of the element to spotlight and anchor the tooltip to.")]
 		public UITargetId TargetId;
 
@@ -63,16 +67,20 @@ namespace AK.Tutorials
 		{
 			await base.PresentAsync(context, ct);
 
-			var target = await WaitForTargetAsync(context, TargetId, ct);
-			if (target == null)
+			RectTransform target = null;
+			if (HasUITarget)
 			{
-				Debug.LogError($"[SpotlightTooltipStep] Target '{(TargetId != null ? TargetId.name : "null")}' not registered within {TargetWaitTimeout:0.#}s — declining presentation of '{name}'.");
-				throw new TutorialStepDeclinedException($"Step '{name}': target '{(TargetId != null ? TargetId.name : "null")}' not registered.");
+				target = await WaitForTargetAsync(context, TargetId, ct);
+				if (target == null)
+				{
+					Debug.LogError($"[SpotlightTooltipStep] Target '{(TargetId != null ? TargetId.name : "null")}' not registered within {TargetWaitTimeout:0.#}s — declining presentation of '{name}'.");
+					throw new TutorialStepDeclinedException($"Step '{name}': target '{(TargetId != null ? TargetId.name : "null")}' not registered.");
+				}
 			}
 
 			var spotlight = context.UiSystem.Show<UIViewSpotlight>(
 				ShowOptions.With(CreateSpotlightContext()),
-				s => s.SetTargets(new[] { target }, animateSpotlight: true));
+				s => s.SetTargets(HasUITarget ? new[] { target } : Array.Empty<RectTransform>(), animateSpotlight: true));
 
 			var tooltip = context.UiSystem.Show<UIViewTooltip>(ShowOptions.Variant(TooltipId, new UIViewTooltipContext(Title, Description, target, Position)
 			{
