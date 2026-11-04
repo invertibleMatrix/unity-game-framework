@@ -228,12 +228,15 @@ namespace AK.Tutorials
 			}
 		}
 
-		// Statics outlive Play sessions when domain reload is off.
-		[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+#if UNITY_EDITOR
+		// Statics outlive Play sessions when domain reload is off. Editor only: a player starts
+		// fresh, so it needs no startup hook (and IL2CPP can strip an unused module).
+		[UnityEditor.InitializeOnEnterPlayMode]
 		private static void ResetForPlaySession()
 		{
 			StepReported = null;
 		}
+#endif
 
 		private InputHold HoldInputFor(TutorialStep step)
 		{
